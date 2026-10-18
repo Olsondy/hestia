@@ -1,0 +1,16 @@
+{
+  "name": "my-idealhome",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first interactive home layout prototype with three furniture alternatives.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/check-layouts.mjs",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": { "three": "^0.186.1" },
+  "devDependencies": { "esbuild": "^0.28.2" }
+}

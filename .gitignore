@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+__pycache__/
+.venv/
+.tmp/
+coverage/
+
+# Keep the current usable demo; historical exports remain local.
+output/*
+!output/3d/
+output/3d/*
+!output/3d/ideal-home-3d.html
+!output/3d/layout-comparison-r10.png
+
+# User uploads belong in local/project storage, never in the demo repository.
+uploads/
+private-data/

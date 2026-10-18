@@ -1,0 +1,15 @@
+* text=auto
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.png binary
+*.pdf binary
+# The offline bundle contains unmodified third-party shader strings.
+output/3d/ideal-home-3d.html -whitespace linguist-generated=true

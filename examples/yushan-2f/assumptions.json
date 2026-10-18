@@ -1,0 +1,305 @@
+{
+  "revision": "R1.0",
+  "status": "CONCEPT_NOT_MEASURED",
+  "confirmedRelationships": [
+    "bedroom west wall to east window wall remembered as over 8 m, including cabinet depth",
+    "study width aligns with the whole stairs and corridor zone",
+    "balcony projects west of the main body",
+    "south bedroom wall gets hot on summer evenings",
+    "stair handrail is continuous with floor corridor rails and follows the same turning arrangement through upper floors to the top"
+  ],
+  "comparisonDimensions": {
+    "bedroomWallPositionSpan": 8.3,
+    "mainBodyWidth": 11.3,
+    "mainBodyDepth": 9,
+    "studyWidth": 3,
+    "balconyProjection": 0.9
+  },
+  "notes": [
+    "Wall-position span is a modeling convention; clear face-to-face dimensions and wall thickness require measurement.",
+    "Original total area estimate must be rechecked.",
+    "Existing west cupboard, TV wall, column, study/bath door alignment and stair corridor retained.",
+    "AC remains on northeast bedroom inner wall approximately 1.5 m from the east window wall.",
+    "Bed still heads toward the north internal wall; furniture sizes unchanged.",
+    "Previous PDF R0.2 remains historical; current interactive model is R1.0.",
+    "Study west wall and balcony shift 0.25 m west; existing main partition and bedroom fixed items retain their R0.4 positions.",
+    "Furniture alternatives change positions, orientation and combinations; fixed building fixtures remain unchanged.",
+    "Budget withdrawn at user request.",
+    "Clearance checks use the provisional model, not a measured construction plan."
+  ],
+  "bedAdjustment": {
+    "relativeTo": "R0.3",
+    "eastTranslationM": 0.6,
+    "items": [
+      "bed",
+      "bed-rug",
+      "bedside-west",
+      "bedside-east"
+    ],
+    "headboard": "north internal wall",
+    "fixedCabinetAndAC": "unchanged"
+  },
+  "stairSequence": {
+    "firstFlight": 11,
+    "firstLanding": "flat",
+    "middleFlight": 5,
+    "secondLanding": "flat",
+    "finalFlight": 11,
+    "scope": "first to second floor",
+    "rendering": "compressed diagram; not dimensionally buildable",
+    "thirdFloor": "upper stair volume restored using assumed repeated geometry; exact counts and floor rise unconfirmed",
+    "handrailSide": "inner edges facing central void; continuous connections at both landing inner corners",
+    "railContinuity": "lower flight inner rail -> second-floor corridor guard -> upper flight inner rail"
+  },
+  "balconySideWindow": {
+    "room": "study",
+    "wall": "west-facing balcony",
+    "widthM": 1.2,
+    "heightM": 1.35,
+    "sillHeightM": 0.9,
+    "status": "requested visual addition, dimensions and type provisional",
+    "existingBalconyDoor": "retained"
+  },
+  "softStyles": [
+    {
+      "id": "wood",
+      "name": "原木风",
+      "palette": [
+        "#c6a77d",
+        "#e8e1d1",
+        "#97a286",
+        "#c9b694"
+      ]
+    },
+    {
+      "id": "cream",
+      "name": "奶油风",
+      "palette": [
+        "#f2eadc",
+        "#d8c9b5",
+        "#e4d4bd",
+        "#c7ad93"
+      ]
+    },
+    {
+      "id": "chinese",
+      "name": "轻中式",
+      "palette": [
+        "#6c4d35",
+        "#e5dccb",
+        "#647a75",
+        "#b29b74"
+      ]
+    }
+  ],
+  "houseFloors": 4,
+  "display": "one representative floor and connecting stair flights",
+  "layouts": {
+    "wood": {
+      "title": "A · 原木会客",
+      "summary": "三人沙发＋单椅围合，卧室保留独立阅读角，书房增加矮柜。",
+      "tradeoff": "座位与收纳较多；客厅家具也更多。",
+      "notes": {
+        "living": "三人沙发朝西侧电视墙，北侧增加朝南单椅；茶几移到两组座位之间，南侧主过道留空。",
+        "bedroom": "床保持已确认的内墙床头位置；东侧单椅与边几构成独立阅读角，床尾不增加家具。",
+        "study": "书桌仍靠北，东侧放矮书柜；南侧留出书房门到阳台门的通行路线。",
+        "gaming": "保留北墙电竞桌，东侧窗提供侧光，矮柜在西墙。"
+      },
+      "placements": {
+        "sofa": [
+          6.1,
+          1.55
+        ],
+        "coffee-table": [
+          4.65,
+          1.95
+        ],
+        "living-rug": [
+          5.05,
+          1.6
+        ],
+        "conversation-chair": [
+          4.35,
+          0.65,
+          3.141592653589793
+        ],
+        "reading-chair": [
+          9.8,
+          7.5
+        ],
+        "reading-table": [
+          9.05,
+          7.7
+        ],
+        "study-lowcase": [
+          2.4,
+          1.05
+        ]
+      },
+      "hide": [],
+      "specs": {},
+      "walk": {
+        "study": [
+          1.3,
+          1.95
+        ],
+        "bedroom": [
+          8.3,
+          8.4
+        ]
+      }
+    },
+    "cream": {
+      "title": "B · 奶油舒展",
+      "summary": "双人沙发＋贵妃模块，圆几替代长茶几；卧室用床尾凳，书桌转向东墙。",
+      "tradeoff": "客厅适合躺坐，独立会客座位减少；卧室东侧留空。",
+      "notes": {
+        "living": "用圆角双人沙发和可分离贵妃模块组成 L 形，面向原电视墙。两只圆几放在西侧，南侧主过道留空。",
+        "bedroom": "床与两侧床头柜整体向东再移约 43 cm，床头仍靠内墙；移除东侧阅读椅，增加床尾长凳，东侧形成开敞活动区。",
+        "study": "书桌与壁架转到东墙，座椅从西侧使用；取消东侧矮柜，西侧阳台窗前留空。",
+        "gaming": "电竞桌转到西墙，椅子朝西，矮柜移到北墙；东窗与东南入口之间留出活动空间。"
+      },
+      "placements": {
+        "bed": [
+          7.15,
+          6.15
+        ],
+        "bed-rug": [
+          7.15,
+          6.62
+        ],
+        "bedside-west": [
+          5.895,
+          5.385
+        ],
+        "bedside-east": [
+          8.425,
+          5.385
+        ],
+        "living-rug": [
+          5.2,
+          1.55,
+          0,
+          1,
+          0.95
+        ],
+        "study-desk": [
+          2.3,
+          0.95,
+          -1.5707963267948966
+        ],
+        "study-chair": [
+          1.5,
+          0.95,
+          -1.5707963267948966
+        ],
+        "study-shelf": [
+          2.63,
+          0.95,
+          -1.5707963267948966
+        ],
+        "gaming-desk": [
+          7.65,
+          1.23,
+          1.5707963267948966
+        ],
+        "gaming-chair": [
+          8.55,
+          1.23,
+          1.5707963267948966
+        ],
+        "game-shelf": [
+          9.3,
+          0.4,
+          1.5707963267948966
+        ]
+      },
+      "hide": [
+        "sofa",
+        "coffee-table",
+        "reading-chair",
+        "reading-table"
+      ],
+      "specs": {},
+      "walk": {
+        "study": [
+          1.1,
+          1.9
+        ],
+        "bedroom": [
+          9.5,
+          7.1
+        ],
+        "gaming": [
+          9.7,
+          2.35
+        ]
+      }
+    },
+    "chinese": {
+      "title": "C · 轻中式对坐",
+      "summary": "木框坐榻＋单椅＋茶桌；卧室东南双椅对坐，书桌离墙摆放。",
+      "tradeoff": "增加聊天与阅读座位；卧室东南侧不再是整块空地。",
+      "notes": {
+        "living": "三人软沙发换为木框双人坐榻，北侧单椅朝南，与茶桌构成会客区；电视墙保持原位。",
+        "bedroom": "床头与原柜位置保留；东南侧设置两把相向休闲椅和中间小圆几，形成双人阅读、喝茶的位置。南侧热墙不作床头。",
+        "study": "书桌向南移约 49 cm，北侧保留壁架，桌子可从侧边绕行；东侧矮柜缩到北段，避让南侧门口。",
+        "gaming": "桌仍靠北墙，矮柜挪到西墙更靠北的位置；保持独立房间和东南入口。"
+      },
+      "placements": {
+        "conversation-chair": [
+          4.35,
+          0.65,
+          3.141592653589793
+        ],
+        "living-rug": [
+          5.05,
+          1.65
+        ],
+        "study-desk": [
+          1.25,
+          0.95
+        ],
+        "study-chair": [
+          1.25,
+          1.65
+        ],
+        "study-lowcase": [
+          2.4,
+          0.7
+        ],
+        "game-shelf": [
+          7.54,
+          1.6
+        ],
+        "tea-chair-west": [
+          8.3,
+          8.05,
+          -1.5707963267948966
+        ],
+        "tea-chair-east": [
+          10.3,
+          8.05,
+          1.5707963267948966
+        ]
+      },
+      "hide": [
+        "sofa",
+        "coffee-table",
+        "reading-chair",
+        "reading-table"
+      ],
+      "specs": {},
+      "walk": {
+        "study": [
+          1.15,
+          2.08
+        ],
+        "bedroom": [
+          8.3,
+          7.3
+        ]
+      }
+    }
+  }
+}

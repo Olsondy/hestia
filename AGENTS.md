@@ -12,8 +12,8 @@
 
 ## 事实与数据来源
 
-- 示例说明：`examples/yushan-2f/README.md`。
-- 示例假设快照：`examples/yushan-2f/assumptions.json`；它尚未驱动渲染。
+- 示例说明：`examples/sample-home-2f/README.md`。
+- 示例假设快照：`examples/sample-home-2f/assumptions.json`；它尚未驱动渲染。
 - 历史纠正与约束：`docs/decisions.md`。
 - 实际几何与位置：`src/model.js`、`src/layouts.js`。
 - 用户新确认的事实优先；发生冲突时同时更新几何、说明与假设记录。
@@ -47,6 +47,8 @@ npm run check
 不为简单文案修改增加实现镜像测试。检查通过后，仅在新改动、失败或具体疑点出现时追加验证。
 
 ## 提交内容
+
+- 文档、示例目录和展示文案使用中性名称，不包含真实住宅名称、地名或住户身份。
 
 - 提交源码、根目录锁文件、文档、当前离线 HTML 和当前布局比较图。
 - 不提交上传图纸、私密原始资料、密钥、依赖目录、旧版导出和调试截图。

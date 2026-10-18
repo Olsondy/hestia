@@ -48,7 +48,7 @@ python scripts/render-layout-comparison.py --font /path/to/chinese-font.ttf
 ```text
 src/                         交互页面、几何模型、家具布局和材质
 scripts/                     构建、几何检查、可选对比图绘制
-examples/yushan-2f/           当前示例的已确认关系与建模假设
+examples/sample-home-2f/           当前示例的已确认关系与建模假设
 docs/                        架构、开发、历史决策与产品化讨论
 output/3d/ideal-home-3d.html   当前可直接打开的离线交付物
 output/3d/layout-comparison-r10.png
@@ -62,7 +62,7 @@ AGENTS.md                    本项目的 agent 工作约定
 
 示例以二楼为代表层，整栋房屋共四层。原固定柜、挂式空调、电视墙、柱子、门窗与楼梯的已确认关系保留；部分尺寸来自记忆，层高、窗洞与楼梯几何仍包含展示假设。它用于布局与视觉讨论，尚未经过现场测绘。
 
-房屋事实以 [示例说明](examples/yushan-2f/README.md)、[假设记录](examples/yushan-2f/assumptions.json) 和 [决策记录](docs/decisions.md) 为依据。`assumptions.json` 是记录，不是驱动模型生成的输入文件；目前几何仍写在 `src/model.js` 中。
+房屋事实以 [示例说明](examples/sample-home-2f/README.md)、[假设记录](examples/sample-home-2f/assumptions.json) 和 [决策记录](docs/decisions.md) 为依据。`assumptions.json` 是记录，不是驱动模型生成的输入文件；目前几何仍写在 `src/model.js` 中。
 
 预算功能已撤下，当前版本不提供装修报价、施工图或隔热效果模拟。
 

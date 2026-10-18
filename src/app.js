@@ -169,7 +169,7 @@ function bindUI(){
  const syncOptions=()=>$$('[data-toggle]').forEach(b=>{const on=state[b.dataset.toggle];b.setAttribute('aria-pressed',String(on));b.querySelector('.switch').classList.toggle('on',on);b.disabled=b.dataset.toggle==='cutaway'&&(state.walking||state.view==='plan');});
  $('#display-options').onclick=()=>{syncOptions();$('#display-dialog').showModal();};$('#display-done').onclick=()=>$('#display-dialog').close();
  $$('[data-toggle]').forEach(b=>b.onclick=()=>{$('#'+b.dataset.toggle).click();syncOptions();});
- $('#save-view').onclick=()=>{renderer.render(scene,camera);const a=document.createElement('a');a.href=renderer.domElement.toDataURL('image/png');a.download=`玉山二层-${softStyles.find(s=>s.id===state.softStyle).name}-${state.room||'全屋'}-${state.night?'夜景':'日景'}-${state.mode}.png`;a.click();toast('已保存当前模型画面');};
+ $('#save-view').onclick=()=>{renderer.render(scene,camera);const a=document.createElement('a');a.href=renderer.domElement.toDataURL('image/png');a.download=`示例住宅二层-${softStyles.find(s=>s.id===state.softStyle).name}-${state.room||'全屋'}-${state.night?'夜景':'日景'}-${state.mode}.png`;a.click();toast('已保存当前模型画面');};
  let down=null,last=null;
  renderer.domElement.addEventListener('pointerdown',e=>{animation=null;down={x:e.clientX,y:e.clientY};last={x:e.clientX,y:e.clientY};if(state.walking)renderer.domElement.setPointerCapture(e.pointerId);});
  renderer.domElement.addEventListener('pointermove',e=>{if(state.walking&&last){walkYaw-=(e.clientX-last.x)*.004;walkPitch=T.MathUtils.clamp(walkPitch-(e.clientY-last.y)*.003,-1.15,1.15);updateWalkCamera();last={x:e.clientX,y:e.clientY};}});

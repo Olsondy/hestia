@@ -1,4 +1,4 @@
-export const STORAGE_KEY = 'idealhome.studio.v1';
+export const STORAGE_KEY = 'hestia.studio.v1';
 export const clone = value => structuredClone(value);
 export const uid = () => crypto.randomUUID?.() || `p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 export const titles = {wood:'原木会客',cream:'舒展日常',chinese:'围坐时光'};

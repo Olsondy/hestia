@@ -1,19 +1,17 @@
 {
-  "name": "my-idealhome",
-  "version": "0.1.0",
+  "name": "hestia",
+  "version": "0.2.0",
   "private": true,
-  "description": "A local-first interactive home layout prototype with three furniture alternatives.",
+  "description": "Hestia: a spatial design workbench for importing floor plans, editing layouts and presenting homes in 3D.",
   "type": "module",
   "license": "UNLICENSED",
   "engines": { "node": ">=22" },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node scripts/check-layouts.mjs",
+    "test": "node --test scripts/check.mjs",
     "check": "npm run build && npm test",
-    "build:prototype": "node scripts/build-workbench.mjs",
-    "preview:prototype": "node scripts/serve-workbench.mjs",
-    "test:prototype": "node --test scripts/check-workbench.mjs",
-    "check:prototype": "npm run build:prototype && npm run test:prototype"
+    "preview": "node scripts/serve.mjs",
+    "fonts": "node scripts/source-fonts.mjs"
   },
   "dependencies": { "three": "^0.186.1" },
   "devDependencies": { "esbuild": "^0.28.2" }

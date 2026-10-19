@@ -1,4 +1,6 @@
-# My IdealHome
+# Hestia
+
+Hestia 取名自古希腊神话中的炉火女神赫斯提亚，造屋之始祖：家从炉火开始，产品帮用户把自己的家一步步造出来。
 
 <!-- impeccable:product-schema 1 -->
 
@@ -26,7 +28,7 @@ web
 
 ## Stack
 
-当前原型已有 Three.js 与 esbuild，可在独立 prototype 入口复用；正式平台规划为 Next.js / React / TypeScript，见 docs/web-stack.md。本轮先交付可本地打开的交互原型，不把账号与云端数据功能伪装成已实现。
+当前原型使用 Three.js 与 esbuild；正式平台规划为 Next.js / React / TypeScript，见 docs/web-stack.md。本轮先交付可本地打开的交互原型，不把账号与云端数据功能伪装成已实现。
 
 ## Brand Commitments
 
@@ -34,7 +36,7 @@ web
 
 ## Evidence on Hand
 
-src/model.js 为现有程序生成的示例模型，src/layouts.js 含三种不同家具布局；现有截图为旧展示页证据。此前的 V1 规划描述未来能力，不作为已发布特性。
+src/sample/model.js 为程序生成的示例模型，src/sample/layouts.js 含三种不同家具布局。V1 规划描述未来能力，不作为已发布特性。
 
 ## Product Principles
 

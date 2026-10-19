@@ -1,9 +1,9 @@
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
-import {createModel,rooms} from '../model.js';
-import {createLayoutController} from '../layouts.js';
-import {createSoftStyleController} from '../soft-styles.js';
+import {createModel,rooms} from './sample/model.js';
+import {createLayoutController} from './sample/layouts.js';
+import {createSoftStyleController} from './sample/soft-styles.js';
 
 export class HomeScene {
   constructor(onSelect=()=>{}){

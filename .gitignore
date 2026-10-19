@@ -10,15 +10,9 @@ __pycache__/
 .tmp/
 coverage/
 
-# Keep the current usable demo; historical exports remain local.
-output/*
-!output/3d/
-output/3d/*
-!output/3d/ideal-home-3d.html
-!output/3d/layout-comparison-r10.png
-!output/prototype/
-output/prototype/*
-!output/prototype/index.html
+# dist/index.html is the committed offline build; nothing else is kept there.
+dist/*
+!dist/index.html
 
 # Local design tooling and browser verification evidence.
 .impeccable/review/
@@ -26,6 +20,6 @@ output/prototype/*
 .impeccable/config.local.json
 .impeccable/bin/
 
-# User uploads belong in local/project storage, never in the demo repository.
+# User uploads belong in local/project storage, never in the repository.
 uploads/
 private-data/

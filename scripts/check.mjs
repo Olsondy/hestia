@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {blankProject,change,undo,redo,setPlacement,parseDemo,saveStore,loadStore} from '../src/workbench/store.js';
+import {blankProject,change,undo,redo,setPlacement,parseDemo,saveStore,loadStore} from '../src/store.js';
 
 test('a rejected edit leaves the project and undo history intact',()=>{
   const p=blankProject();

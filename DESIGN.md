@@ -1,5 +1,5 @@
 ---
-name: "My IdealHome"
+name: "Hestia"
 description: "建筑展馆目录与家居杂志实时空间刊页"
 colors:
   gallery-bg: "#f5f7f8"
@@ -171,7 +171,7 @@ components:
     padding: "22px 30px 18px"
 ---
 
-# Design System: My IdealHome
+# Design System: Hestia
 
 ## Overview
 
@@ -188,7 +188,7 @@ components:
 - 示例方案共享观察方位，比较实际家具摆放与组合。
 - 平面刊页、细分隔线和少量浮动控件形成层级。
 
-本规范记录 2026-10-19 用户授权的结构重做，取代旧 editorial 精选卡片首页规范；gallery 继续保留。依据为 `src/workbench/style.css` 的最终覆盖层、`editorial.js`、`motion.js`、`scene.js` 与 `app.js`。这是 code-led 实现，没有 approved raster comp。具体表面契约见 `docs/prototype-brief.md` 顶部六块契约；验证事实与历史分界见 `docs/prototype-review.md`。
+本规范记录 2026-10-19 用户授权的结构重做，取代旧 editorial 精选卡片首页规范；gallery 继续保留。依据为 `src/style.css` 的最终覆盖层、`editorial.js`、`motion.js`、`scene.js` 与 `app.js`。这是 code-led 实现，没有 approved raster comp。具体表面契约见 `docs/prototype-brief.md` 顶部六块契约；验证事实与历史分界见 `docs/prototype-review.md`。
 
 前置 token 是规范值。gallery / editorial 前缀对应两套主题变量；folio 前缀记录刊页的局部颜色与形状，不能将其误写为整套 editorial 变量已经替换。旧卡片 CSS 仍在源码中，当前 editorial 项目路由进入实时刊页。
 

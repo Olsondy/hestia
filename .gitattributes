@@ -12,4 +12,4 @@
 *.png binary
 *.pdf binary
 # The offline bundle contains unmodified third-party shader strings.
-output/3d/ideal-home-3d.html -whitespace linguist-generated=true
+dist/index.html -whitespace linguist-generated=true

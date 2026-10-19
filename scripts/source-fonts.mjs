@@ -1,10 +1,10 @@
 // Run intentionally when prototype copy changes; normal builds remain offline.
 import fs from 'node:fs/promises';
 const root=new URL('../',import.meta.url);
-const files=await fs.readdir(new URL('src/workbench/',root));
-const source=(await Promise.all(files.filter(name=>name.endsWith('.js')).map(name=>fs.readFile(new URL('src/workbench/'+name,root),'utf8')))).join('\n');
+const files=await fs.readdir(new URL('src/',root));
+const source=(await Promise.all(files.filter(name=>name.endsWith('.js')).map(name=>fs.readFile(new URL('src/'+name,root),'utf8')))).join('\n');
 const text=[...new Set([...source].filter(c=>/[\u3400-\u9fffA-Za-z0-9，。、？！·]/u.test(c)))].sort().join('');
-const dir=new URL('src/workbench/fonts/',root);await fs.mkdir(dir,{recursive:true});
+const dir=new URL('src/fonts/',root);await fs.mkdir(dir,{recursive:true});
 const userAgent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const assets=[];
 for(const [family,name,weight,licensePath] of [['Noto Sans SC','gallery',600,'notosanssc'],['Noto Serif SC','editorial',500,'notoserifsc']]){

@@ -2,13 +2,13 @@ import * as T from 'three';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {makeMaterials} from './textures.js';
 
-// R1.0: nominal wall-position spans; the stair sequence is diagrammatic, not construction geometry.
+// Nominal wall-position spans; the stair sequence is diagrammatic, not construction geometry.
 export const dimensions={bedroomWest:2.75,bedroomSpan:8.3,east:11.05,balconyWest:-1.15,studyWest:-.25,studyWidth:3};
 const EAST=dimensions.east,DX=EAST-10,BED_SHIFT=.6;
 export const rooms=[
  {id:'living',name:'客厅',index:'01',rects:[[2.75,0,4.45,3],[2.75,3,8.3,1.7]],label:[4.15,2.93],center:[5.4,2.1],walk:[4.15,3.72],look:[4.6,1.3],desc:'保留西侧电视墙，沙发朝西，南侧的连续通道连接楼梯、卧室与独立电竞房。东侧保持低家具，减少对采光的遮挡。',note:'电视墙位置已确认；电视、饰面、灯具与沙发外观为效果提案。',focus:[3.7,4.8,5]},
  {id:'gaming',name:'电竞房',index:'02',rects:[[7.2,0,3.85,3]],label:[8.825,2.22],center:[9.125,1.5],walk:[10.4,2.5],look:[8.925,.55],desc:'保留两面后砌墙和西南角柱位。电竞桌朝北，东窗侧向采光；夜间关门、使用耳机。隔声重点是房门、墙顶和穿线孔。',note:'柱位与独立空间已确认。展示的吸声饰面主要减混响，实际隔声构造、通风与空调须另行深化。',focus:[2.5,3.1,3.3]},
- {id:'bedroom',name:'卧室',index:'03',rects:[[2.75,4.7,8.3,4.3]],label:[6.775,8.25],center:[6.9,6.85],walk:[8.275,8.12],look:[6.775,5.6],desc:'床、两侧床头柜与地毯在 R0.3 基础上向东平移约 60 cm，进一步远离门口，床头仍朝北侧内墙。西侧整排固定柜与东北角原挂式空调原位保留，东窗前保持通透。',note:'西墙到东窗墙据记忆为 8 米多，本版暂按墙位跨度 8.3 m 对比，包含柜深，非实测净尺寸。南侧墙夏季傍晚很热（据述），床头仍靠内墙。',focus:[4.4,5.4,5.5]},
+ {id:'bedroom',name:'卧室',index:'03',rects:[[2.75,4.7,8.3,4.3]],label:[6.775,8.25],center:[6.9,6.85],walk:[8.275,8.12],look:[6.775,5.6],desc:'床、两侧床头柜与地毯靠东摆放，远离门口，床头朝北侧内墙。西侧整排固定柜与东北角原挂式空调原位保留，东窗前保持通透。',note:'西墙到东窗墙据记忆为 8 米多，本版暂按墙位跨度 8.3 m 对比，包含柜深，非实测净尺寸。南侧墙夏季傍晚很热（据述），床头仍靠内墙。',focus:[4.4,5.4,5.5]},
  {id:'study',name:'书房',index:'04',rects:[[-.25,0,3,2.45]],label:[1.25,1.56],center:[1.25,1.22],walk:[2.2,1.85],look:[1.25,.38],desc:'书桌靠北，左下角阳台门与南侧书房门之间留出通行空间。西侧补充面向阳台的玻璃窗，阳台门保留；窗型尺寸暂拟，以工作灯补足照度。',note:'书房与下方楼梯、过道整块等宽；阳台从西侧凸出。左右暂按 3 m 对比，南北距离暂沿用。旧床与横摆柜子的记忆仅作尺度线索；阳台门开向及实际采光待确认。',focus:[2.3,3,3.4]},
  {id:'bathroom',name:'卫生间',index:'05',rects:[[1.55,4.7,1.2,4.3]],label:[2.15,7.1],center:[2.15,6.85],walk:[2.17,5.2],look:[2.16,7.2],desc:'保留现有湿区与管线关系。这里展示浅灰瓷砖、洗漱、坐便与淋浴的材质概念，不据此改动现有洁具位置。',note:'洁具数量、位置、设备型号均为演示占位，需量房后按现有排水修正。',focus:[2.5,4,4.5]},
  {id:'balcony',name:'阳台',index:'06',rects:[[-1.15,0,.9,2.45]],label:[-.71,1.22],center:[-.7,1.22],walk:[-.71,1.85],look:[-.72,.4],desc:'通过书房左下角的阳台门到达。以浅色地砖和少量绿植表达休闲角，保留门口通行。',note:'向西凸出主体的关系已确认；凸出深度暂沿用 0.9 m。栏杆及开放或封闭形式仍是展示假设。',focus:[2,2.6,3.1]},

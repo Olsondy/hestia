@@ -1,0 +1,17 @@
+import {build} from 'esbuild';
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createRequire} from 'node:module';
+const root=fileURLToPath(new URL('../',import.meta.url));
+const result=await build({absWorkingDir:root,entryPoints:['src/workbench/app.js'],bundle:true,format:'iife',target:'es2022',minify:true,legalComments:'inline',write:false});
+const template=fs.readFileSync(path.join(root,'src/workbench/index.html'),'utf8');
+const fontRoot=path.join(root,'src/workbench/fonts');
+const fonts=JSON.parse(fs.readFileSync(path.join(fontRoot,'sources.json'),'utf8'));
+const fontCss=fonts.map(f=>`@font-face{font-family:'${f.family}';font-style:normal;font-weight:${f.weight};font-display:swap;src:url(data:font/${f.format==='woff2'?'woff2':'ttf'};base64,${fs.readFileSync(path.join(fontRoot,f.file)).toString('base64')}) format('${f.format}');}`).join('\n');
+const fontLicenses=['gallery','editorial'].map(n=>fs.readFileSync(path.join(fontRoot,`${n}-OFL.txt`),'utf8')).join('\n');
+const css=fontCss+'\n'+fs.readFileSync(path.join(root,'src/workbench/style.css'),'utf8');
+const require=createRequire(import.meta.url),threeRoot=path.resolve(path.dirname(require.resolve('three')),'..');
+const license=fs.readFileSync(path.join(threeRoot,'LICENSE'),'utf8');
+const html=template.replace('/* STUDIO_STYLE */',()=>css).replace('/* STUDIO_APP */',()=>`/* Three.js\n${license}\nDisplay fonts\n${fontLicenses}\n*/\n${result.outputFiles[0].text.replace(/<\/script/gi,'<\\/script')}`);
+fs.mkdirSync(path.join(root,'output/prototype'),{recursive:true});fs.writeFileSync(path.join(root,'output/prototype/index.html'),html);console.log(`Built output/prototype/index.html (${(Buffer.byteLength(html)/1024/1024).toFixed(2)} MB)`);

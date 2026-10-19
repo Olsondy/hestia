@@ -9,6 +9,10 @@
 | `npm run build` | 从 `src/` 生成全离线 HTML |
 | `npm test` | 检查当前构建及三套布局；先构建 |
 | `npm run check` | 依次运行以上两步 |
+| `npm run build:prototype` | 从 `src/workbench/` 构建双方向原型单文件 HTML |
+| `npm run test:prototype` | 检查编辑原子性、固定物品保护、存储及撤销重做、演示指令 |
+| `npm run check:prototype` | 构建新原型并运行其数据检查 |
+| `npm run preview:prototype` | 仅在 `127.0.0.1:4173` 提供新原型预览 |
 | `python scripts/render-layout-comparison.py --font <字体路径>` | 从检查生成的家具占地数据更新比较图；需 Pillow |
 
 构建不启动服务器、不上传文件、不发布网站。打开 `output/3d/ideal-home-3d.html` 即可使用。构建脚本通过自身位置定位仓库，检查脚本也统一到仓库根目录，不依赖开发者绝对路径。
@@ -38,9 +42,17 @@ Canvas 绘制使用替身；这些检查没有运行 WebGL、没有验证屏幕�
 4. 选中只属于某套方案的家具后切换方案，旧选择不会残留。
 5. 隐藏家具、单独查看房间、进入房间、夜间灯光和保存画面可用。
 
-当前记录：R1.0 几何与状态检查已通过；该版本未完成浏览器画面复核。此前环境的本地文件浏览器访问受限；不能据此声称视觉验收通过，也不能用旧截图充当当前结果。
+原 R1.0 记录：几何与状态检查通过，该版本当时未完成浏览器画面复核。2026-10-19 新工作台使用真实浏览器另行验证，记录见 [工作台验证](prototype-review.md)，两份记录不可混用。
 
-GitHub Actions 配置运行 Windows / Linux 的 Node 构建和同一套几何检查，不包含浏览器截图测试。CI 是否通过以实际运行结果为准。
+GitHub Actions 配置运行 Windows / Linux 的两份 HTML 构建、原几何检查和新工作台数据测试，不包含浏览器截图测试。CI 是否通过以实际运行结果为准。
+
+## 工作台原型数据
+
+原型采用 ES modules + Three.js + esbuild，沿用已安装依赖；生产版本拟用的 Next.js 等技术仍属于后续计划。`output/prototype/index.html` 内嵌运行时代码、CSS、图标、Noto 标题字体和对应许可。运行时无需字体 CDN，也不请求模型。
+
+项目使用 localStorage 键 `idealhome.studio.v1`。不同浏览器和 origin 的数据独立；localhost、127.0.0.1、file 路径之间不共享。图片限 8 MiB，最长边缩至 1600px 后存储；空间不足会明确提示保存失败。JSON 导出目前用于保留数据，不提供重新导入入口。
+
+自定义户型仅支持直墙段和少量参数家具；房间自动分区、门窗编辑、自定义户型漫游、真实模型对话和工程碰撞检查尚未实现。示例的三套布局复用原几何，自定义图片不会被替换成示例。新增字段需要考虑已存在的浏览器数据和撤销快照。
 
 ## 历史文件
 

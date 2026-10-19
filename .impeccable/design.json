@@ -1,0 +1,828 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T01:46:18.280124+00:00",
+  "title": "Design System: My IdealHome",
+  "extensions": {
+    "colorMeta": {
+      "gallery-bg": {
+        "role": "neutral",
+        "displayName": "gallery-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0025 228.8)",
+          "oklch(26% 0.0025 228.8)",
+          "oklch(38% 0.0025 228.8)",
+          "oklch(49% 0.0025 228.8)",
+          "oklch(61% 0.0025 228.8)",
+          "oklch(72% 0.0025 228.8)",
+          "oklch(84% 0.0025 228.8)",
+          "oklch(95% 0.0025 228.8)"
+        ]
+      },
+      "gallery-surface": {
+        "role": "neutral",
+        "displayName": "gallery-surface",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.9)",
+          "oklch(26% 0.0000 89.9)",
+          "oklch(38% 0.0000 89.9)",
+          "oklch(49% 0.0000 89.9)",
+          "oklch(61% 0.0000 89.9)",
+          "oklch(72% 0.0000 89.9)",
+          "oklch(84% 0.0000 89.9)",
+          "oklch(95% 0.0000 89.9)"
+        ]
+      },
+      "gallery-surface-alt": {
+        "role": "neutral",
+        "displayName": "gallery-surface-alt",
+        "tonalRamp": [
+          "oklch(15% 0.0060 223.5)",
+          "oklch(26% 0.0060 223.5)",
+          "oklch(38% 0.0060 223.5)",
+          "oklch(49% 0.0060 223.5)",
+          "oklch(61% 0.0060 223.5)",
+          "oklch(72% 0.0060 223.5)",
+          "oklch(84% 0.0060 223.5)",
+          "oklch(95% 0.0060 223.5)"
+        ]
+      },
+      "gallery-ink": {
+        "role": "neutral",
+        "displayName": "gallery-ink",
+        "tonalRamp": [
+          "oklch(15% 0.0404 230.8)",
+          "oklch(26% 0.0404 230.8)",
+          "oklch(38% 0.0404 230.8)",
+          "oklch(49% 0.0404 230.8)",
+          "oklch(61% 0.0404 230.8)",
+          "oklch(72% 0.0404 230.8)",
+          "oklch(84% 0.0404 230.8)",
+          "oklch(95% 0.0404 230.8)"
+        ]
+      },
+      "gallery-muted": {
+        "role": "neutral",
+        "displayName": "gallery-muted",
+        "tonalRamp": [
+          "oklch(15% 0.0228 229.4)",
+          "oklch(26% 0.0228 229.4)",
+          "oklch(38% 0.0228 229.4)",
+          "oklch(49% 0.0228 229.4)",
+          "oklch(61% 0.0228 229.4)",
+          "oklch(72% 0.0228 229.4)",
+          "oklch(84% 0.0228 229.4)",
+          "oklch(95% 0.0228 229.4)"
+        ]
+      },
+      "gallery-line": {
+        "role": "neutral",
+        "displayName": "gallery-line",
+        "tonalRamp": [
+          "oklch(15% 0.0093 232.4)",
+          "oklch(26% 0.0093 232.4)",
+          "oklch(38% 0.0093 232.4)",
+          "oklch(49% 0.0093 232.4)",
+          "oklch(61% 0.0093 232.4)",
+          "oklch(72% 0.0093 232.4)",
+          "oklch(84% 0.0093 232.4)",
+          "oklch(95% 0.0093 232.4)"
+        ]
+      },
+      "gallery-accent": {
+        "role": "primary",
+        "displayName": "gallery-accent",
+        "tonalRamp": [
+          "oklch(15% 0.0762 202.2)",
+          "oklch(26% 0.0762 202.2)",
+          "oklch(38% 0.0762 202.2)",
+          "oklch(49% 0.0762 202.2)",
+          "oklch(61% 0.0762 202.2)",
+          "oklch(72% 0.0762 202.2)",
+          "oklch(84% 0.0762 202.2)",
+          "oklch(95% 0.0762 202.2)"
+        ]
+      },
+      "gallery-accent-soft": {
+        "role": "neutral",
+        "displayName": "gallery-accent-soft",
+        "tonalRamp": [
+          "oklch(15% 0.0151 186.7)",
+          "oklch(26% 0.0151 186.7)",
+          "oklch(38% 0.0151 186.7)",
+          "oklch(49% 0.0151 186.7)",
+          "oklch(61% 0.0151 186.7)",
+          "oklch(72% 0.0151 186.7)",
+          "oklch(84% 0.0151 186.7)",
+          "oklch(95% 0.0151 186.7)"
+        ]
+      },
+      "gallery-nav": {
+        "role": "neutral",
+        "displayName": "gallery-nav",
+        "tonalRamp": [
+          "oklch(15% 0.0416 226.5)",
+          "oklch(26% 0.0416 226.5)",
+          "oklch(38% 0.0416 226.5)",
+          "oklch(49% 0.0416 226.5)",
+          "oklch(61% 0.0416 226.5)",
+          "oklch(72% 0.0416 226.5)",
+          "oklch(84% 0.0416 226.5)",
+          "oklch(95% 0.0416 226.5)"
+        ]
+      },
+      "gallery-nav-ink": {
+        "role": "neutral",
+        "displayName": "gallery-nav-ink",
+        "tonalRamp": [
+          "oklch(15% 0.0076 207.1)",
+          "oklch(26% 0.0076 207.1)",
+          "oklch(38% 0.0076 207.1)",
+          "oklch(49% 0.0076 207.1)",
+          "oklch(61% 0.0076 207.1)",
+          "oklch(72% 0.0076 207.1)",
+          "oklch(84% 0.0076 207.1)",
+          "oklch(95% 0.0076 207.1)"
+        ]
+      },
+      "gallery-canvas-bg": {
+        "role": "neutral",
+        "displayName": "gallery-canvas-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0060 223.5)",
+          "oklch(26% 0.0060 223.5)",
+          "oklch(38% 0.0060 223.5)",
+          "oklch(49% 0.0060 223.5)",
+          "oklch(61% 0.0060 223.5)",
+          "oklch(72% 0.0060 223.5)",
+          "oklch(84% 0.0060 223.5)",
+          "oklch(95% 0.0060 223.5)"
+        ]
+      },
+      "gallery-plan-grid": {
+        "role": "neutral",
+        "displayName": "gallery-plan-grid",
+        "tonalRamp": [
+          "oklch(15% 0.0147 224.5)",
+          "oklch(26% 0.0147 224.5)",
+          "oklch(38% 0.0147 224.5)",
+          "oklch(49% 0.0147 224.5)",
+          "oklch(61% 0.0147 224.5)",
+          "oklch(72% 0.0147 224.5)",
+          "oklch(84% 0.0147 224.5)",
+          "oklch(95% 0.0147 224.5)"
+        ]
+      },
+      "gallery-plan-floor": {
+        "role": "neutral",
+        "displayName": "gallery-plan-floor",
+        "tonalRamp": [
+          "oklch(15% 0.0028 128.5)",
+          "oklch(26% 0.0028 128.5)",
+          "oklch(38% 0.0028 128.5)",
+          "oklch(49% 0.0028 128.5)",
+          "oklch(61% 0.0028 128.5)",
+          "oklch(72% 0.0028 128.5)",
+          "oklch(84% 0.0028 128.5)",
+          "oklch(95% 0.0028 128.5)"
+        ]
+      },
+      "editorial-bg": {
+        "role": "neutral",
+        "displayName": "杂志暖纸",
+        "tonalRamp": [
+          "oklch(15% 0.0153 77.1)",
+          "oklch(26% 0.0153 77.1)",
+          "oklch(38% 0.0153 77.1)",
+          "oklch(49% 0.0153 77.1)",
+          "oklch(61% 0.0153 77.1)",
+          "oklch(72% 0.0153 77.1)",
+          "oklch(84% 0.0153 77.1)",
+          "oklch(95% 0.0153 77.1)"
+        ]
+      },
+      "editorial-surface": {
+        "role": "neutral",
+        "displayName": "editorial-surface",
+        "tonalRamp": [
+          "oklch(15% 0.0119 79.8)",
+          "oklch(26% 0.0119 79.8)",
+          "oklch(38% 0.0119 79.8)",
+          "oklch(49% 0.0119 79.8)",
+          "oklch(61% 0.0119 79.8)",
+          "oklch(72% 0.0119 79.8)",
+          "oklch(84% 0.0119 79.8)",
+          "oklch(95% 0.0119 79.8)"
+        ]
+      },
+      "editorial-surface-alt": {
+        "role": "neutral",
+        "displayName": "editorial-surface-alt",
+        "tonalRamp": [
+          "oklch(15% 0.0219 69.8)",
+          "oklch(26% 0.0219 69.8)",
+          "oklch(38% 0.0219 69.8)",
+          "oklch(49% 0.0219 69.8)",
+          "oklch(61% 0.0219 69.8)",
+          "oklch(72% 0.0219 69.8)",
+          "oklch(84% 0.0219 69.8)",
+          "oklch(95% 0.0219 69.8)"
+        ]
+      },
+      "editorial-ink": {
+        "role": "neutral",
+        "displayName": "editorial-ink",
+        "tonalRamp": [
+          "oklch(15% 0.0197 28.4)",
+          "oklch(26% 0.0197 28.4)",
+          "oklch(38% 0.0197 28.4)",
+          "oklch(49% 0.0197 28.4)",
+          "oklch(61% 0.0197 28.4)",
+          "oklch(72% 0.0197 28.4)",
+          "oklch(84% 0.0197 28.4)",
+          "oklch(95% 0.0197 28.4)"
+        ]
+      },
+      "editorial-muted": {
+        "role": "neutral",
+        "displayName": "editorial-muted",
+        "tonalRamp": [
+          "oklch(15% 0.0308 44.5)",
+          "oklch(26% 0.0308 44.5)",
+          "oklch(38% 0.0308 44.5)",
+          "oklch(49% 0.0308 44.5)",
+          "oklch(61% 0.0308 44.5)",
+          "oklch(72% 0.0308 44.5)",
+          "oklch(84% 0.0308 44.5)",
+          "oklch(95% 0.0308 44.5)"
+        ]
+      },
+      "editorial-line": {
+        "role": "neutral",
+        "displayName": "editorial-line",
+        "tonalRamp": [
+          "oklch(15% 0.0246 63.4)",
+          "oklch(26% 0.0246 63.4)",
+          "oklch(38% 0.0246 63.4)",
+          "oklch(49% 0.0246 63.4)",
+          "oklch(61% 0.0246 63.4)",
+          "oklch(72% 0.0246 63.4)",
+          "oklch(84% 0.0246 63.4)",
+          "oklch(95% 0.0246 63.4)"
+        ]
+      },
+      "editorial-accent": {
+        "role": "primary",
+        "displayName": "杂志酒红",
+        "tonalRamp": [
+          "oklch(15% 0.0795 6.2)",
+          "oklch(26% 0.0795 6.2)",
+          "oklch(38% 0.0795 6.2)",
+          "oklch(49% 0.0795 6.2)",
+          "oklch(61% 0.0795 6.2)",
+          "oklch(72% 0.0795 6.2)",
+          "oklch(84% 0.0795 6.2)",
+          "oklch(95% 0.0795 6.2)"
+        ]
+      },
+      "editorial-accent-soft": {
+        "role": "neutral",
+        "displayName": "editorial-accent-soft",
+        "tonalRamp": [
+          "oklch(15% 0.0189 21.6)",
+          "oklch(26% 0.0189 21.6)",
+          "oklch(38% 0.0189 21.6)",
+          "oklch(49% 0.0189 21.6)",
+          "oklch(61% 0.0189 21.6)",
+          "oklch(72% 0.0189 21.6)",
+          "oklch(84% 0.0189 21.6)",
+          "oklch(95% 0.0189 21.6)"
+        ]
+      },
+      "editorial-nav": {
+        "role": "neutral",
+        "displayName": "editorial-nav",
+        "tonalRamp": [
+          "oklch(15% 0.0795 6.2)",
+          "oklch(26% 0.0795 6.2)",
+          "oklch(38% 0.0795 6.2)",
+          "oklch(49% 0.0795 6.2)",
+          "oklch(61% 0.0795 6.2)",
+          "oklch(72% 0.0795 6.2)",
+          "oklch(84% 0.0795 6.2)",
+          "oklch(95% 0.0795 6.2)"
+        ]
+      },
+      "editorial-nav-ink": {
+        "role": "neutral",
+        "displayName": "editorial-nav-ink",
+        "tonalRamp": [
+          "oklch(15% 0.0119 79.8)",
+          "oklch(26% 0.0119 79.8)",
+          "oklch(38% 0.0119 79.8)",
+          "oklch(49% 0.0119 79.8)",
+          "oklch(61% 0.0119 79.8)",
+          "oklch(72% 0.0119 79.8)",
+          "oklch(84% 0.0119 79.8)",
+          "oklch(95% 0.0119 79.8)"
+        ]
+      },
+      "editorial-canvas-bg": {
+        "role": "neutral",
+        "displayName": "editorial-canvas-bg",
+        "tonalRamp": [
+          "oklch(15% 0.0305 67.4)",
+          "oklch(26% 0.0305 67.4)",
+          "oklch(38% 0.0305 67.4)",
+          "oklch(49% 0.0305 67.4)",
+          "oklch(61% 0.0305 67.4)",
+          "oklch(72% 0.0305 67.4)",
+          "oklch(84% 0.0305 67.4)",
+          "oklch(95% 0.0305 67.4)"
+        ]
+      },
+      "editorial-plan-grid": {
+        "role": "neutral",
+        "displayName": "editorial-plan-grid",
+        "tonalRamp": [
+          "oklch(15% 0.0281 56.7)",
+          "oklch(26% 0.0281 56.7)",
+          "oklch(38% 0.0281 56.7)",
+          "oklch(49% 0.0281 56.7)",
+          "oklch(61% 0.0281 56.7)",
+          "oklch(72% 0.0281 56.7)",
+          "oklch(84% 0.0281 56.7)",
+          "oklch(95% 0.0281 56.7)"
+        ]
+      },
+      "editorial-plan-floor": {
+        "role": "neutral",
+        "displayName": "editorial-plan-floor",
+        "tonalRamp": [
+          "oklch(15% 0.0159 82.8)",
+          "oklch(26% 0.0159 82.8)",
+          "oklch(38% 0.0159 82.8)",
+          "oklch(49% 0.0159 82.8)",
+          "oklch(61% 0.0159 82.8)",
+          "oklch(72% 0.0159 82.8)",
+          "oklch(84% 0.0159 82.8)",
+          "oklch(95% 0.0159 82.8)"
+        ]
+      },
+      "focus": {
+        "role": "neutral",
+        "displayName": "focus",
+        "tonalRamp": [
+          "oklch(15% 0.0952 196.8)",
+          "oklch(26% 0.0952 196.8)",
+          "oklch(38% 0.0952 196.8)",
+          "oklch(49% 0.0952 196.8)",
+          "oklch(61% 0.0952 196.8)",
+          "oklch(72% 0.0952 196.8)",
+          "oklch(84% 0.0952 196.8)",
+          "oklch(95% 0.0952 196.8)"
+        ]
+      },
+      "danger": {
+        "role": "neutral",
+        "displayName": "danger",
+        "tonalRamp": [
+          "oklch(15% 0.1370 33.1)",
+          "oklch(26% 0.1370 33.1)",
+          "oklch(38% 0.1370 33.1)",
+          "oklch(49% 0.1370 33.1)",
+          "oklch(61% 0.1370 33.1)",
+          "oklch(72% 0.1370 33.1)",
+          "oklch(84% 0.1370 33.1)",
+          "oklch(95% 0.1370 33.1)"
+        ]
+      },
+      "danger-soft": {
+        "role": "neutral",
+        "displayName": "danger-soft",
+        "tonalRamp": [
+          "oklch(15% 0.0141 39.4)",
+          "oklch(26% 0.0141 39.4)",
+          "oklch(38% 0.0141 39.4)",
+          "oklch(49% 0.0141 39.4)",
+          "oklch(61% 0.0141 39.4)",
+          "oklch(72% 0.0141 39.4)",
+          "oklch(84% 0.0141 39.4)",
+          "oklch(95% 0.0141 39.4)"
+        ]
+      },
+      "night": {
+        "role": "neutral",
+        "displayName": "night",
+        "tonalRamp": [
+          "oklch(15% 0.0301 233.7)",
+          "oklch(26% 0.0301 233.7)",
+          "oklch(38% 0.0301 233.7)",
+          "oklch(49% 0.0301 233.7)",
+          "oklch(61% 0.0301 233.7)",
+          "oklch(72% 0.0301 233.7)",
+          "oklch(84% 0.0301 233.7)",
+          "oklch(95% 0.0301 233.7)"
+        ]
+      },
+      "folio-paper": {
+        "role": "neutral",
+        "displayName": "folio-paper",
+        "tonalRamp": [
+          "oklch(15% 0.0131 82.4)",
+          "oklch(26% 0.0131 82.4)",
+          "oklch(38% 0.0131 82.4)",
+          "oklch(49% 0.0131 82.4)",
+          "oklch(61% 0.0131 82.4)",
+          "oklch(72% 0.0131 82.4)",
+          "oklch(84% 0.0131 82.4)",
+          "oklch(95% 0.0131 82.4)"
+        ]
+      },
+      "folio-ink": {
+        "role": "neutral",
+        "displayName": "folio-ink",
+        "tonalRamp": [
+          "oklch(15% 0.0137 48.2)",
+          "oklch(26% 0.0137 48.2)",
+          "oklch(38% 0.0137 48.2)",
+          "oklch(49% 0.0137 48.2)",
+          "oklch(61% 0.0137 48.2)",
+          "oklch(72% 0.0137 48.2)",
+          "oklch(84% 0.0137 48.2)",
+          "oklch(95% 0.0137 48.2)"
+        ]
+      },
+      "folio-line": {
+        "role": "neutral",
+        "displayName": "folio-line",
+        "tonalRamp": [
+          "oklch(15% 0.0192 75.3)",
+          "oklch(26% 0.0192 75.3)",
+          "oklch(38% 0.0192 75.3)",
+          "oklch(49% 0.0192 75.3)",
+          "oklch(61% 0.0192 75.3)",
+          "oklch(72% 0.0192 75.3)",
+          "oklch(84% 0.0192 75.3)",
+          "oklch(95% 0.0192 75.3)"
+        ]
+      },
+      "folio-selected": {
+        "role": "neutral",
+        "displayName": "folio-selected",
+        "tonalRamp": [
+          "oklch(15% 0.0212 72.1)",
+          "oklch(26% 0.0212 72.1)",
+          "oklch(38% 0.0212 72.1)",
+          "oklch(49% 0.0212 72.1)",
+          "oklch(61% 0.0212 72.1)",
+          "oklch(72% 0.0212 72.1)",
+          "oklch(84% 0.0212 72.1)",
+          "oklch(95% 0.0212 72.1)"
+        ]
+      },
+      "folio-hover": {
+        "role": "neutral",
+        "displayName": "folio-hover",
+        "tonalRamp": [
+          "oklch(15% 0.0177 73.1)",
+          "oklch(26% 0.0177 73.1)",
+          "oklch(38% 0.0177 73.1)",
+          "oklch(49% 0.0177 73.1)",
+          "oklch(61% 0.0177 73.1)",
+          "oklch(72% 0.0177 73.1)",
+          "oklch(84% 0.0177 73.1)",
+          "oklch(95% 0.0177 73.1)"
+        ]
+      },
+      "folio-view-hover": {
+        "role": "neutral",
+        "displayName": "folio-view-hover",
+        "tonalRamp": [
+          "oklch(15% 0.0209 67.6)",
+          "oklch(26% 0.0209 67.6)",
+          "oklch(38% 0.0209 67.6)",
+          "oklch(49% 0.0209 67.6)",
+          "oklch(61% 0.0209 67.6)",
+          "oklch(72% 0.0209 67.6)",
+          "oklch(84% 0.0209 67.6)",
+          "oklch(95% 0.0209 67.6)"
+        ]
+      },
+      "folio-view-text": {
+        "role": "neutral",
+        "displayName": "folio-view-text",
+        "tonalRamp": [
+          "oklch(15% 0.0119 67.7)",
+          "oklch(26% 0.0119 67.7)",
+          "oklch(38% 0.0119 67.7)",
+          "oklch(49% 0.0119 67.7)",
+          "oklch(61% 0.0119 67.7)",
+          "oklch(72% 0.0119 67.7)",
+          "oklch(84% 0.0119 67.7)",
+          "oklch(95% 0.0119 67.7)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "gallery-display": {
+        "displayName": "gallery-display",
+        "purpose": "项目首页标题"
+      },
+      "editorial-display": {
+        "displayName": "editorial-display",
+        "purpose": "刊页项目名；横向窄桌面 59px，竖屏 43px，手机 35px；长标题独立 36px 分支"
+      },
+      "gallery-showcase": {
+        "displayName": "gallery-showcase",
+        "purpose": "独立展示页标题"
+      },
+      "editorial-showcase": {
+        "displayName": "editorial-showcase",
+        "purpose": "展示页标题；700px 及以下为 32px，房间近景隐藏"
+      },
+      "gallery-title": {
+        "displayName": "gallery-title",
+        "purpose": "项目条目标题"
+      },
+      "editorial-title": {
+        "displayName": "editorial-title",
+        "purpose": "刊页方案轨道名；1600px 以上为 27px，手机 22px"
+      },
+      "body": {
+        "displayName": "body",
+        "purpose": "操作界面文字；以具体组件覆盖为准"
+      },
+      "description": {
+        "displayName": "description",
+        "purpose": "操作界面文字；以具体组件覆盖为准"
+      },
+      "button": {
+        "displayName": "button",
+        "purpose": "操作界面文字；以具体组件覆盖为准"
+      },
+      "label": {
+        "displayName": "label",
+        "purpose": "操作界面文字；以具体组件覆盖为准"
+      }
+    },
+    "shadows": [
+      {
+        "name": "scene-tools",
+        "value": "0 6px 25px #17344012",
+        "purpose": "画布浮动工具"
+      },
+      {
+        "name": "show-controls",
+        "value": "0 7px 35px #17344014",
+        "purpose": "展示页控制条"
+      },
+      {
+        "name": "dialog",
+        "value": "0 25px 100px #102c3a33",
+        "purpose": "模态对话框"
+      },
+      {
+        "name": "segment-active",
+        "value": "0 2px 4px #17344010",
+        "purpose": "常规分段按钮选中"
+      },
+      {
+        "name": "folio-views",
+        "value": "0 6px 24px #3229210c",
+        "purpose": "刊页浮动视角条"
+      },
+      {
+        "name": "folio-note",
+        "value": "0 8px 24px #382b2920",
+        "purpose": "家具说明"
+      },
+      {
+        "name": "folio-index",
+        "value": "-20px 0 65px #21170d24",
+        "purpose": "项目索引抽屉"
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.16,1,.3,1)",
+        "purpose": "CSS 与 WAAPI 入场、图像承接"
+      },
+      {
+        "name": "scene-transfer",
+        "value": "850ms; FLIP; opacity 1 through 75%, then 0",
+        "purpose": "刊页到编辑或展示画布、gallery 封面到画布、3D 编辑与展示往返"
+      },
+      {
+        "name": "canvas-arrival",
+        "value": "220ms; delay 630ms",
+        "purpose": "真实 Canvas 延后淡入，避免双模型叠显"
+      },
+      {
+        "name": "panel-arrival",
+        "value": "600ms; translateY(18px) → 0; delay 260ms + index × 65ms",
+        "purpose": "面板或展示控件错开出现"
+      },
+      {
+        "name": "camera",
+        "value": "700ms; 1 - (1 - t)^4",
+        "purpose": "房间与全屋视角缓动"
+      },
+      {
+        "name": "gallery-cover",
+        "value": "600ms",
+        "purpose": "展馆封面裁切淡入与悬停图像缩放"
+      },
+      {
+        "name": "show-copy",
+        "value": "750ms",
+        "purpose": "展示标题与说明 CSS 裁切淡入"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "跳过 FLIP、WAAPI、CSS 动画及相机缓动，取消杂志悬停位移"
+      },
+      {
+        "name": "folio-enter",
+        "value": "heading 1000ms / reading 1100ms / shelf 900ms",
+        "purpose": "首次进入实时刊页"
+      },
+      {
+        "name": "folio-switch",
+        "value": "850ms clip-path inset(0) → inset(0 0 0 100%); heading 700ms; reading 900ms",
+        "purpose": "真实项目布局切换，示例间保留相机"
+      },
+      {
+        "name": "folio-index",
+        "value": "550ms translateX(100%) → 0",
+        "purpose": "原生项目索引模态抽屉"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide-min",
+        "value": "1600px"
+      },
+      {
+        "name": "desktop-max",
+        "value": "1150px"
+      },
+      {
+        "name": "tablet-max",
+        "value": "850px"
+      },
+      {
+        "name": "mobile-max",
+        "value": "600px"
+      },
+      {
+        "name": "editorial-desktop-max",
+        "value": "1100px"
+      },
+      {
+        "name": "editorial-mobile-max",
+        "value": "700px"
+      },
+      {
+        "name": "folio-portrait",
+        "value": "min-width:701px and max-aspect-ratio:1/1"
+      }
+    ],
+    "previewState": {
+      "purpose": "刊页到编辑/展示以及 3D 编辑展示往返保留相机与场景；按目标宽高比适配距离，非持久化书签",
+      "state": [
+        "position",
+        "target",
+        "aspect",
+        "fov",
+        "room",
+        "night",
+        "mode",
+        "furniture"
+      ],
+      "resizeGuardMs": 1000
+    }
+  },
+  "components": [
+    {
+      "name": "主操作",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "继承当前主题；无主题上下文时使用展馆回退值。",
+      "html": "<button class=\"ds-button-primary\">新建项目</button>",
+      "css": ".ds-button-primary{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:12px 18px;border:0;border-radius:var(--radius,10px);font-family:var(--font,\"Segoe UI\",\"Microsoft YaHei\",system-ui,sans-serif);font-size:14px;line-height:1.4;font-weight:550;cursor:pointer;transition:background .2s,transform .25s var(--ease,cubic-bezier(.16,1,.3,1)),box-shadow .2s;background:var(--accent,#176c72);color:white}.ds-button-primary:hover:not(:disabled){transform:translateY(-1px);background:color-mix(in srgb,var(--accent,#176c72),black 12%)}.ds-button-primary:active:not(:disabled){transform:translateY(0)}.ds-button-primary:focus-visible{outline:3px solid #339fa1;outline-offset:3px}.ds-button-primary:disabled{opacity:.42;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-button-primary{transition:none}.ds-button-primary:hover:not(:disabled){transform:none}}"
+    },
+    {
+      "name": "次操作",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "继承当前主题；无主题上下文时使用展馆回退值。",
+      "html": "<button class=\"ds-button-secondary\">返回项目</button>",
+      "css": ".ds-button-secondary{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:12px 18px;border:0;border-radius:var(--radius,10px);font-family:var(--font,\"Segoe UI\",\"Microsoft YaHei\",system-ui,sans-serif);font-size:14px;line-height:1.4;font-weight:550;cursor:pointer;transition:background .2s,transform .25s var(--ease,cubic-bezier(.16,1,.3,1)),box-shadow .2s;background:var(--surface,#fff);color:var(--ink,#1a3542);box-shadow:inset 0 0 0 1px var(--line,#dce3e7)}.ds-button-secondary:hover:not(:disabled){transform:translateY(-1px);background:var(--surface-alt,#eef3f5)}.ds-button-secondary:active:not(:disabled){transform:translateY(0)}.ds-button-secondary:focus-visible{outline:3px solid #339fa1;outline-offset:3px}.ds-button-secondary:disabled{opacity:.42;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-button-secondary{transition:none}.ds-button-secondary:hover:not(:disabled){transform:none}}"
+    },
+    {
+      "name": "危险操作",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "继承当前主题；无主题上下文时使用展馆回退值。",
+      "html": "<button class=\"ds-button-danger\">删除项目</button>",
+      "css": ".ds-button-danger{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:12px 18px;border:0;border-radius:var(--radius,10px);font-family:var(--font,\"Segoe UI\",\"Microsoft YaHei\",system-ui,sans-serif);font-size:14px;line-height:1.4;font-weight:550;cursor:pointer;transition:background .2s,transform .25s var(--ease,cubic-bezier(.16,1,.3,1)),box-shadow .2s;background:#f8ece8;color:#a33f2b}.ds-button-danger:hover:not(:disabled){transform:translateY(-1px);}.ds-button-danger:active:not(:disabled){transform:translateY(0)}.ds-button-danger:focus-visible{outline:3px solid #339fa1;outline-offset:3px}.ds-button-danger:disabled{opacity:.42;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-button-danger{transition:none}.ds-button-danger:hover:not(:disabled){transform:none}}"
+    },
+    {
+      "name": "数值字段",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "属性面板位置参数。",
+      "html": "<label class=\"ds-field\">东西 / m<input type=\"number\" step=\"0.1\" value=\"2.4\"></label>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:9px;font:12px var(--font,\"Segoe UI\",\"Microsoft YaHei\",sans-serif);color:var(--muted,#64747c);margin-bottom:20px}.ds-field input{background:var(--bg,#f5f7f8);border:1px solid var(--line,#dce3e7);border-radius:6px;padding:11px;color:var(--ink,#1a3542);font:inherit;font-variant-numeric:tabular-nums;caret-color:var(--accent,#176c72)}.ds-field input:focus-visible{outline:3px solid #339fa1;outline-offset:3px}"
+    },
+    {
+      "name": "房间导航",
+      "kind": "nav",
+      "refersTo": "room-entry",
+      "description": "选中底色与主题强调色保持一致。",
+      "html": "<nav class=\"ds-rooms\" aria-label=\"空间\"><button class=\"ds-room\" aria-current=\"true\"><span>主卧<small>休息与收纳</small></span></button><button class=\"ds-room\">客厅</button></nav>",
+      "css": ".ds-room{display:flex;align-items:center;width:100%;padding:12px 10px;gap:11px;border:0;background:none;color:var(--ink,#1a3542);border-radius:7px;text-align:left;font:12px var(--font,\"Segoe UI\",\"Microsoft YaHei\",sans-serif);margin-bottom:3px;cursor:pointer}.ds-room small{display:block;font-size:10px;color:var(--muted,#64747c);margin-top:6px}.ds-room[aria-current=true]{background:var(--accent-soft,#e2f0ee);color:var(--accent,#176c72)}.ds-room:hover{background:var(--surface-alt,#eef3f5)}.ds-room:focus-visible{outline:3px solid #339fa1;outline-offset:3px}"
+    },
+    {
+      "name": "原型标签",
+      "kind": "chip",
+      "refersTo": "prototype-badge",
+      "description": "静态状态标签，不具有点击行为。",
+      "html": "<span class=\"ds-badge\">交互原型 / 设计方向对比</span>",
+      "css": ".ds-badge{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid var(--line,#dce3e7);color:var(--muted,#64747c);border-radius:5px;font:11px var(--font,\"Segoe UI\",\"Microsoft YaHei\",sans-serif);white-space:nowrap}"
+    },
+    {
+      "name": "项目封面",
+      "kind": "card",
+      "refersTo": "project-cover",
+      "description": "自包含预览复用 app.js 的 floorDiagram SVG；此片段为展馆样式；正式封面由 Three.js 生成。",
+      "html": "<article class=\"ds-project\"><a class=\"ds-cover\" href=\"#project\" aria-label=\"打开示例空间\"><svg viewBox=\"0 0 280 190\" fill=\"none\" aria-label=\"示例平面轮廓\"><path d=\"M35 30h210v130H95v-45H35zM95 30v85h150M170 30v60h75\" stroke=\"currentColor\" stroke-width=\"3\"/><path d=\"M102 126h60v27h-60zM185 44h45v30h-45zM110 50h43v38h-43z\" stroke=\"currentColor\" opacity=\".4\"/><path d=\"M35 14h210M35 9v10M245 9v10\" stroke=\"currentColor\"/><text x=\"140\" y=\"10\" text-anchor=\"middle\" fill=\"currentColor\" stroke=\"none\" font-size=\"9\">已知长度</text></svg><span class=\"ds-cover-action\">打开项目</span></a><div class=\"ds-project-copy\"><h2>示例空间</h2><p>模型布局 · 待实测</p></div></article>",
+      "css": ".ds-project{color:var(--ink,#1a3542);font-family:var(--font,\"Segoe UI\",\"Microsoft YaHei\",sans-serif)}.ds-cover{display:block;position:relative;aspect-ratio:1.65;overflow:hidden;border-radius:12px;background:var(--canvas-bg,#e9eef0);color:inherit}.ds-cover svg{width:100%;height:100%;transition:transform .6s var(--ease,cubic-bezier(.16,1,.3,1))}.ds-cover:hover svg{transform:scale(1.04)}.ds-cover-action{position:absolute;bottom:16px;right:16px;font-size:11px;background:var(--surface,#fff);padding:10px 13px;border-radius:6px;opacity:0;transform:translateY(4px);transition:opacity .2s,transform .2s}.ds-cover:hover .ds-cover-action,.ds-cover:focus-visible .ds-cover-action{opacity:1;transform:none}.ds-cover:focus-visible{outline:3px solid #339fa1;outline-offset:3px}.ds-project-copy{padding:17px 2px 0}.ds-project-copy h2{font-size:17px;font-weight:600;margin:0 0 5px}.ds-project-copy p{font-size:12px;color:var(--muted,#64747c);margin:0;line-height:1.8}@media(prefers-reduced-motion:reduce){.ds-cover svg,.ds-cover-action{transition:none}.ds-cover:hover svg{transform:none}}"
+    },
+    {
+      "name": "杂志主操作",
+      "kind": "button",
+      "refersTo": "button-primary-editorial",
+      "description": "杂志主题的酒红主操作；首页主要入口另用更宽内距。",
+      "html": "<button class=\"ds-editorial-primary\">新建项目</button>",
+      "css": ".ds-editorial-primary{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:12px 18px;border:0;border-radius:3px;background:#743c49;color:#fff;font:550 14px/1.4 \"Segoe UI\",\"Microsoft YaHei\",system-ui,sans-serif;cursor:pointer;transition:background .2s,transform .25s cubic-bezier(.16,1,.3,1)}.ds-editorial-primary:hover:not(:disabled){background:color-mix(in srgb,#743c49,black 12%);transform:translateY(-1px)}.ds-editorial-primary:active:not(:disabled){transform:none}.ds-editorial-primary:focus-visible{outline:3px solid #743c49;outline-offset:3px}.ds-editorial-primary:disabled{opacity:.42;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-editorial-primary{transition:none}.ds-editorial-primary:hover{transform:none}}"
+    },
+    {
+      "name": "刊页观察视角",
+      "kind": "nav",
+      "refersTo": "folio-view",
+      "description": "切换真实相机的三个观察入口；自定义空间不显示客厅。",
+      "html": "<nav class=\"ds-folio-views\" aria-label=\"观察视角\"><button>整层</button><button aria-pressed=\"true\">客厅</button><button>俯视</button></nav>",
+      "css": ".ds-folio-views{display:inline-flex;gap:4px;background:var(--folio-paper,#f6f1e8);padding:5px;box-shadow:0 6px 24px #3229210c}.ds-folio-views button{border:0;background:none;color:var(--folio-ink,#352d29);font:12px \"Segoe UI\",\"Microsoft YaHei\",sans-serif;padding:11px 17px;cursor:pointer;transition:background .3s,color .3s}.ds-folio-views button[aria-pressed=true]{background:#743c49;color:#fff8f1}.ds-folio-views button:not([aria-pressed=true]):hover{background:#e8dcd0}.ds-folio-views button:active{background:#ead9d8}.ds-folio-views button:focus-visible,.ds-folio-project:focus-visible{outline:3px solid #743c49;outline-offset:3px}"
+    },
+    {
+      "name": "刊页当前方案",
+      "kind": "custom",
+      "refersTo": "folio-project-active",
+      "description": "方案轨道的选中项目；展示当前布局，不是静态封面卡片。",
+      "html": "<button class=\"ds-folio-project\" aria-pressed=\"true\"><span>原木自然</span><small>示例住宅 · 家具布局提案</small></button>",
+      "css": ".ds-folio-project{position:relative;display:flex;flex-direction:column;gap:9px;min-width:190px;border:0;border-left:1px solid #d7cec2;padding:22px 30px 18px;text-align:left;background:#eadfd2;color:#743c49;cursor:pointer}.ds-folio-project>span{font:500 23px/1.4 \"Noto Serif SC\",\"Songti SC\",\"SimSun\",serif}.ds-folio-project small{font:10px \"Segoe UI\",\"Microsoft YaHei\",sans-serif;color:#756057}.ds-folio-project:after{content:\"\";position:absolute;left:30px;right:30px;bottom:0;height:3px;background:#743c49}.ds-folio-project:hover{background:#eee5da}.ds-folio-project:active{background:#ead9d8}.ds-folio-views button:focus-visible,.ds-folio-project:focus-visible{outline:3px solid #743c49;outline-offset:3px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "建筑展馆 × 空间作品刊页",
+    "overview": "同一份可编辑空间保留两种表达。建筑展馆以冷白工作面、深海蓝侧栏与湖蓝操作色组织项目目录；家居杂志以暖纸导读、宋体项目名和实时三维空间组织作品刊页。杂志首先让用户探索真实家具关系，再进入编辑；项目管理收进索引。\n\n编辑工作台保留工具、房间、画布和演示助手的任务层级，独立展示页以空间浏览为主。模型、运行时过渡截图与图示来自项目自身的 Three.js 几何和 SVG；不使用商业室内摄影代替实际空间。当前是本地前端原型，保留演示助手、本地保存和示例尺寸标注。",
+    "keyCharacteristics": [
+      "展馆保留侧栏与模型封面目录；杂志为导读、实时空间与方案轨道。",
+      "纸色与墨色承载内容；酒红用于动作、选中与项目名字的强调。",
+      "示例方案共享观察方位，比较实际家具摆放与组合。",
+      "平面刊页、细分隔线和少量浮动控件形成层级。"
+    ],
+    "rules": [
+      {
+        "name": "Shared Action Rule",
+        "body": "主操作、房间选中、输入焦点和材质选中沿用当前主题的强调色；主题切换不改变操作含义。",
+        "section": "colors"
+      },
+      {
+        "name": "Two Voices Rule",
+        "body": "展馆的大标题使用 Noto Sans SC，杂志的大标题使用 Noto Serif SC；紧凑工具与数值编辑保留无衬线操作字体。",
+        "section": "typography"
+      },
+      {
+        "name": "Canvas Layer Rule",
+        "body": "普通项目条目与工作面保持平面结构，浮动工具与模态对话框才使用明显的柔和阴影。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** 保留 gallery 目录与 editorial 实时空间刊页各自的结构。",
+      "**Do** 使用当前主题变量，并区分 folio 局部纸色与工作台纸色。",
+      "**Do** 保留真实模型、示例尺寸、手动描绘、演示助手和本地保存标识。",
+      "**Do** 检查横屏、竖屏与手机构图，以及键盘焦点和 reduced-motion 分支。"
+    ],
+    "donts": [
+      "**Don't** 将旧的精选卡片首页继续当作当前杂志方向，或把换色称为结构重做。",
+      "**Don't** 将固定设施随家具风格移动，或把仅换色称为布局方案。",
+      "**Don't** 将真实模型接入、账号、自动识图、云服务或预算模块写成现有能力。",
+      "**Don't** 将辅助小字推广为正文标准，或把测试通过、历史 ship 当作获奖品质证明。"
+    ]
+  }
+}

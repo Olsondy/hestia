@@ -16,6 +16,15 @@ output/*
 output/3d/*
 !output/3d/ideal-home-3d.html
 !output/3d/layout-comparison-r10.png
+!output/prototype/
+output/prototype/*
+!output/prototype/index.html
+
+# Local design tooling and browser verification evidence.
+.impeccable/review/
+.impeccable/cache/
+.impeccable/config.local.json
+.impeccable/bin/
 
 # User uploads belong in local/project storage, never in the demo repository.
 uploads/

@@ -9,7 +9,11 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node scripts/check-layouts.mjs",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "build:prototype": "node scripts/build-workbench.mjs",
+    "preview:prototype": "node scripts/serve-workbench.mjs",
+    "test:prototype": "node --test scripts/check-workbench.mjs",
+    "check:prototype": "npm run build:prototype && npm run test:prototype"
   },
   "dependencies": { "three": "^0.186.1" },
   "devDependencies": { "esbuild": "^0.28.2" }

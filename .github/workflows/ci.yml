@@ -19,5 +19,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run check:prototype
       - name: Verify the committed demo matches the source
-        run: git diff --exit-code -- output/3d/ideal-home-3d.html
+        run: git diff --exit-code -- output/3d/ideal-home-3d.html output/prototype/index.html

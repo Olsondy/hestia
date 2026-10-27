@@ -3,6 +3,7 @@ import { DomainError, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationBrief, ConversationState } from '../../contracts/src/tasks';
 import { savePlannedCandidateInTransaction } from '../../candidates/src/service';
 import { hash } from '../../candidates/src/checks';
+import { projectAccess } from '../../workspaces/src/access';
 import { planLayout } from './planner';
 import type { LayoutPlan, PlanDecision } from './contract';
 
@@ -22,7 +23,7 @@ export async function planRoomCandidateInTransaction(client: PoolClient, input: 
     if (previous.plannerRequestHash !== plannerRequestHash || !previous.report) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已经用于另一布局请求。', 409);
     return { status: 'recommended', candidateId: previous.candidateId, candidateRevision: previous.candidateRevision, checkId: previous.checkId, report: previous.report };
   }
-  const project = (await client.query('SELECT revision,snapshot FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [input.projectId, input.ownerId])).rows[0];
+  const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [input.projectId, input.ownerId])).rows[0];
   if (!project || project.revision !== input.baseRevision) throw new DomainError('REVISION_CONFLICT', '项目已变化，不能保存旧布局。', 409);
   const state = spatialStateSchema.parse(project.snapshot);
   // Reuse geometry only from an actual prior candidate of this task, never an ID supplied by
@@ -32,8 +33,8 @@ export async function planRoomCandidateInTransaction(client: PoolClient, input: 
   let seedCandidate: { id: string; revision: number } | undefined;
   if (history?.outcome?.candidateId) {
     const candidate = (await client.query(`SELECT id,revision,base_revision,base_state,objects,planner_context FROM candidates
-      WHERE id=$1 AND owner_id=$2 AND project_id=$3 AND status<>'adopted' FOR UPDATE`,
-      [history.outcome.candidateId, input.ownerId, input.projectId])).rows[0];
+      WHERE id=$1 AND project_id=$2 AND status<>'adopted' FOR UPDATE`,
+      [history.outcome.candidateId, input.projectId])).rows[0];
     if (candidate && candidate.base_revision === project.revision && hash(candidate.base_state) === hash(state)
       && candidate.planner_context?.taskId === input.taskId && candidate.planner_context?.intentVersion === history.intentVersion) {
       seedObjects = candidate.objects;

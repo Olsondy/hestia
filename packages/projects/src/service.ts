@@ -1,15 +1,13 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, desc } from 'drizzle-orm';
-import { db, pool, transaction } from '../../persistence/src/client';
-import { projects, resources } from '../../persistence/src/schema';
+import { pool, transaction } from '../../persistence/src/client';
 import { courtyard, angled } from '../../scene-runtime/src/fixtures';
 import { sceneSnapshotSchema, type SceneSnapshot } from '../../scene-runtime/src/snapshot';
 import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema, DomainError,
   type SpatialState, type ProjectView, type ProjectSummary } from '../../contracts/src/project';
 
 import { actingWorkspace } from '../../workspaces/src/service';
-import type { Principal } from '../../workspaces/src/access';
+import { projectAccess, type Principal } from '../../workspaces/src/access';
 export type { Principal } from '../../workspaces/src/access';
 const notFound = () => new DomainError('NOT_FOUND', '项目或资源不存在。', 404);
 function identity(principal: Principal) {
@@ -34,19 +32,21 @@ export function toScene(state: SpatialState, label: string): SceneSnapshot {
     objects: [...state.fixedFacts.objects, ...state.currentLayout.objects],
   });
 }
+/** Projects of the acting workspace (personal unless the principal names another workspace it belongs to). */
 export async function listProjects(principal: Principal): Promise<ProjectSummary[]> {
-  const rows = await db.select().from(projects).where(eq(projects.ownerId, identity(principal))).orderBy(desc(projects.updatedAt));
+  identity(principal);
+  const rows = await transaction(async client => (await client.query('SELECT id,name,revision,snapshot,updated_at FROM projects WHERE workspace_id=$1 ORDER BY updated_at DESC',
+    [await actingWorkspace(client, principal)])).rows);
   return rows.map(row => ({ id: row.id, name: row.name, revision: row.revision,
-    synthetic: spatialStateSchema.parse(row.snapshot).synthetic, updatedAt: row.updatedAt.toISOString() }));
+    synthetic: spatialStateSchema.parse(row.snapshot).synthetic, updatedAt: row.updated_at.toISOString() }));
 }
 export async function getProject(principal: Principal, projectId: string): Promise<ProjectView> {
   const id = idSchema.parse(projectId);
-  const [row] = await db.select().from(projects).where(and(eq(projects.id, id), eq(projects.ownerId, identity(principal))));
+  const row = (await pool.query(`SELECT name,revision,snapshot,updated_at FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, identity(principal)])).rows[0];
   if (!row) throw notFound();
   const state = spatialStateSchema.parse(row.snapshot);
-  const files = await db.select({ id: resources.id, projectId: resources.projectId, mediaType: resources.mediaType, state: resources.state })
-    .from(resources).where(eq(resources.projectId, id));
-  return { id, name: row.name, revision: row.revision, updatedAt: row.updatedAt.toISOString(), synthetic: state.synthetic,
+  const files = (await pool.query('SELECT id,project_id AS "projectId",media_type AS "mediaType",state FROM resources WHERE project_id=$1', [id])).rows;
+  return { id, name: row.name, revision: row.revision, updatedAt: row.updated_at.toISOString(), synthetic: state.synthetic,
     scale: state.scale, scene: toScene(state, row.name), fixedFacts: { id: state.fixedFacts.id, revision: state.fixedFacts.revision },
     currentLayout: { id: state.currentLayout.id, revision: state.currentLayout.revision },
     lockedObjectIds: state.currentLayout.lockedObjectIds,
@@ -78,7 +78,7 @@ export async function renameProject(principal: Principal, projectId: string, inp
   const hash = createHash('sha256').update(JSON.stringify({ kind: 'rename', projectId: id, ...value })).digest('hex');
   await transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${ownerId}:${value.operationId}`]);
-    const row = (await client.query('SELECT * FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, ownerId])).rows[0];
+    const row = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, ownerId])).rows[0];
     if (!row) throw notFound();
     const previous = (await client.query('SELECT request_hash FROM operations WHERE owner_id=$1 AND id=$2', [ownerId, value.operationId])).rows[0];
     if (previous) {
@@ -95,7 +95,7 @@ export async function renameProject(principal: Principal, projectId: string, inp
 }
 /** Every resource consumer supplies its project scope, including workers and direct downloads. */
 export async function getResource(principal: Principal, projectId: string, resourceId: string) {
-  const result = await pool.query('SELECT r.* FROM resources r JOIN projects p ON p.id=r.project_id WHERE r.id=$1 AND r.project_id=$2 AND p.owner_id=$3',
+  const result = await pool.query(`SELECT r.* FROM resources r WHERE r.id=$1 AND r.project_id=$2 AND ${projectAccess('r.project_id', '$3')}`,
     [idSchema.parse(resourceId), idSchema.parse(projectId), identity(principal)]);
   if (!result.rowCount) throw notFound();
   return result.rows[0] as { id: string; project_id: string; object_key: string; media_type: string; state: string };
@@ -105,7 +105,7 @@ export async function reserveResource(principal: Principal, projectId: string, i
   const value = z.object({ id: idSchema, mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']) }).strict().parse(input);
   const ownerId = identity(principal), id = idSchema.parse(projectId);
   return transaction(async client => {
-    const project = await client.query('SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR SHARE', [id, ownerId]);
+    const project = await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`, [id, ownerId]);
     if (!project.rowCount) throw notFound();
     await client.query('INSERT INTO resources(id,project_id,object_key,media_type,state) VALUES($1,$2,$3,$4,\'pending\') ON CONFLICT(id) DO NOTHING',
       [value.id, id, `${id}/${randomUUID()}`, value.mediaType]);

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { transaction } from '../../persistence/src/client';
 import { toScene, type Principal } from '../../projects/src/service';
+import { projectAccess } from '../../workspaces/src/access';
 import { DomainError, idSchema, spatialStateSchema, type SpatialState, type ProjectView } from '../../contracts/src/project';
 import { commandRequestSchema, furniturePoseSchema, type FurniturePose, type OperationSummary } from '../../contracts/src/commands';
 import { validatePlacement } from '../../geometry/src/placement';
@@ -56,12 +57,13 @@ function summary(row: CommandRow, state: SpatialState): OperationSummary {
 }
 const dependencySQL = `EXISTS(SELECT 1 FROM project_commands later WHERE later.project_id=c.project_id AND later.object_id=c.object_id
   AND later.revision>c.revision AND later.type<>'undo' AND later.undone_by IS NULL) AS has_dependency`;
-async function readCommand(client: PoolClient, ownerId: string, projectId: string, operationId: string) {
-  return (await client.query<CommandRow>(`SELECT c.*,${dependencySQL} FROM project_commands c WHERE c.owner_id=$1 AND c.project_id=$2 AND c.operation_id=$3`,
-    [ownerId, projectId, operationId])).rows[0];
+/** Project must already be authorized. `actorId` narrows to the caller's own operation (idempotent replay). */
+async function readCommand(client: PoolClient, projectId: string, operationId: string, actorId?: string) {
+  return (await client.query<CommandRow>(`SELECT c.*,${dependencySQL} FROM project_commands c WHERE c.project_id=$1 AND c.operation_id=$2
+    AND ($3::text IS NULL OR c.owner_id=$3) ORDER BY c.revision DESC LIMIT 1`, [projectId, operationId, actorId ?? null])).rows[0];
 }
-async function readView(client: PoolClient, ownerId: string, projectId: string) {
-  const row = (await client.query('SELECT * FROM projects WHERE id=$1 AND owner_id=$2', [projectId, ownerId])).rows[0];
+async function readView(client: PoolClient, userId: string, projectId: string) {
+  const row = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [projectId, userId])).rows[0];
   if (!row) throw notFound();
   const state = spatialStateSchema.parse(row.snapshot);
   const resources = (await client.query('SELECT id,project_id,media_type,state FROM resources WHERE project_id=$1', [projectId])).rows;
@@ -79,7 +81,7 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
   if (!ownerId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   const hash = createHash('sha256').update(JSON.stringify({ kind: 'command', projectId: id, ...request })).digest('hex');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${ownerId}:${request.operationId}`]);
-    const project = (await client.query('SELECT snapshot,revision FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, ownerId])).rows[0];
+    const project = (await client.query(`SELECT snapshot,revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, ownerId])).rows[0];
     if (!project) throw notFound();
     const previous = (await client.query('SELECT request_hash FROM operations WHERE owner_id=$1 AND id=$2', [ownerId, request.operationId])).rows[0];
     if (previous) {
@@ -88,7 +90,7 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
     }
     if (project.revision !== request.expectedRevision) throw new DomainError('REVISION_CONFLICT', '项目已有新修订，请重新加载后再试。', 409);
     const state = spatialStateSchema.parse(project.snapshot), command = request.command;
-    let objectId: string, before: Value, after: Value, undoOf: string | null = null;
+    let objectId: string, before: Value, after: Value, undoOf: string | null = null, undoActor: string | null = null;
     if (command.type === 'move-furniture') {
       objectId = command.objectId; const object = movable(state, objectId);
       if (state.currentLayout.lockedObjectIds.includes(objectId)) throw new DomainError('OBJECT_LOCKED', '家具已锁定，请先解锁。', 400,
@@ -102,11 +104,12 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
       if (before.locked === after.locked) throw new DomainError('NO_CHANGE', '锁定状态没有变化。');
       setLock(state, objectId, command.locked);
     } else {
-      const target = await readCommand(client, ownerId, id, command.targetOperationId);
+      // Any member may undo a command in a shared workspace project; the undo row records who undid it.
+      const target = await readCommand(client, id, command.targetOperationId);
       if (!target) throw notFound();
       const reason = undoRejection(target, state);
       if (reason) throw new DomainError('UNDO_DEPENDENCY', reason, 409);
-      objectId = target.object_id; before = target.after_value; after = target.before_value; undoOf = target.operation_id;
+      objectId = target.object_id; before = target.after_value; after = target.before_value; undoOf = target.operation_id; undoActor = target.owner_id;
       if (target.type === 'move-furniture') {
         const pose = furniturePoseSchema.parse(after); ensurePlacement(state, objectId, pose); setPose(state, objectId, pose);
       } else setLock(state, objectId, (after as { locked: boolean }).locked);
@@ -120,7 +123,7 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
     await client.query(`INSERT INTO project_commands(owner_id,operation_id,project_id,type,object_id,revision,layout_id,fixed_facts_id,fixed_facts_revision,before_value,after_value,undo_of)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [ownerId, request.operationId, id, command.type, objectId, revision,
       state.currentLayout.id, state.fixedFacts.id, state.fixedFacts.revision, before, after, undoOf]);
-    if (undoOf) await client.query('UPDATE project_commands SET undone_by=$1 WHERE owner_id=$2 AND operation_id=$3', [request.operationId, ownerId, undoOf]);
+    if (undoOf) await client.query('UPDATE project_commands SET undone_by=$1 WHERE owner_id=$2 AND operation_id=$3', [request.operationId, undoActor, undoOf]);
 }
 
 export async function executeCommand(principal: Principal, projectId: string, input: unknown) {
@@ -130,7 +133,7 @@ export async function executeCommand(principal: Principal, projectId: string, in
   return transaction(async client => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const { project, state } = await readView(client, ownerId, id);
-    const row = await readCommand(client, ownerId, id, request.operationId);
+    const row = await readCommand(client, id, request.operationId, ownerId);
     if (!row) throw notFound();
     return { project, operation: summary(row, state) };
   });
@@ -142,7 +145,7 @@ export async function listCommands(principal: Principal, projectId: string) {
   return transaction(async client => {
     await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const { state } = await readView(client, principal.userId, id);
-    const rows = await client.query<CommandRow>(`SELECT c.*,${dependencySQL} FROM project_commands c WHERE c.owner_id=$1 AND c.project_id=$2 ORDER BY c.revision DESC LIMIT 20`, [principal.userId, id]);
+    const rows = await client.query<CommandRow>(`SELECT c.*,${dependencySQL} FROM project_commands c WHERE c.project_id=$1 ORDER BY c.revision DESC LIMIT 20`, [id]);
     return rows.rows.map(row => summary(row, state));
   });
 }

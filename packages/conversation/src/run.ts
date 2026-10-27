@@ -3,6 +3,7 @@ import { DomainError, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationOutcome } from '../../contracts/src/tasks';
 import { executeCommandInTransaction } from '../../commands/src/service';
 import { pool, transaction } from '../../persistence/src/client';
+import { projectAccess } from '../../workspaces/src/access';
 import { appendEvent, type TaskRow } from '../../tasks/src/service';
 import { claimTask, fenced, type TaskClaim } from '../../tasks/src/runner';
 import { resolveConversation, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
@@ -60,7 +61,7 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
     if (typeof response.reply !== 'string' || !response.reply.trim())
       throw new DomainError('MODEL_REPLY_REQUIRED', '旧版或不完整响应缺少本轮答复，空间未修改；请重新发起本轮。');
     // Even read-only answers are explicitly tied to the accepted project revision.
-    const project = (await client.query('SELECT revision FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [row.project_id, row.owner_id])).rows[0];
+    const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [row.project_id, row.owner_id])).rows[0];
     if (!project || project.revision !== row.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已有新修订，本轮旧结果未应用；请重新发起。', 409);
     // UI discards abandoned-generation drafts. Replaying a durable, complete response in the
     // current generation preserves the answer after recovery without invoking the model again.
@@ -195,7 +196,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
       }
       row = await transaction(async client => {
         const current = await fenced(client, claim);
-        const project = (await client.query('SELECT revision FROM projects WHERE id=$1 AND owner_id=$2', [current.project_id, current.owner_id])).rows[0];
+        const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [current.project_id, current.owner_id])).rows[0];
         if (!project || project.revision !== current.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已更新，本轮未调用模型。', 409);
         reserveAttempt(current, { configurationId: configuration.id, profile,
           reason: attempts.length === 0 ? 'initial' : attempts.length === 1 ? 'retry' : 'fallback',

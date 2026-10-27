@@ -4,6 +4,7 @@ import { createRenderSchema, type RenderView, type RenderSource } from '../../co
 import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
 import type { SceneSnapshot } from '../../contracts/src/scene';
 import { toScene, type Principal } from '../../projects/src/service';
+import { projectAccess } from '../../workspaces/src/access';
 import { pool, transaction } from '../../persistence/src/client';
 import { privateStore, type PrivateFileStore } from '../../files/src/storage';
 import { enqueueRender } from './queue';
@@ -35,14 +36,14 @@ function view(row: RenderRow): RenderView {
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() };
 }
 const joined = `SELECT r.*,p.revision AS current_project_revision,c.revision AS current_candidate_revision
-  FROM project_renders r JOIN projects p ON p.id=r.project_id AND p.owner_id=r.owner_id
-  LEFT JOIN candidates c ON c.id=(r.source->>'candidateId')::uuid AND c.project_id=r.project_id AND c.owner_id=r.owner_id`;
+  FROM project_renders r JOIN projects p ON p.id=r.project_id
+  LEFT JOIN candidates c ON c.id=(r.source->>'candidateId')::uuid AND c.project_id=r.project_id`;
 export async function createRender(principal: Principal, projectId: string, input: unknown, queue?: PgBoss) {
   const userId = owner(principal), id = idSchema.parse(projectId), request = createRenderSchema.parse(input);
   const requestHash = hash({ kind: 'static-render', projectId: id, ...request }), versions = await renderVersions();
   const renderId = await transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
-    const project = (await client.query('SELECT * FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, userId])).rows[0];
+    const project = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
     if (!project) throw notFound();
     const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
     if (previous) {
@@ -53,7 +54,7 @@ export async function createRender(principal: Principal, projectId: string, inpu
     if (request.source.kind === 'current') {
       if (project.revision !== request.source.revision) throw new DomainError('REVISION_CONFLICT', '当前方案已更新，请重新选择版本。', 409);
     } else {
-      const candidate = (await client.query('SELECT * FROM candidates WHERE id=$1 AND project_id=$2 AND owner_id=$3 FOR SHARE', [request.source.candidateId, id, userId])).rows[0];
+      const candidate = (await client.query('SELECT * FROM candidates WHERE id=$1 AND project_id=$2 FOR SHARE', [request.source.candidateId, id])).rows[0];
       if (!candidate) throw notFound();
       if (candidate.revision !== request.source.revision) throw new DomainError('CANDIDATE_REVISION_CONFLICT', '候选已有新版本，请重新选择。', 409);
       const base = spatialStateSchema.parse(candidate.base_state);
@@ -76,14 +77,14 @@ export async function createRender(principal: Principal, projectId: string, inpu
   return getRender(principal, id, renderId);
 }
 export async function getRender(principal: Principal, projectId: string, renderId: string) {
-  const row = (await pool.query<RenderRow>(`${joined} WHERE r.id=$1 AND r.project_id=$2 AND r.owner_id=$3`,
+  const row = (await pool.query<RenderRow>(`${joined} WHERE r.id=$1 AND r.project_id=$2 AND ${projectAccess('r.project_id', '$3')}`,
     [idSchema.parse(renderId), idSchema.parse(projectId), owner(principal)])).rows[0];
   if (!row) throw notFound(); return view(row);
 }
 export async function listRenders(principal: Principal, projectId: string) {
   const id = idSchema.parse(projectId), userId = owner(principal);
-  if (!(await pool.query('SELECT 1 FROM projects WHERE id=$1 AND owner_id=$2', [id, userId])).rowCount) throw notFound();
-  return (await pool.query<RenderRow>(`${joined} WHERE r.project_id=$1 AND r.owner_id=$2 ORDER BY r.created_at DESC LIMIT 20`, [id, userId])).rows.map(view);
+  if (!(await pool.query(`SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, userId])).rowCount) throw notFound();
+  return (await pool.query<RenderRow>(`${joined} WHERE r.project_id=$1 ORDER BY r.created_at DESC LIMIT 20`, [id])).rows.map(view);
 }
 export async function readRender(principal: Principal, projectId: string, renderId: string, store: PrivateFileStore = privateStore()) {
   const result = await getRender(principal, projectId, renderId);

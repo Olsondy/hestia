@@ -5,6 +5,7 @@ import { createTaskSchema, conversationInputSchema, terminalTaskStatuses, type T
 import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationState } from '../../contracts/src/tasks';
 import type { Principal } from '../../projects/src/service';
+import { projectAccess } from '../../workspaces/src/access';
 import { pool, transaction } from '../../persistence/src/client';
 import { enqueueTask } from './queue';
 import { initialBrief, archiveTurn } from '../../conversation/src/brief';
@@ -42,7 +43,7 @@ export async function createTask(principal: Principal, projectId: string, input:
   const taskId = await transaction(async client => {
     // Match the commands advisory-lock namespace: one client operation cannot identify two effects.
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
-    const project = (await client.query('SELECT revision,snapshot FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, userId])).rows[0];
+    const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
     if (!project) throw notFound();
     const previous = (await client.query<TaskRow>('SELECT * FROM design_tasks WHERE owner_id=$1 AND request_id=$2', [userId, request.operationId])).rows[0];
     if (previous) {
@@ -80,9 +81,9 @@ export async function appendConversationInput(principal: Principal, projectId: s
   const hash = createHash('sha256').update(JSON.stringify({ projectId: id, taskId: task, ...request })).digest('hex');
   await transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
-    const row = (await client.query<TaskRow>('SELECT * FROM design_tasks WHERE id=$1 AND project_id=$2 AND owner_id=$3 FOR UPDATE', [task, id, userId])).rows[0];
+    const row = (await client.query<TaskRow>(`SELECT * FROM design_tasks t WHERE t.id=$1 AND t.project_id=$2 AND ${projectAccess('t.project_id', '$3')} FOR UPDATE`, [task, id, userId])).rows[0];
     if (!row) throw notFound();
-    const project = (await client.query('SELECT revision,snapshot FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, userId])).rows[0];
+    const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
     if (!project) throw notFound();
     const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
     if (previous) {
@@ -140,22 +141,22 @@ export async function appendConversationInput(principal: Principal, projectId: s
   return getTask(principal, id, task);
 }
 export async function getTask(principal: Principal, projectId: string, taskId: string) {
-  const result = await pool.query<TaskRow>(`SELECT t.* FROM design_tasks t JOIN projects p ON p.id=t.project_id
-    WHERE t.id=$1 AND t.project_id=$2 AND t.owner_id=$3 AND p.owner_id=$3`, [idSchema.parse(taskId), idSchema.parse(projectId), owner(principal)]);
+  const result = await pool.query<TaskRow>(`SELECT t.* FROM design_tasks t
+    WHERE t.id=$1 AND t.project_id=$2 AND ${projectAccess('t.project_id', '$3')}`, [idSchema.parse(taskId), idSchema.parse(projectId), owner(principal)]);
   if (!result.rows[0]) throw notFound();
   return taskView(result.rows[0]);
 }
 export async function listTasks(principal: Principal, projectId: string) {
   const userId = owner(principal), id = idSchema.parse(projectId);
-  if (!(await pool.query('SELECT 1 FROM projects WHERE id=$1 AND owner_id=$2', [id, userId])).rowCount) throw notFound();
-  const result = await pool.query<TaskRow>('SELECT * FROM design_tasks WHERE owner_id=$1 AND project_id=$2 ORDER BY created_at DESC LIMIT 20', [userId, id]);
+  if (!(await pool.query(`SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, userId])).rowCount) throw notFound();
+  const result = await pool.query<TaskRow>('SELECT * FROM design_tasks WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
   return result.rows.map(taskView);
 }
 export async function cancelTask(principal: Principal, projectId: string, taskId: string) {
   const userId = owner(principal), id = idSchema.parse(projectId), task = idSchema.parse(taskId);
   await transaction(async client => {
-    const row = (await client.query<TaskRow>(`SELECT t.* FROM design_tasks t JOIN projects p ON p.id=t.project_id
-      WHERE t.id=$1 AND t.project_id=$2 AND t.owner_id=$3 AND p.owner_id=$3 FOR UPDATE OF t`, [task, id, userId])).rows[0];
+    const row = (await client.query<TaskRow>(`SELECT t.* FROM design_tasks t
+      WHERE t.id=$1 AND t.project_id=$2 AND ${projectAccess('t.project_id', '$3')} FOR UPDATE OF t`, [task, id, userId])).rows[0];
     if (!row) throw notFound();
     if (terminalTaskStatuses.has(row.status)) return;
     // This lock also fences command commits. A winning prior commit remains in the checkpoint.

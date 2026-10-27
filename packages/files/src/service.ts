@@ -5,6 +5,7 @@ import { pool, transaction } from '../../persistence/src/client';
 import { DomainError, idSchema } from '../../contracts/src/project';
 import { MAX_IMAGE_PIXELS, MAX_UPLOAD_BYTES, saveUnderlaySchema, sourceToImage, updateUnderlaySchema, type UnderlayView } from '../../contracts/src/underlay';
 import { getProject, getResource, type Principal } from '../../projects/src/service';
+import { projectAccess } from '../../workspaces/src/access';
 import { privateStore, type PrivateFileStore } from './storage';
 
 async function leaseTransaction<T>(client: PoolClient, work: (client: PoolClient) => Promise<T>) {
@@ -47,7 +48,7 @@ export async function saveUnderlay(principal: Principal, projectId: string, inpu
   try {
     await lease.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [lock]);
     const reservation = await leaseTransaction(lease, async client => {
-      const project = (await client.query('SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [projectId, owner])).rows[0];
+      const project = (await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [projectId, owner])).rows[0];
       if (!project) throw notFound();
       const previous = (await client.query('SELECT * FROM underlay_operations WHERE owner_id=$1 AND id=$2', [owner,value.operationId])).rows[0];
       if (previous && (previous.project_id !== projectId || previous.request_hash !== hash)) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同的文件或请求。', 409);
@@ -65,7 +66,7 @@ export async function saveUnderlay(principal: Principal, projectId: string, inpu
     resourceId = reservation.resourceId; objectKey = reservation.key;
     await store.put(objectKey, image.data);
     const result = await leaseTransaction(lease, async client => {
-      const project = (await client.query('SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [projectId,owner])).rows[0];
+      const project = (await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [projectId,owner])).rows[0];
       if (!project) throw notFound();
       const current = (await client.query('SELECT version FROM project_underlays WHERE project_id=$1', [projectId])).rows[0]?.version || 0;
       if (current !== value.expectedVersion) throw conflict();
@@ -94,7 +95,7 @@ export async function updateUnderlay(principal: Principal, projectId: string, in
   const hash = createHash('sha256').update(JSON.stringify({kind:'display',projectId:id,...value})).digest('hex');
   return transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`underlay:${owner}:${value.operationId}`]);
-    if (!(await client.query('SELECT id FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id,owner])).rowCount) throw notFound();
+    if (!(await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id,owner])).rowCount) throw notFound();
     const prior = (await client.query('SELECT request_hash,result FROM underlay_operations WHERE owner_id=$1 AND id=$2', [owner,value.operationId])).rows[0];
     if (prior) { if (prior.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于另一请求。', 409); return prior.result as UnderlayView; }
     const row = (await client.query('SELECT u.view FROM project_underlays u JOIN resources r ON r.id=u.resource_id AND r.project_id=u.project_id WHERE u.project_id=$1 AND u.resource_id=$2 AND r.state=\'ready\'', [id,value.resourceId])).rows[0];

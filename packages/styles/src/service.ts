@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { transaction } from '../../persistence/src/client';
 import { toScene, type Principal } from '../../projects/src/service';
+import { projectAccess } from '../../workspaces/src/access';
 import { DomainError, idSchema, spatialStateSchema, type SpatialState } from '../../contracts/src/project';
 import { applyStyleSchema, undoStyleSchema, type StyleResult, type StyleState, type VisualStyle } from '../../contracts/src/styles';
 import { hash } from '../../candidates/src/checks';
@@ -11,7 +12,7 @@ type History = { operation_id: string; revision: number; before_style: VisualSty
   layout_hash: string; fixed_facts_hash: string; undone_by: string | null };
 async function projectRow(client: PoolClient, principal: Principal, id: string, lock = false): Promise<ProjectRow> {
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
-  const row = (await client.query<ProjectRow>(`SELECT id,name,revision,snapshot,updated_at FROM projects WHERE id=$1 AND owner_id=$2${lock ? ' FOR UPDATE' : ''}`, [idSchema.parse(id), principal.userId])).rows[0];
+  const row = (await client.query<ProjectRow>(`SELECT id,name,revision,snapshot,updated_at FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}${lock ? ' FOR UPDATE' : ''}`, [idSchema.parse(id), principal.userId])).rows[0];
   if (!row) throw new DomainError('NOT_FOUND', '项目不存在。', 404);
   row.snapshot = spatialStateSchema.parse(row.snapshot); return row;
 }
@@ -77,7 +78,7 @@ export async function applyStyle(principal: Principal, projectId: string, input:
 export async function undoStyle(principal: Principal, projectId: string, targetId: string, input: unknown): Promise<StyleResult> {
   idSchema.parse(targetId); const request = undoStyleSchema.parse(input);
   await mutate(principal, projectId, 'style:undo', { ...request, targetId } as typeof request, async (client, project) => {
-    const row = (await client.query<History>('SELECT * FROM project_style_commands WHERE operation_id=$1 AND project_id=$2 AND owner_id=$3 FOR UPDATE', [targetId, project.id, principal.userId])).rows[0];
+    const row = (await client.query<History>('SELECT * FROM project_style_commands WHERE operation_id=$1 AND project_id=$2 FOR UPDATE', [targetId, project.id])).rows[0];
     if (!row) throw new DomainError('NOT_FOUND', '风格操作不存在。', 404);
     if (project.revision !== request.expectedRevision || !canUndo(project, row)) throw new DomainError('UNDO_STYLE_CONFLICT', '之后已有项目修改或此操作已撤销，无法覆盖后续风格。', 409);
     validateStyle(project.snapshot, project.snapshot.currentLayout.objects, styleOf(row.before_style));

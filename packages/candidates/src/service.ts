@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { transaction } from '../../persistence/src/client';
 import { toScene, type Principal } from '../../projects/src/service';
+import { projectAccess } from '../../workspaces/src/access';
 import { DomainError, idSchema, spatialStateSchema, type ProjectView, type SpatialState } from '../../contracts/src/project';
 import { createCandidateSchema, editCandidateSchema, checkCandidateSchema, presentCandidateSchema, selectCandidateSchema, adoptCandidateSchema, undoAdoptionSchema,
   type CandidateView, type CandidateSummary, type CandidateCheck, type CandidateList, type CandidatePresentation, type CandidateSelection, type AdoptionResult, type AdoptionSummary } from '../../contracts/src/candidates';
@@ -32,11 +33,12 @@ const readonly = async <T>(read: (client: PoolClient) => Promise<T>) => transact
 });
 async function projectRow(client: PoolClient, principal: Principal, projectId: string, lock = false): Promise<ProjectRow> {
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
-  const row = (await client.query<ProjectRow>(`SELECT id,name,revision,snapshot,updated_at FROM projects WHERE id=$1 AND owner_id=$2${lock ? ' FOR UPDATE' : ''}`, [idSchema.parse(projectId), principal.userId])).rows[0];
+  const row = (await client.query<ProjectRow>(`SELECT id,name,revision,snapshot,updated_at FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}${lock ? ' FOR UPDATE' : ''}`, [idSchema.parse(projectId), principal.userId])).rows[0];
   if (!row) throw notFound(); row.snapshot = spatialStateSchema.parse(row.snapshot); return row;
 }
-async function candidateRow(client: PoolClient, principal: Principal, projectId: string, candidateId: string, lock = false): Promise<CandidateRow> {
-  const row = (await client.query<CandidateRow>(`SELECT * FROM candidates WHERE id=$1 AND project_id=$2 AND owner_id=$3${lock ? ' FOR UPDATE' : ''}`, [idSchema.parse(candidateId), projectId, principal.userId])).rows[0];
+/** Callers authorize the project with projectRow first; a candidate is then addressed within that project only. */
+async function candidateRow(client: PoolClient, projectId: string, candidateId: string, lock = false): Promise<CandidateRow> {
+  const row = (await client.query<CandidateRow>(`SELECT * FROM candidates WHERE id=$1 AND project_id=$2${lock ? ' FOR UPDATE' : ''}`, [idSchema.parse(candidateId), projectId])).rows[0];
   if (!row) throw notFound(); row.base_state = spatialStateSchema.parse(row.base_state); return row;
 }
 const visualStyle = (candidate: CandidateRow) => styleOf(candidate.visual_style ?? candidate.base_state.visualStyle);
@@ -56,7 +58,7 @@ async function plannerIntentCurrent(client: PoolClient, candidate: CandidateRow)
   const source = candidate.planner_context;
   if (!source) return true;
   if (!source.taskId) return false;
-  const task = (await client.query("SELECT conversation->'brief'->>'intentVersion' AS intent FROM design_tasks WHERE id=$1 AND project_id=$2 AND owner_id=$3", [source.taskId, candidate.project_id, candidate.owner_id])).rows[0];
+  const task = (await client.query("SELECT conversation->'brief'->>'intentVersion' AS intent FROM design_tasks WHERE id=$1 AND project_id=$2", [source.taskId, candidate.project_id])).rows[0];
   return task?.intent === String(source.intentVersion);
 }
 async function assertPlannerIntent(client: PoolClient, candidate: CandidateRow) {
@@ -106,7 +108,7 @@ async function mutate<T, R extends { operationId: string }>(principal: Principal
     // Match the runner's task -> project lock order. Only these captured rows may be completed
     // after adoption; a newer concurrently-created task must never be locked from below project.
     const lockedTaskIds = kind === 'candidate:adopt' ? (await client.query<{ id: string }>(
-      "SELECT id FROM design_tasks WHERE owner_id=$1 AND project_id=$2 AND status='waiting_selection' ORDER BY id FOR UPDATE", [principal.userId, id])).rows.map(row => row.id) : [];
+      `SELECT id FROM design_tasks t WHERE t.project_id=$1 AND t.status='waiting_selection' AND ${projectAccess('t.project_id', '$2')} ORDER BY id FOR UPDATE`, [id, principal.userId])).rows.map(row => row.id) : [];
     const project = await projectRow(client, principal, id, true);
     const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
     if (previous) {
@@ -159,12 +161,12 @@ export async function savePlannedCandidateInTransaction(client: PoolClient, prin
   return result;
 }
 export async function getCandidate(principal: Principal, projectId: string, candidateId: string): Promise<CandidateView> {
-  return readonly(async client => candidateView(client, await projectRow(client, principal, projectId), await candidateRow(client, principal, projectId, candidateId)));
+  return readonly(async client => candidateView(client, await projectRow(client, principal, projectId), await candidateRow(client, projectId, candidateId)));
 }
 export async function editCandidate(principal: Principal, projectId: string, candidateId: string, input: unknown): Promise<CandidateView> {
   const request = editCandidateSchema.parse(input);
   await mutate(principal, projectId, 'candidate:edit', { ...request, candidateId: idSchema.parse(candidateId) }, async (client, project) => {
-    const candidate = await candidateRow(client, principal, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
+    const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
     const command = request.command;
     candidate.visual_style = visualStyle(candidate);
     if (command.type === 'set-material' || command.type === 'reset-material' || command.type === 'set-display-lighting') {
@@ -227,7 +229,7 @@ function candidateReport(candidate: CandidateRow) {
 export async function checkCandidate(principal: Principal, projectId: string, candidateId: string, input: unknown): Promise<CandidateCheck> {
   const request = checkCandidateSchema.parse(input);
   const result = await mutate(principal, projectId, 'candidate:check', { ...request, candidateId: idSchema.parse(candidateId) }, async (client, project) => {
-    const candidate = await candidateRow(client, principal, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
+    const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
     await assertPlannerIntent(client, candidate);
     const checkId = randomUUID(), report = candidateReport(candidate);
     await client.query('INSERT INTO candidate_checks(id,candidate_id,candidate_revision,base_revision,content_hash,checker_version,report) VALUES($1,$2,$3,$4,$5,$6,$7)', [checkId, candidate.id, candidate.revision, candidate.base_revision, contentHash(candidate), CHECKER_VERSION, report]);
@@ -235,7 +237,7 @@ export async function checkCandidate(principal: Principal, projectId: string, ca
     return { checkId };
   });
   return readonly(async client => {
-    await projectRow(client, principal, projectId); await candidateRow(client, principal, projectId, candidateId);
+    await projectRow(client, principal, projectId); await candidateRow(client, projectId, candidateId);
     return checkView((await client.query<CheckRow>('SELECT * FROM candidate_checks WHERE id=$1 AND candidate_id=$2', [result.checkId, candidateId])).rows[0]);
   });
 }
@@ -244,7 +246,7 @@ const presentationView = (row: PresentationRow): CandidatePresentation => ({ id:
 export async function presentCandidate(user: BrowserUser, projectId: string, candidateId: string, input: unknown): Promise<CandidatePresentation> {
   assertBrowserUser(user); const request = presentCandidateSchema.parse(input);
   return mutate(user, projectId, 'candidate:present', { ...request, candidateId: idSchema.parse(candidateId), sessionHash: user.sessionHash }, async (client, project) => {
-    const candidate = await candidateRow(client, user, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
+    const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
     if (project.revision !== request.expectedRevision) throw conflict(); await checked(client, candidate, request.checkId);
     const row = (await client.query<PresentationRow>('INSERT INTO candidate_presentations(id,candidate_id,candidate_revision,base_revision,check_id,owner_id,session_hash,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [randomUUID(), candidate.id, candidate.revision, candidate.base_revision, request.checkId, user.userId, user.sessionHash, contentHash(candidate)])).rows[0];
     return presentationView(row);
@@ -254,7 +256,7 @@ export async function presentCandidate(user: BrowserUser, projectId: string, can
 export async function selectCandidate(user: BrowserUser, projectId: string, candidateId: string, input: unknown): Promise<CandidateSelection> {
   assertBrowserUser(user); const request = selectCandidateSchema.parse(input);
   return mutate(user, projectId, 'candidate:select', { ...request, candidateId: idSchema.parse(candidateId), sessionHash: user.sessionHash }, async (client, project) => {
-    const candidate = await candidateRow(client, user, project.id, candidateId, true); current(project, candidate);
+    const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate);
     const presentation = (await client.query<PresentationRow>('SELECT * FROM candidate_presentations WHERE id=$1 AND candidate_id=$2 AND owner_id=$3 AND session_hash=$4', [request.presentationId, candidate.id, user.userId, user.sessionHash])).rows[0];
     if (!presentation) throw new DomainError('USER_SELECTION_REQUIRED', '请先在当前会话展示要采用的候选。', 403);
     if (presentation.candidate_revision !== candidate.revision || presentation.base_revision !== project.revision || presentation.content_hash !== contentHash(candidate)) throw new DomainError('STALE_PRESENTATION', '展示版本已变化，请重新查看后选择。', 409);
@@ -274,14 +276,14 @@ async function latestUndoable(client: PoolClient, project: ProjectRow): Promise<
 export async function listCandidates(principal: Principal, projectId: string): Promise<CandidateList> {
   return readonly(async client => {
     const project = await projectRow(client, principal, projectId);
-    const rows = (await client.query<CandidateRow>('SELECT * FROM candidates WHERE project_id=$1 AND owner_id=$2 ORDER BY updated_at DESC LIMIT 100', [project.id, principal.userId])).rows;
+    const rows = (await client.query<CandidateRow>('SELECT * FROM candidates WHERE project_id=$1 ORDER BY updated_at DESC LIMIT 100', [project.id])).rows;
     return { candidates: await Promise.all(rows.map(async row => ({ ...summary(project, row), stale: isStale(project, row) || !await plannerIntentCurrent(client, row) }))), undoableAdoption: await latestUndoable(client, project) };
   });
 }
 async function adoptionResult(principal: Principal, projectId: string, operationId: string): Promise<AdoptionResult> {
   return readonly(async client => {
     const project = await projectRow(client, principal, projectId);
-    const row = (await client.query<AdoptionRow>('SELECT * FROM candidate_adoptions WHERE operation_id=$1 AND project_id=$2 AND owner_id=$3', [operationId, project.id, principal.userId])).rows[0];
+    const row = (await client.query<AdoptionRow>('SELECT * FROM candidate_adoptions WHERE operation_id=$1 AND project_id=$2', [operationId, project.id])).rows[0];
     if (!row) throw notFound();
     return { project: await projectView(client, project), adoption: adoptionView(project, row), undoableAdoption: await latestUndoable(client, project) };
   });
@@ -296,7 +298,7 @@ async function saveLayout(client: PoolClient, project: ProjectRow, layout: Spati
 export async function adoptCandidate(principal: Principal, projectId: string, candidateId: string, input: unknown): Promise<AdoptionResult> {
   const request = adoptCandidateSchema.parse(input);
   await mutate(principal, projectId, 'candidate:adopt', { ...request, candidateId: idSchema.parse(candidateId) }, async (client, project, lockedTaskIds) => {
-    const candidate = await candidateRow(client, principal, project.id, candidateId, true); current(project, candidate);
+    const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate);
     if (project.revision !== request.expectedRevision) throw conflict();
     const selection = (await client.query<SelectionRow>('SELECT * FROM candidate_selections WHERE id=$1 AND owner_id=$2 FOR UPDATE', [request.selectionId, principal.userId])).rows[0];
     if (!selection || selection.adopted_operation_id) throw new DomainError('USER_SELECTION_REQUIRED', '需要用户对当前展示版本的有效选择。', 403);
@@ -335,7 +337,7 @@ export async function adoptCandidate(principal: Principal, projectId: string, ca
 export async function undoAdoption(principal: Principal, projectId: string, adoptionId: string, input: unknown): Promise<AdoptionResult> {
   const request = undoAdoptionSchema.parse(input); idSchema.parse(adoptionId);
   await mutate(principal, projectId, 'candidate:undo-adoption', { ...request, adoptionId }, async (client, project) => {
-    const row = (await client.query<AdoptionRow>('SELECT * FROM candidate_adoptions WHERE operation_id=$1 AND project_id=$2 AND owner_id=$3 FOR UPDATE', [adoptionId, project.id, principal.userId])).rows[0];
+    const row = (await client.query<AdoptionRow>('SELECT * FROM candidate_adoptions WHERE operation_id=$1 AND project_id=$2 FOR UPDATE', [adoptionId, project.id])).rows[0];
     if (!row) throw notFound();
     if (project.revision !== request.expectedRevision || !undoable(project, row)) throw new DomainError('UNDO_ADOPTION_CONFLICT', '采用后已有项目修改或该采用已撤销，不能整体覆盖。', 409);
     const state = spatialStateSchema.parse({ ...project.snapshot, currentLayout: row.before_layout, visualStyle: row.before_style ?? undefined });

@@ -27,3 +27,4 @@ uploads/
 private-data/
 example/pdf/
 apps/web/public/vendor/
+.worktree/

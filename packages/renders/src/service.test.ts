@@ -29,14 +29,14 @@ before(async () => {
   png = await sharp({ create: { width: 1280, height: 80, channels: 4, background: '#b2bca0' } }).png().toBuffer();
 });
 after(async () => {
-  const files = (await pool.query('SELECT s.object_key FROM resources s JOIN projects p ON p.id=s.project_id WHERE p.owner_id=$1', [owner.userId])).rows;
+  const files = (await pool.query('SELECT s.object_key FROM resources s JOIN projects p ON p.id=s.project_id WHERE p.created_by=$1', [owner.userId])).rows;
   for (const file of files) await store.remove(file.object_key);
-  const projects = (await pool.query('SELECT id FROM projects WHERE owner_id=$1', [owner.userId])).rows;
-  await pool.query('DELETE FROM project_renders WHERE owner_id=$1', [owner.userId]);
-  await pool.query('DELETE FROM resources WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-  await pool.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-  await pool.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+  const projects = (await pool.query('SELECT id FROM projects WHERE created_by=$1', [owner.userId])).rows;
+  await pool.query('DELETE FROM project_renders WHERE actor_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM resources WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+  await pool.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+  await pool.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
   for (const project of projects) {
     await rmdir(path.join(directory, 'projects', project.id, 'resources')).catch(e => { if (e.code !== 'ENOENT') throw e; });
     await rmdir(path.join(directory, 'projects', project.id)).catch(e => { if (e.code !== 'ENOENT') throw e; });
@@ -55,7 +55,7 @@ test('acceptance, idempotency and pg-boss enqueue are atomic and bind an exact p
   const failed = await create(), bad = request();
   await assert.rejects(createRender(owner, failed.id, bad, createRenderQueue(`${schema}_no`)));
   assert.equal((await listRenders(owner, failed.id)).length, 0);
-  assert.equal((await pool.query('SELECT 1 FROM operations WHERE owner_id=$1 AND id=$2', [owner.userId, bad.operationId])).rowCount, 0);
+  assert.equal((await pool.query('SELECT 1 FROM operations WHERE actor_id=$1 AND id=$2', [owner.userId, bad.operationId])).rowCount, 0);
 });
 
 test('ownership/project binding/strict input deny creation, metadata and image access', async () => {

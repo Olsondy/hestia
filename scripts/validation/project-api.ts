@@ -70,7 +70,7 @@ try {
     assert.equal(projects[0].project.id, projects[1].project.id); projectId = projects[0].project.id;
     assert.equal(projects[0].project.synthetic, true); assert.equal(projects[0].project.scale, 'synthetic');
     assert.ok(projects[0].project.scene.walls.length > 0);
-    const persisted = await pool.query('SELECT id FROM projects WHERE owner_id=$1', [a.userId]); assert.equal(persisted.rowCount, 1);
+    const persisted = await pool.query('SELECT id FROM projects WHERE created_by=$1', [a.userId]); assert.equal(persisted.rowCount, 1);
     const reopened = await (await expectStatus(await call(`/api/projects/${projectId}`, 'GET', undefined, a), 200)).json();
     assert.deepEqual(reopened.project.scene, projects[0].project.scene);
   });
@@ -138,11 +138,11 @@ try {
   try {
     await transaction(async client => {
       const users = (await client.query('SELECT id FROM hestia_auth_user WHERE email=ANY($1::text[])', [emails])).rows.map(row => row.id);
-      const projectIds = (await client.query('SELECT id FROM projects WHERE owner_id=ANY($1::text[])', [users])).rows.map(row => row.id);
+      const projectIds = (await client.query('SELECT id FROM projects WHERE created_by=ANY($1::text[])', [users])).rows.map(row => row.id);
       await client.query('DELETE FROM resources WHERE project_id=ANY($1::uuid[])', [projectIds]);
       await client.query('DELETE FROM project_revisions WHERE project_id=ANY($1::uuid[])', [projectIds]);
-      await client.query('DELETE FROM operations WHERE owner_id=ANY($1::text[])', [users]);
-      await client.query('DELETE FROM projects WHERE owner_id=ANY($1::text[])', [users]);
+      await client.query('DELETE FROM operations WHERE actor_id=ANY($1::text[])', [users]);
+      await client.query('DELETE FROM projects WHERE created_by=ANY($1::text[])', [users]);
       await client.query('DELETE FROM hestia_invitation WHERE email=ANY($1::text[])', [emails]);
       await client.query('DELETE FROM hestia_auth_user WHERE email=ANY($1::text[])', [emails]);
     });

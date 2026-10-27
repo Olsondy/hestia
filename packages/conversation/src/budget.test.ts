@@ -24,9 +24,9 @@ const config = (id: string, model: ReturnType<typeof good>, accepted = true): Mo
 const expire = (id: string) => pool.query("UPDATE design_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [id]);
 before(async () => { producer = await initializeQueue(schema); });
 after(async () => {
-  await pool.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-  await pool.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+  await pool.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
   assert.match(schema, /^budget_[a-f0-9]{32}$/); await pool.query(`DROP SCHEMA ${schema} CASCADE`); await pool.end();
 });
 

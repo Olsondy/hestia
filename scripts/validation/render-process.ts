@@ -43,7 +43,7 @@ try {
   const principal = { userId: identity.userId };
   const a = await createProject(principal, { name: '方形空间出图', template: 'courtyard', operationId: randomUUID() }); projects.push(a.id);
   const b = await createProject(principal, { name: '凹形空间出图', template: 'angled', operationId: randomUUID() }); projects.push(b.id);
-  await pool.query("UPDATE projects SET snapshot=jsonb_set(snapshot,'{scale}','\"estimated\"') WHERE id=$1 AND owner_id=$2", [b.id, identity.userId]);
+  await pool.query("UPDATE projects SET snapshot=jsonb_set(snapshot,'{scale}','\"estimated\"') WHERE id=$1 AND created_by=$2", [b.id, identity.userId]);
   const candidate = await createCandidate(principal, b.id, { operationId: randomUUID(), expectedRevision: 1, name: '概念候选' });
   const aImage = await createRender(principal, a.id, { operationId: randomUUID(), source: { kind: 'current', revision: 1 } }, queue); renderIds.push(aImage.id);
   const bImage = await createRender(principal, b.id, { operationId: randomUUID(), source: { kind: 'candidate', candidateId: candidate.id, revision: 1 } }, queue); renderIds.push(bImage.id);
@@ -108,13 +108,13 @@ try {
   await browser?.close();
   try {
     if (identity) {
-      const files = (await pool.query('SELECT s.object_key FROM resources s JOIN projects p ON p.id=s.project_id WHERE p.owner_id=$1 AND p.id=ANY($2::uuid[])', [identity.userId, projects])).rows;
+      const files = (await pool.query('SELECT s.object_key FROM resources s JOIN projects p ON p.id=s.project_id WHERE p.created_by=$1 AND p.id=ANY($2::uuid[])', [identity.userId, projects])).rows;
       for (const projectId of projects) {
-        await pool.query('DELETE FROM project_renders WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
+        await pool.query('DELETE FROM project_renders WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
         await pool.query('DELETE FROM resources WHERE project_id=$1', [projectId]);
-        await pool.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
+        await pool.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
         await pool.query('DELETE FROM project_revisions WHERE project_id=$1', [projectId]);
-        await pool.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2', [projectId, identity.userId]);
+        await pool.query('DELETE FROM projects WHERE id=$1 AND created_by=$2', [projectId, identity.userId]);
       }
       for (const file of files) await privateStore().remove(file.object_key);
     }

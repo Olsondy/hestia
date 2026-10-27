@@ -19,9 +19,9 @@ async function saved(id: string) {
     commands: (await pool.query('SELECT operation_id,undone_by FROM project_commands WHERE project_id=$1 ORDER BY operation_id', [id])).rows };
 }
 after(async () => {
-  await pool.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-  await pool.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+  await pool.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
   await pool.end();
 });
 
@@ -135,5 +135,5 @@ test('fact and lock metadata are strict, and operation history is bounded to the
   const history = await listCommands(owner, p.id);
   assert.equal(history.length, 20); assert.equal(history[0].revision, 23); assert.equal(history[19].revision, 4);
   assert.equal(history[0].undoable, true); assert.ok(history.slice(1).every(o => !o.undoable));
-  assert.ok(history.every(o => !('before_value' in o) && !('owner_id' in o)));
+  assert.ok(history.every(o => !('before_value' in o) && !('actor_id' in o)));
 });

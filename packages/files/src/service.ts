@@ -50,7 +50,7 @@ export async function saveUnderlay(principal: Principal, projectId: string, inpu
     const reservation = await leaseTransaction(lease, async client => {
       const project = (await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [projectId, owner])).rows[0];
       if (!project) throw notFound();
-      const previous = (await client.query('SELECT * FROM underlay_operations WHERE owner_id=$1 AND id=$2', [owner,value.operationId])).rows[0];
+      const previous = (await client.query('SELECT * FROM underlay_operations WHERE actor_id=$1 AND id=$2', [owner,value.operationId])).rows[0];
       if (previous && (previous.project_id !== projectId || previous.request_hash !== hash)) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同的文件或请求。', 409);
       if (previous?.result) return { result: previous.result as UnderlayView, resourceId: '', key: '' };
       const version = (await client.query('SELECT version FROM project_underlays WHERE project_id=$1', [projectId])).rows[0]?.version || 0;
@@ -58,7 +58,7 @@ export async function saveUnderlay(principal: Principal, projectId: string, inpu
       const resourceId = previous?.resource_id || randomUUID(), key = `projects/${projectId}/resources/${resourceId}.png`;
       if (!previous) {
         await client.query('INSERT INTO resources(id,project_id,object_key,media_type,state) VALUES($1,$2,$3,\'image/png\',\'pending\')', [resourceId,projectId,key]);
-        await client.query('INSERT INTO underlay_operations(owner_id,id,project_id,resource_id,request_hash) VALUES($1,$2,$3,$4,$5)', [owner,value.operationId,projectId,resourceId,hash]);
+        await client.query('INSERT INTO underlay_operations(actor_id,id,project_id,resource_id,request_hash) VALUES($1,$2,$3,$4,$5)', [owner,value.operationId,projectId,resourceId,hash]);
       } else await client.query('UPDATE resources SET state=\'pending\' WHERE id=$1 AND project_id=$2 AND state<>\'ready\'', [resourceId,projectId]);
       return { resourceId, key, result: null };
     });
@@ -73,7 +73,7 @@ export async function saveUnderlay(principal: Principal, projectId: string, inpu
       const view: UnderlayView = { projectId,resourceId,version:current+1,width,height,source:value.source,crop:value.crop,rotation:value.rotation,sourceToImage:sourceToImage(value.crop,value.rotation),display:value.display,calibration:'uncalibrated',registration:'unregistered',updatedAt:new Date().toISOString() };
       await client.query('UPDATE resources SET state=\'ready\' WHERE id=$1 AND project_id=$2 AND state=\'pending\'', [resourceId,projectId]);
       await client.query('INSERT INTO project_underlays(project_id,resource_id,version,view) VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET resource_id=EXCLUDED.resource_id,version=EXCLUDED.version,view=EXCLUDED.view,updated_at=now()', [projectId,resourceId,view.version,view]);
-      await client.query('UPDATE underlay_operations SET result=$3 WHERE owner_id=$1 AND id=$2', [owner,value.operationId,view]);
+      await client.query('UPDATE underlay_operations SET result=$3 WHERE actor_id=$1 AND id=$2', [owner,value.operationId,view]);
       return view;
     });
     complete = true; return result;
@@ -96,7 +96,7 @@ export async function updateUnderlay(principal: Principal, projectId: string, in
   return transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`underlay:${owner}:${value.operationId}`]);
     if (!(await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id,owner])).rowCount) throw notFound();
-    const prior = (await client.query('SELECT request_hash,result FROM underlay_operations WHERE owner_id=$1 AND id=$2', [owner,value.operationId])).rows[0];
+    const prior = (await client.query('SELECT request_hash,result FROM underlay_operations WHERE actor_id=$1 AND id=$2', [owner,value.operationId])).rows[0];
     if (prior) { if (prior.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于另一请求。', 409); return prior.result as UnderlayView; }
     const row = (await client.query('SELECT u.view FROM project_underlays u JOIN resources r ON r.id=u.resource_id AND r.project_id=u.project_id WHERE u.project_id=$1 AND u.resource_id=$2 AND r.state=\'ready\'', [id,value.resourceId])).rows[0];
     if (!row) throw notFound();
@@ -104,7 +104,7 @@ export async function updateUnderlay(principal: Principal, projectId: string, in
     if (current.version !== value.expectedVersion) throw conflict();
     const view = {...current,display:value.display,version:current.version+1,updatedAt:new Date().toISOString()};
     await client.query('UPDATE project_underlays SET version=$2,view=$3,updated_at=now() WHERE project_id=$1', [id,view.version,view]);
-    await client.query('INSERT INTO underlay_operations(owner_id,id,project_id,resource_id,request_hash,result) VALUES($1,$2,$3,$4,$5,$6)', [owner,value.operationId,id,value.resourceId,hash,view]);
+    await client.query('INSERT INTO underlay_operations(actor_id,id,project_id,resource_id,request_hash,result) VALUES($1,$2,$3,$4,$5,$6)', [owner,value.operationId,id,value.resourceId,hash,view]);
     return view;
   });
 }

@@ -84,11 +84,11 @@ try {
   await writeFile(evidencePath, JSON.stringify(evidence, null, 2));
   try { await transaction(async client => {
     const users = (await client.query('SELECT id FROM hestia_auth_user WHERE email=$1', [email])).rows.map(row => row.id);
-    const projects = (await client.query('SELECT id FROM projects WHERE owner_id=ANY($1::text[])', [users])).rows.map(row => row.id);
+    const projects = (await client.query('SELECT id FROM projects WHERE created_by=ANY($1::text[])', [users])).rows.map(row => row.id);
     if (taskId) await client.query("DELETE FROM hestia_jobs.job WHERE data->>'taskId'=$1", [taskId]);
-    await client.query('DELETE FROM operations WHERE owner_id=ANY($1::text[])', [users]);
+    await client.query('DELETE FROM operations WHERE actor_id=ANY($1::text[])', [users]);
     await client.query('DELETE FROM project_revisions WHERE project_id=ANY($1::uuid[])', [projects]);
-    await client.query('DELETE FROM projects WHERE owner_id=ANY($1::text[])', [users]);
+    await client.query('DELETE FROM projects WHERE created_by=ANY($1::text[])', [users]);
     await client.query('DELETE FROM hestia_invitation WHERE email=$1', [email]);
     await client.query('DELETE FROM hestia_auth_user WHERE email=$1', [email]);
   }); } finally { await pool.end(); }

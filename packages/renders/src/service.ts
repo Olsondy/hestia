@@ -12,7 +12,7 @@ import { hash, bytesHash, renderVersions } from './versions';
 import { artifactLabel } from './label';
 
 export type RenderRow = {
-  id: string; owner_id: string; project_id: string; source: RenderSource; snapshot: SceneSnapshot; snapshot_hash: string;
+  id: string; actor_id: string; project_id: string; source: RenderSource; snapshot: SceneSnapshot; snapshot_hash: string;
   asset_version: string; renderer_version: string; scale: RenderView['scale']; synthetic: boolean; concept: boolean; label: string;
   status: RenderView['status']; generation: number; attempts: number; lease_until: Date | null;
   resource_id: string | null; width: number | null; height: number | null; image_hash: string | null; error: RenderView['error'];
@@ -45,7 +45,7 @@ export async function createRender(principal: Principal, projectId: string, inpu
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
     const project = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
     if (!project) throw notFound();
-    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
+    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return previous.result.renderId as string;
@@ -65,11 +65,11 @@ export async function createRender(principal: Principal, projectId: string, inpu
     const label = artifactLabel(source, state.scale, state.synthetic), scene = toScene(state, label);
     if (!scene.rooms.length) throw new DomainError('EMPTY_SCENE', '空间尚无可展示的轮廓，请先建立空间。');
     const snapshotHash = hash({ scene, source, scale: state.scale, synthetic: state.synthetic }), renderId = randomUUID();
-    await client.query(`INSERT INTO project_renders(id,owner_id,project_id,request_id,request_hash,source,snapshot,snapshot_hash,
+    await client.query(`INSERT INTO project_renders(id,actor_id,project_id,request_id,request_hash,source,snapshot,snapshot_hash,
       asset_version,renderer_version,scale,synthetic,concept,label,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'queued')`,
       [renderId, userId, id, request.operationId, requestHash, source, scene, snapshotHash, versions.assetVersion, versions.rendererVersion,
         state.scale, state.synthetic, !['calibrated', 'synthetic'].includes(state.scale), label]);
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
       [userId, request.operationId, id, requestHash, { kind: 'static-render', renderId }]);
     await enqueueRender(client, renderId, queue);
     return renderId;

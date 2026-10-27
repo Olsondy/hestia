@@ -13,7 +13,7 @@ import { initialExecution, retained, settleAttempt } from './budget';
 
 export type StoredStep = TaskStep & { operationId: string };
 export type TaskRow = {
-  id: string; owner_id: string; project_id: string; request_id: string; request_hash: string; protocol: 'deterministic-v1' | 'conversation-v1';
+  id: string; actor_id: string; project_id: string; request_id: string; request_hash: string; protocol: 'deterministic-v1' | 'conversation-v1';
   status: TaskStatus; steps: StoredStep[]; next_step: number; expected_revision: number; generation: number;
   lease_until: Date | null; lease_valid?: boolean; attempts: number; usage_limit: number; usage_used: number; usage_reserved: number;
   event_seq: number; error: TaskError | null; created_at: Date; updated_at: Date;
@@ -45,12 +45,12 @@ export async function createTask(principal: Principal, projectId: string, input:
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
     const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
     if (!project) throw notFound();
-    const previous = (await client.query<TaskRow>('SELECT * FROM design_tasks WHERE owner_id=$1 AND request_id=$2', [userId, request.operationId])).rows[0];
+    const previous = (await client.query<TaskRow>('SELECT * FROM design_tasks WHERE actor_id=$1 AND request_id=$2', [userId, request.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于不同任务。', 409);
       return previous.id;
     }
-    if ((await client.query('SELECT 1 FROM operations WHERE owner_id=$1 AND id=$2', [userId, request.operationId])).rowCount)
+    if ((await client.query('SELECT 1 FROM operations WHERE actor_id=$1 AND id=$2', [userId, request.operationId])).rowCount)
       throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于其他操作。', 409);
     if (project.revision !== request.expectedRevision) throw new DomainError('REVISION_CONFLICT', '项目已更新，请重新加载。', 409);
     if ((await client.query("SELECT 1 FROM design_tasks WHERE project_id=$1 AND status IN ('queued','running','retry_wait','waiting_input','waiting_selection')", [id])).rowCount)
@@ -65,10 +65,10 @@ export async function createTask(principal: Principal, projectId: string, input:
         phase: 'accepted', outcome: null, modelUsage: { inputTokens: null, outputTokens: null }, operationId: randomUUID(),
         context: state, callStarted: false, response: null, brief: initialBrief(request.message), execution: initialExecution() };
     }
-    await client.query(`INSERT INTO design_tasks(id,owner_id,project_id,request_id,request_hash,protocol,status,steps,expected_revision,conversation,usage_limit)
+    await client.query(`INSERT INTO design_tasks(id,actor_id,project_id,request_id,request_hash,protocol,status,steps,expected_revision,conversation,usage_limit)
       VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8,$9,$10)`, [taskId, userId, id, request.operationId, hash, request.protocol, JSON.stringify(steps), project.revision, conversation, 8]);
     await appendEvent(client, taskId, 'status', { status: 'queued', protocol: request.protocol, label: conversation ? '空间对话' : '确定性协议测试 · 非真实模型设计' });
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
       [userId, request.operationId, id, hash, { kind: 'task', taskId }]);
     await enqueueTask(client, taskId, producer);
     return taskId;
@@ -85,7 +85,7 @@ export async function appendConversationInput(principal: Principal, projectId: s
     if (!row) throw notFound();
     const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
     if (!project) throw notFound();
-    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
+    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== hash || previous.result.kind !== 'conversation-input' || previous.result.taskId !== task)
         throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于不同操作。', 409);
@@ -134,7 +134,7 @@ export async function appendConversationInput(principal: Principal, projectId: s
     conversation.phase = 'accepted'; conversation.outcome = null; conversation.modelUsage = { inputTokens: null, outputTokens: null };
     await client.query("UPDATE design_tasks SET conversation=$2,status='queued',generation=generation+1,attempts=0,next_step=0,expected_revision=$3,lease_until=NULL,usage_used=$4,usage_reserved=0,error=NULL WHERE id=$1", [task, conversation, project.revision, used]);
     await appendEvent(client, task, 'status', { status: 'queued', phase: 'accepted', intentVersion: nextIntent, inputId, unknownPriorUsage: unknownCall });
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
       [userId, request.operationId, id, hash, { kind: 'conversation-input', taskId: task, inputId, intentVersion: nextIntent }]);
     await enqueueTask(client, task, producer, randomUUID(), nextIntent);
   });

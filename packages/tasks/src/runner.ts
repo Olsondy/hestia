@@ -73,9 +73,9 @@ export async function executeStep(claim: TaskClaim, index: number) {
     const step = row.steps[index];
     let revision = row.expected_revision;
     if (step.type === 'command') {
-      await executeCommandInTransaction(client, { userId: row.owner_id }, row.project_id,
+      await executeCommandInTransaction(client, { userId: row.actor_id }, row.project_id,
         { operationId: step.operationId, expectedRevision: revision, command: step.command });
-      const operation = (await client.query('SELECT result FROM operations WHERE owner_id=$1 AND id=$2', [row.owner_id, step.operationId])).rows[0];
+      const operation = (await client.query('SELECT result FROM operations WHERE actor_id=$1 AND id=$2', [row.actor_id, step.operationId])).rows[0];
       revision = operation.result.revision;
       // A project lock could have waited past the lease: roll the entire domain write back.
       await fenced(client, claim);

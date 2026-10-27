@@ -43,7 +43,7 @@ try {
   await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.empty-studio').waitFor();
   const project = await createProject(principal, { name: '合成续作空间', template: 'empty', operationId: randomUUID() }); projectId = project.id;
   const synthetic = syntheticPlanningInput();
-  await pool.query('UPDATE projects SET snapshot=$1 WHERE id=$2 AND owner_id=$3', [synthetic.state, projectId, identity.userId]);
+  await pool.query('UPDATE projects SET snapshot=$1 WHERE id=$2 AND created_by=$3', [synthetic.state, projectId, identity.userId]);
   await pool.query('UPDATE project_revisions SET snapshot=$1 WHERE project_id=$2 AND revision=1', [synthetic.state, projectId]);
   const original = await getProject(principal, projectId);
   await page.goto(`${base}/?project=${projectId}&view=tasks`);
@@ -146,13 +146,13 @@ try {
 } finally {
   await browser.close();
   if (projectId) {
-    const tasks = (await pool.query('SELECT id FROM design_tasks WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId])).rows;
+    const tasks = (await pool.query('SELECT id FROM design_tasks WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId])).rows;
     for (const task of tasks) await pool.query("DELETE FROM hestia_jobs.job WHERE data->>'taskId'=$1", [task.id]);
-    await pool.query('DELETE FROM design_tasks WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
-    await pool.query('DELETE FROM candidate_adoptions WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
-    await pool.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM design_tasks WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM candidate_adoptions WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
     await pool.query('DELETE FROM project_revisions WHERE project_id=$1', [projectId]);
-    await pool.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM projects WHERE id=$1 AND created_by=$2', [projectId, identity.userId]);
   }
   await pool.query('DELETE FROM hestia_invitation WHERE id=$1 AND user_id=$2', [invitation.id, identity.userId]);
   await pool.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2', [identity.userId, email]); await pool.end();

@@ -81,7 +81,7 @@ try {
   // An imported multi-turn angle must not prevent editing only the candidate's position.
   await pool.query(`UPDATE projects SET snapshot=jsonb_set(snapshot,'{currentLayout,objects}',
     (SELECT jsonb_agg(CASE WHEN item->>'id'='sofa-a' THEN jsonb_set(item,'{yaw}',$2::jsonb) ELSE item END)
-     FROM jsonb_array_elements(snapshot->'currentLayout'->'objects') AS item)) WHERE id=$1 AND owner_id=$3`,
+     FROM jsonb_array_elements(snapshot->'currentLayout'->'objects') AS item)) WHERE id=$1 AND created_by=$3`,
     [projectId, JSON.stringify(Math.PI * 2 + .15), user.userId]);
   await page.reload(); await page.getByLabel('新候选名称').fill('多圈朝向测试');
   await page.getByRole('button', { name: '从当前方案创建', exact:true }).click();
@@ -108,10 +108,10 @@ try {
   await browser.close();
   await transaction(async client => {
     if (projectId) {
-      await client.query('DELETE FROM candidate_adoptions WHERE project_id=$1 AND owner_id=$2',[projectId,user.userId]);
-      await client.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2',[projectId,user.userId]);
+      await client.query('DELETE FROM candidate_adoptions WHERE project_id=$1 AND actor_id=$2',[projectId,user.userId]);
+      await client.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2',[projectId,user.userId]);
       await client.query('DELETE FROM project_revisions WHERE project_id=$1',[projectId]);
-      await client.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2',[projectId,user.userId]);
+      await client.query('DELETE FROM projects WHERE id=$1 AND created_by=$2',[projectId,user.userId]);
     }
     await client.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2',[invitation.id,email]);
     await client.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2',[user.userId,email]);

@@ -8,7 +8,7 @@ import { commandRequestSchema, furniturePoseSchema, type FurniturePose, type Ope
 import { validatePlacement } from '../../geometry/src/placement';
 
 type Value = FurniturePose | { locked: boolean };
-type CommandRow = { owner_id: string; operation_id: string; project_id: string; type: OperationSummary['type']; object_id: string;
+type CommandRow = { actor_id: string; operation_id: string; project_id: string; type: OperationSummary['type']; object_id: string;
   revision: number; layout_id: string; fixed_facts_id: string; fixed_facts_revision: number; before_value: Value; after_value: Value;
   undo_of: string | null; undone_by: string | null; created_at: Date; has_dependency?: boolean };
 const notFound = () => new DomainError('NOT_FOUND', '项目或操作不存在。', 404);
@@ -60,7 +60,7 @@ const dependencySQL = `EXISTS(SELECT 1 FROM project_commands later WHERE later.p
 /** Project must already be authorized. `actorId` narrows to the caller's own operation (idempotent replay). */
 async function readCommand(client: PoolClient, projectId: string, operationId: string, actorId?: string) {
   return (await client.query<CommandRow>(`SELECT c.*,${dependencySQL} FROM project_commands c WHERE c.project_id=$1 AND c.operation_id=$2
-    AND ($3::text IS NULL OR c.owner_id=$3) ORDER BY c.revision DESC LIMIT 1`, [projectId, operationId, actorId ?? null])).rows[0];
+    AND ($3::text IS NULL OR c.actor_id=$3) ORDER BY c.revision DESC LIMIT 1`, [projectId, operationId, actorId ?? null])).rows[0];
 }
 async function readView(client: PoolClient, userId: string, projectId: string) {
   const row = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [projectId, userId])).rows[0];
@@ -83,7 +83,7 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${ownerId}:${request.operationId}`]);
     const project = (await client.query(`SELECT snapshot,revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, ownerId])).rows[0];
     if (!project) throw notFound();
-    const previous = (await client.query('SELECT request_hash FROM operations WHERE owner_id=$1 AND id=$2', [ownerId, request.operationId])).rows[0];
+    const previous = (await client.query('SELECT request_hash FROM operations WHERE actor_id=$1 AND id=$2', [ownerId, request.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return;
@@ -109,7 +109,7 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
       if (!target) throw notFound();
       const reason = undoRejection(target, state);
       if (reason) throw new DomainError('UNDO_DEPENDENCY', reason, 409);
-      objectId = target.object_id; before = target.after_value; after = target.before_value; undoOf = target.operation_id; undoActor = target.owner_id;
+      objectId = target.object_id; before = target.after_value; after = target.before_value; undoOf = target.operation_id; undoActor = target.actor_id;
       if (target.type === 'move-furniture') {
         const pose = furniturePoseSchema.parse(after); ensurePlacement(state, objectId, pose); setPose(state, objectId, pose);
       } else setLock(state, objectId, (after as { locked: boolean }).locked);
@@ -118,12 +118,12 @@ export async function executeCommandInTransaction(client: PoolClient, principal:
     const revision = project.revision + 1;
     await client.query('UPDATE projects SET snapshot=$1,revision=$2,updated_at=now() WHERE id=$3', [spatialStateSchema.parse(state), revision, id]);
     await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,$2,$3,$4)', [id, revision, state, request.operationId]);
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
       [ownerId, request.operationId, id, hash, { kind: 'command', projectId: id, revision, operationId: request.operationId }]);
-    await client.query(`INSERT INTO project_commands(owner_id,operation_id,project_id,type,object_id,revision,layout_id,fixed_facts_id,fixed_facts_revision,before_value,after_value,undo_of)
+    await client.query(`INSERT INTO project_commands(actor_id,operation_id,project_id,type,object_id,revision,layout_id,fixed_facts_id,fixed_facts_revision,before_value,after_value,undo_of)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [ownerId, request.operationId, id, command.type, objectId, revision,
       state.currentLayout.id, state.fixedFacts.id, state.fixedFacts.revision, before, after, undoOf]);
-    if (undoOf) await client.query('UPDATE project_commands SET undone_by=$1 WHERE owner_id=$2 AND operation_id=$3', [request.operationId, undoActor, undoOf]);
+    if (undoOf) await client.query('UPDATE project_commands SET undone_by=$1 WHERE actor_id=$2 AND operation_id=$3', [request.operationId, undoActor, undoOf]);
 }
 
 export async function executeCommand(principal: Principal, projectId: string, input: unknown) {

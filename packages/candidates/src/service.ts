@@ -15,15 +15,15 @@ import type { PlannerContext, LayoutPlan } from '../../layout-planner/src/contra
 import { inspectPlannerLayout } from '../../layout-planner/src/checks';
 
 type ProjectRow = { id: string; name: string; revision: number; snapshot: SpatialState; updated_at: Date };
-type CandidateRow = { id: string; project_id: string; owner_id: string; name: string; revision: number; base_revision: number; base_state: SpatialState;
+type CandidateRow = { id: string; project_id: string; actor_id: string; name: string; revision: number; base_revision: number; base_state: SpatialState;
   planner_context?: PlannerContext | null;
   visual_style: VisualStyle | null;
   objects: SpatialState['currentLayout']['objects']; status: CandidateSummary['status']; created_at: Date; updated_at: Date };
 type CheckRow = { id: string; candidate_id: string; candidate_revision: number; base_revision: number; content_hash: string; checker_version: string;
   report: Pick<CandidateCheck, 'adoptable' | 'checks' | 'issues'>; created_at: Date };
-type PresentationRow = { id: string; candidate_id: string; candidate_revision: number; base_revision: number; check_id: string; owner_id: string; session_hash: string; content_hash: string; created_at: Date };
-type SelectionRow = { id: string; presentation_id: string; owner_id: string; session_hash: string; adopted_operation_id: string | null; created_at: Date };
-type AdoptionRow = { operation_id: string; owner_id: string; project_id: string; candidate_id: string; candidate_revision: number; revision: number;
+type PresentationRow = { id: string; candidate_id: string; candidate_revision: number; base_revision: number; check_id: string; actor_id: string; session_hash: string; content_hash: string; created_at: Date };
+type SelectionRow = { id: string; presentation_id: string; actor_id: string; session_hash: string; adopted_operation_id: string | null; created_at: Date };
+type AdoptionRow = { operation_id: string; actor_id: string; project_id: string; candidate_id: string; candidate_revision: number; revision: number;
   before_style: VisualStyle | null; after_style: VisualStyle | null; change_kind: ChangeKind;
   before_layout: SpatialState['currentLayout']; after_layout: SpatialState['currentLayout']; fixed_facts_hash: string; undone_by: string | null };
 const notFound = () => new DomainError('NOT_FOUND', '项目、候选或操作不存在。', 404);
@@ -110,13 +110,13 @@ async function mutate<T, R extends { operationId: string }>(principal: Principal
     const lockedTaskIds = kind === 'candidate:adopt' ? (await client.query<{ id: string }>(
       `SELECT id FROM design_tasks t WHERE t.project_id=$1 AND t.status='waiting_selection' AND ${projectAccess('t.project_id', '$2')} ORDER BY id FOR UPDATE`, [id, principal.userId])).rows.map(row => row.id) : [];
     const project = await projectRow(client, principal, id, true);
-    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
+    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return previous.result as T;
     }
     const result = await work(client, project, lockedTaskIds);
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [principal.userId, request.operationId, id, requestHash, result]);
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [principal.userId, request.operationId, id, requestHash, result]);
     return result;
   });
 }
@@ -125,7 +125,7 @@ export async function createCandidate(principal: Principal, projectId: string, i
   const result = await mutate(principal, projectId, 'candidate:create', request, async (client, project) => {
     if (project.revision !== request.expectedRevision) throw conflict();
     const candidateId = randomUUID();
-    await client.query("INSERT INTO candidates(id,project_id,owner_id,name,revision,base_revision,base_state,objects,visual_style,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,'draft')", [candidateId, project.id, principal.userId, request.name, project.revision, project.snapshot, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle)]);
+    await client.query("INSERT INTO candidates(id,project_id,actor_id,name,revision,base_revision,base_state,objects,visual_style,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,'draft')", [candidateId, project.id, principal.userId, request.name, project.revision, project.snapshot, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle)]);
     await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style) VALUES($1,1,$2,$3)', [candidateId, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle)]);
     return { candidateId };
   });
@@ -140,24 +140,24 @@ export async function savePlannedCandidateInTransaction(client: PoolClient, prin
   const requestHash = hash({ kind: 'candidate:planned', projectId, ...stableRequest });
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${principal.userId}:${request.operationId}`]);
   const project = await projectRow(client, principal, projectId, true);
-  const previous = (await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
+  const previous = (await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
   if (previous) {
     if (previous.request_hash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '布局操作标识已绑定另一结果。', 409);
     return previous.result as { candidateId: string; candidateRevision: number; checkId: string; report: LayoutPlan; plannerRequestHash: string };
   }
   if (project.revision !== request.expectedRevision || hash(project.snapshot) !== request.baseHash) throw conflict();
-  const candidateId = randomUUID(), candidate: CandidateRow = { id: candidateId, project_id: projectId, owner_id: principal.userId,
+  const candidateId = randomUUID(), candidate: CandidateRow = { id: candidateId, project_id: projectId, actor_id: principal.userId,
     name: '会客与办公 · 布局推荐', revision: 1, base_revision: project.revision, base_state: project.snapshot,
     objects: request.objects, planner_context: request.context, visual_style: styleOf(project.snapshot.visualStyle), status: 'checked', created_at: new Date(), updated_at: new Date() };
   await assertPlannerIntent(client, candidate);
   const report = candidateReport(candidate);
   if (!report.adoptable) throw new DomainError('PLANNER_CHECK_REJECTED', '规划结果在保存前复核未通过，没有保存可采用推荐。', 400, report);
-  await client.query("INSERT INTO candidates(id,project_id,owner_id,name,revision,base_revision,base_state,objects,visual_style,planner_context,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,$9,'checked')", [candidateId, projectId, principal.userId, candidate.name, project.revision, project.snapshot, JSON.stringify(candidate.objects), candidate.visual_style, request.context]);
+  await client.query("INSERT INTO candidates(id,project_id,actor_id,name,revision,base_revision,base_state,objects,visual_style,planner_context,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,$9,'checked')", [candidateId, projectId, principal.userId, candidate.name, project.revision, project.snapshot, JSON.stringify(candidate.objects), candidate.visual_style, request.context]);
   await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style) VALUES($1,1,$2,$3)', [candidateId, JSON.stringify(candidate.objects), candidate.visual_style]);
   const checkId = randomUUID();
   await client.query('INSERT INTO candidate_checks(id,candidate_id,candidate_revision,base_revision,content_hash,checker_version,report) VALUES($1,$2,1,$3,$4,$5,$6)', [checkId, candidateId, project.revision, contentHash(candidate), CHECKER_VERSION, report]);
   const result = { candidateId, candidateRevision: 1, checkId, report: request.report, plannerRequestHash: request.plannerRequestHash };
-  await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [principal.userId, request.operationId, projectId, requestHash, result]);
+  await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [principal.userId, request.operationId, projectId, requestHash, result]);
   return result;
 }
 export async function getCandidate(principal: Principal, projectId: string, candidateId: string): Promise<CandidateView> {
@@ -248,7 +248,7 @@ export async function presentCandidate(user: BrowserUser, projectId: string, can
   return mutate(user, projectId, 'candidate:present', { ...request, candidateId: idSchema.parse(candidateId), sessionHash: user.sessionHash }, async (client, project) => {
     const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
     if (project.revision !== request.expectedRevision) throw conflict(); await checked(client, candidate, request.checkId);
-    const row = (await client.query<PresentationRow>('INSERT INTO candidate_presentations(id,candidate_id,candidate_revision,base_revision,check_id,owner_id,session_hash,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [randomUUID(), candidate.id, candidate.revision, candidate.base_revision, request.checkId, user.userId, user.sessionHash, contentHash(candidate)])).rows[0];
+    const row = (await client.query<PresentationRow>('INSERT INTO candidate_presentations(id,candidate_id,candidate_revision,base_revision,check_id,actor_id,session_hash,content_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [randomUUID(), candidate.id, candidate.revision, candidate.base_revision, request.checkId, user.userId, user.sessionHash, contentHash(candidate)])).rows[0];
     return presentationView(row);
   });
 }
@@ -257,11 +257,11 @@ export async function selectCandidate(user: BrowserUser, projectId: string, cand
   assertBrowserUser(user); const request = selectCandidateSchema.parse(input);
   return mutate(user, projectId, 'candidate:select', { ...request, candidateId: idSchema.parse(candidateId), sessionHash: user.sessionHash }, async (client, project) => {
     const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate);
-    const presentation = (await client.query<PresentationRow>('SELECT * FROM candidate_presentations WHERE id=$1 AND candidate_id=$2 AND owner_id=$3 AND session_hash=$4', [request.presentationId, candidate.id, user.userId, user.sessionHash])).rows[0];
+    const presentation = (await client.query<PresentationRow>('SELECT * FROM candidate_presentations WHERE id=$1 AND candidate_id=$2 AND actor_id=$3 AND session_hash=$4', [request.presentationId, candidate.id, user.userId, user.sessionHash])).rows[0];
     if (!presentation) throw new DomainError('USER_SELECTION_REQUIRED', '请先在当前会话展示要采用的候选。', 403);
     if (presentation.candidate_revision !== candidate.revision || presentation.base_revision !== project.revision || presentation.content_hash !== contentHash(candidate)) throw new DomainError('STALE_PRESENTATION', '展示版本已变化，请重新查看后选择。', 409);
     await checked(client, candidate, presentation.check_id);
-    const row = (await client.query<SelectionRow>('INSERT INTO candidate_selections(id,presentation_id,owner_id,session_hash) VALUES($1,$2,$3,$4) RETURNING *', [randomUUID(), presentation.id, user.userId, user.sessionHash])).rows[0];
+    const row = (await client.query<SelectionRow>('INSERT INTO candidate_selections(id,presentation_id,actor_id,session_hash) VALUES($1,$2,$3,$4) RETURNING *', [randomUUID(), presentation.id, user.userId, user.sessionHash])).rows[0];
     return { id: row.id, presentationId: presentation.id, candidateId: candidate.id, candidateRevision: candidate.revision, baseRevision: candidate.base_revision, createdAt: row.created_at.toISOString() };
   });
 }
@@ -300,9 +300,9 @@ export async function adoptCandidate(principal: Principal, projectId: string, ca
   await mutate(principal, projectId, 'candidate:adopt', { ...request, candidateId: idSchema.parse(candidateId) }, async (client, project, lockedTaskIds) => {
     const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate);
     if (project.revision !== request.expectedRevision) throw conflict();
-    const selection = (await client.query<SelectionRow>('SELECT * FROM candidate_selections WHERE id=$1 AND owner_id=$2 FOR UPDATE', [request.selectionId, principal.userId])).rows[0];
+    const selection = (await client.query<SelectionRow>('SELECT * FROM candidate_selections WHERE id=$1 AND actor_id=$2 FOR UPDATE', [request.selectionId, principal.userId])).rows[0];
     if (!selection || selection.adopted_operation_id) throw new DomainError('USER_SELECTION_REQUIRED', '需要用户对当前展示版本的有效选择。', 403);
-    const presentation = (await client.query<PresentationRow>('SELECT * FROM candidate_presentations WHERE id=$1 AND candidate_id=$2 AND owner_id=$3', [selection.presentation_id, candidate.id, principal.userId])).rows[0];
+    const presentation = (await client.query<PresentationRow>('SELECT * FROM candidate_presentations WHERE id=$1 AND candidate_id=$2 AND actor_id=$3', [selection.presentation_id, candidate.id, principal.userId])).rows[0];
     if (!presentation) throw new DomainError('USER_SELECTION_REQUIRED', '用户选择不属于此候选。', 403);
     if (presentation.candidate_revision !== candidate.revision || presentation.base_revision !== project.revision || presentation.content_hash !== contentHash(candidate)) throw new DomainError('STALE_SELECTION', '用户选择的版本已变化，请重新展示并选择。', 409);
     await checked(client, candidate, presentation.check_id);
@@ -311,8 +311,8 @@ export async function adoptCandidate(principal: Principal, projectId: string, ca
     const kind = changeKind(candidate), before = project.snapshot.currentLayout, after = kind === 'style' ? before : { ...before, id: randomUUID(), revision: 1, objects: candidate.objects };
     const style = visualStyle(candidate), revision = await saveLayout(client, project, after, request.operationId, style);
     // The ledger row is inserted by mutate after this callback; deferred FK keeps all writes atomic.
-    await client.query('SET CONSTRAINTS candidate_adoptions_owner_id_operation_id_fkey DEFERRED');
-    await client.query('INSERT INTO candidate_adoptions(operation_id,owner_id,project_id,candidate_id,candidate_revision,selection_id,revision,before_layout,after_layout,fixed_facts_hash,before_style,after_style,change_kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [request.operationId, principal.userId, project.id, candidate.id, candidate.revision, selection.id, revision, before, after, hash(project.snapshot.fixedFacts), project.snapshot.visualStyle ?? null, style, kind]);
+    await client.query('SET CONSTRAINTS candidate_adoptions_actor_id_operation_id_fkey DEFERRED');
+    await client.query('INSERT INTO candidate_adoptions(operation_id,actor_id,project_id,candidate_id,candidate_revision,selection_id,revision,before_layout,after_layout,fixed_facts_hash,before_style,after_style,change_kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [request.operationId, principal.userId, project.id, candidate.id, candidate.revision, selection.id, revision, before, after, hash(project.snapshot.fixedFacts), project.snapshot.visualStyle ?? null, style, kind]);
     await client.query("UPDATE candidates SET status='adopted',updated_at=now() WHERE id=$1", [candidate.id]);
     await client.query('UPDATE candidate_selections SET adopted_operation_id=$1 WHERE id=$2', [request.operationId, selection.id]);
     if (candidate.planner_context && lockedTaskIds.includes(candidate.planner_context.taskId ?? '')) {

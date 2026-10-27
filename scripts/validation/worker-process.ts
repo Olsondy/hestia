@@ -146,10 +146,10 @@ try {
   try {
     if (identity) {
       for (const projectId of projects) {
-        for (const taskId of taskIds) await pool.query('DELETE FROM design_tasks WHERE id=$1 AND project_id=$2 AND owner_id=$3', [taskId, projectId, identity.userId]);
-        await pool.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
+        for (const taskId of taskIds) await pool.query('DELETE FROM design_tasks WHERE id=$1 AND project_id=$2 AND actor_id=$3', [taskId, projectId, identity.userId]);
+        await pool.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
         await pool.query('DELETE FROM project_revisions WHERE project_id=$1', [projectId]);
-        await pool.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2', [projectId, identity.userId]);
+        await pool.query('DELETE FROM projects WHERE id=$1 AND created_by=$2', [projectId, identity.userId]);
       }
     }
     if (invitation) await pool.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2', [invitation.id, email]);

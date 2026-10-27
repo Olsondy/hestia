@@ -13,12 +13,12 @@ export async function planRoomCandidateInTransaction(client: PoolClient, input: 
   ownerId: string; projectId: string; baseRevision: number; operationId: string; taskId: string; intentVersion: number;
   decision: PlanDecision; brief: ConversationBrief; input: ConversationState['input'];
 }): Promise<PlanCandidateResult> {
-  const task = (await client.query('SELECT conversation,status FROM design_tasks WHERE id=$1 AND project_id=$2 AND owner_id=$3', [input.taskId, input.projectId, input.ownerId])).rows[0];
+  const task = (await client.query('SELECT conversation,status FROM design_tasks WHERE id=$1 AND project_id=$2 AND actor_id=$3', [input.taskId, input.projectId, input.ownerId])).rows[0];
   if (!task || task.status !== 'running' || task.conversation?.brief?.intentVersion !== input.intentVersion || input.brief.intentVersion !== input.intentVersion
     || hash(task.conversation.brief) !== hash(input.brief) || hash(task.conversation.input) !== hash(input.input))
     throw new DomainError('PLANNER_INTENT_CONFLICT', '布局请求不属于当前执行意图。', 409);
   const plannerRequestHash = hash(input);
-  const previous = (await client.query('SELECT result FROM operations WHERE owner_id=$1 AND id=$2', [input.ownerId, input.operationId])).rows[0]?.result;
+  const previous = (await client.query('SELECT result FROM operations WHERE actor_id=$1 AND id=$2', [input.ownerId, input.operationId])).rows[0]?.result;
   if (previous) {
     if (previous.plannerRequestHash !== plannerRequestHash || !previous.report) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已经用于另一布局请求。', 409);
     return { status: 'recommended', candidateId: previous.candidateId, candidateRevision: previous.candidateRevision, checkId: previous.checkId, report: previous.report };

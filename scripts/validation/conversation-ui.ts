@@ -121,12 +121,12 @@ try {
 } finally {
   await browser.close();
   for (const projectId of projectIds) {
-    const taskRows = (await pool.query('SELECT id FROM design_tasks WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId])).rows;
+    const taskRows = (await pool.query('SELECT id FROM design_tasks WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId])).rows;
     for (const task of taskRows) await pool.query("DELETE FROM hestia_jobs.job WHERE id=$1 AND data->>'taskId'=$2", [task.id, task.id]);
-    await pool.query('DELETE FROM design_tasks WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
-    await pool.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM design_tasks WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
     await pool.query('DELETE FROM project_revisions WHERE project_id=$1', [projectId]);
-    await pool.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2', [projectId, identity.userId]);
+    await pool.query('DELETE FROM projects WHERE id=$1 AND created_by=$2', [projectId, identity.userId]);
   }
   await pool.query('DELETE FROM hestia_invitation WHERE id=$1 AND user_id=$2', [invitation.id, identity.userId]);
   await pool.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2', [identity.userId, email]);

@@ -104,7 +104,7 @@ try {
   const rawYaw = Math.PI * 2 + .15;
   await pool.query(`UPDATE projects SET snapshot=jsonb_set(snapshot,'{currentLayout,objects}',
     (SELECT jsonb_agg(CASE WHEN item->>'id'='sofa-a' THEN jsonb_set(item,'{yaw}',$2::jsonb) ELSE item END)
-     FROM jsonb_array_elements(snapshot->'currentLayout'->'objects') AS item)) WHERE id=$1 AND owner_id=$3`,
+     FROM jsonb_array_elements(snapshot->'currentLayout'->'objects') AS item)) WHERE id=$1 AND created_by=$3`,
     [projectId, JSON.stringify(rawYaw), identity.userId]);
   await page.reload(); await selectSofa(page);
   await expect(page.getByLabel('旋转角度（度）')).toHaveValue('8.59');
@@ -119,10 +119,10 @@ try {
   await browser.close();
   await transaction(async client => {
     if (projectId) {
-      await client.query('DELETE FROM project_commands WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
-      await client.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2', [projectId, identity.userId]);
-      await client.query('DELETE FROM project_revisions WHERE project_id=$1 AND project_id IN (SELECT id FROM projects WHERE owner_id=$2)', [projectId, identity.userId]);
-      await client.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2', [projectId, identity.userId]);
+      await client.query('DELETE FROM project_commands WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
+      await client.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2', [projectId, identity.userId]);
+      await client.query('DELETE FROM project_revisions WHERE project_id=$1 AND project_id IN (SELECT id FROM projects WHERE created_by=$2)', [projectId, identity.userId]);
+      await client.query('DELETE FROM projects WHERE id=$1 AND created_by=$2', [projectId, identity.userId]);
     }
     await client.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2', [invite.id, email]);
     await client.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2', [identity.userId, email]);

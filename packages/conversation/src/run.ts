@@ -61,7 +61,7 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
     if (typeof response.reply !== 'string' || !response.reply.trim())
       throw new DomainError('MODEL_REPLY_REQUIRED', '旧版或不完整响应缺少本轮答复，空间未修改；请重新发起本轮。');
     // Even read-only answers are explicitly tied to the accepted project revision.
-    const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [row.project_id, row.owner_id])).rows[0];
+    const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [row.project_id, row.actor_id])).rows[0];
     if (!project || project.revision !== row.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已有新修订，本轮旧结果未应用；请重新发起。', 409);
     // UI discards abandoned-generation drafts. Replaying a durable, complete response in the
     // current generation preserves the answer after recovery without invoking the model again.
@@ -84,7 +84,7 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
       conversation.brief = prepared.brief;
       const effectiveDecision = prepared.decision;
       conversation.effectiveDecision = effectiveDecision; await saveConversation(client, row);
-      const result = await planRoomCandidateInTransaction(client, { ownerId: row.owner_id, projectId: row.project_id,
+      const result = await planRoomCandidateInTransaction(client, { ownerId: row.actor_id, projectId: row.project_id,
         baseRevision: row.expected_revision, operationId: conversation.operationId, taskId: row.id,
         intentVersion: conversation.brief.intentVersion, decision: effectiveDecision, brief: conversation.brief, input: conversation.input });
       // Planner adds only independently verified application-owned input IDs to its provenance.
@@ -101,9 +101,9 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
         ? { clarification: '本轮只确认居住需求，不授权空间修改。' } : exactLocalCommand(conversation.input, state, decision);
       if ('clarification' in intent) outcome = { kind: 'clarification', message: intent.clarification };
       else {
-        await executeCommandInTransaction(client, { userId: row.owner_id }, row.project_id,
+        await executeCommandInTransaction(client, { userId: row.actor_id }, row.project_id,
           { operationId: conversation.operationId, expectedRevision: row.expected_revision, command: intent.command });
-        const result = (await client.query('SELECT result FROM operations WHERE owner_id=$1 AND id=$2', [row.owner_id, conversation.operationId])).rows[0].result;
+        const result = (await client.query('SELECT result FROM operations WHERE actor_id=$1 AND id=$2', [row.actor_id, conversation.operationId])).rows[0].result;
         await fenced(client, claim); // Project lock waits cannot allow a stale generation to commit.
         const object = state.currentLayout.objects.find(item => item.id === intent.objectId)!;
         const after = intent.command as Extract<typeof intent.command, { type: 'move-furniture' }>;
@@ -196,7 +196,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
       }
       row = await transaction(async client => {
         const current = await fenced(client, claim);
-        const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [current.project_id, current.owner_id])).rows[0];
+        const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [current.project_id, current.actor_id])).rows[0];
         if (!project || project.revision !== current.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已更新，本轮未调用模型。', 409);
         reserveAttempt(current, { configurationId: configuration.id, profile,
           reason: attempts.length === 0 ? 'initial' : attempts.length === 1 ? 'retry' : 'fallback',

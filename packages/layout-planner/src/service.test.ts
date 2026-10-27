@@ -26,9 +26,9 @@ before(async () => {
 after(async () => {
   try { await transaction(async client => {
     if (owner) {
-      await client.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-      await client.query('DELETE FROM project_revisions WHERE project_id IN(SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-      await client.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+      await client.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+      await client.query('DELETE FROM project_revisions WHERE project_id IN(SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+      await client.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
       await client.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2', [owner.userId, email]);
     }
     if (invitationId) await client.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2', [invitationId, email]);
@@ -69,7 +69,7 @@ test('caller fence expiry rolls back planned candidate, check and operation toge
     await fenced(client, item.claim);
   }), { code: 'TASK_FENCE_LOST' });
   assert.equal((await listCandidates(owner, item.project.id)).candidates.length, 0);
-  assert.equal((await pool.query('SELECT 1 FROM operations WHERE owner_id=$1 AND id=$2', [owner.userId, item.input.operationId])).rowCount, 0);
+  assert.equal((await pool.query('SELECT 1 FROM operations WHERE actor_id=$1 AND id=$2', [owner.userId, item.input.operationId])).rowCount, 0);
 });
 test('source intent change makes old candidate stale even without any project revision change', async () => {
   const item = await prepared(), result = await generate(item); await waitSelection(item, result);

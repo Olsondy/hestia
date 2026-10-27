@@ -70,7 +70,7 @@ try {
   await expect(page.locator('[data-scene-ready=true]')).toBeVisible(); await page.locator('canvas').screenshot({ path: `${output}/courtyard-interactive.png` });
 
   const angled = (await post('/api/projects', { name: '凹形概念空间', template: 'angled', operationId: randomUUID() }, 201)).project; projects.push(angled.id);
-  await pool.query("UPDATE projects SET snapshot=jsonb_set(snapshot,'{scale}','\"estimated\"') WHERE id=$1 AND owner_id=$2", [angled.id, user.userId]);
+  await pool.query("UPDATE projects SET snapshot=jsonb_set(snapshot,'{scale}','\"estimated\"') WHERE id=$1 AND created_by=$2", [angled.id, user.userId]);
   const candidate = (await post(`/api/projects/${angled.id}/candidates`, { operationId: randomUUID(), expectedRevision: 1, name: '凹形候选图' }, 201)).candidate;
   const created = (await post(`/api/projects/${angled.id}/renders`, { operationId: randomUUID(), source: { kind: 'candidate', candidateId: candidate.id, revision: candidate.revision } }, 202)).render; renderIds.push(created.id);
   await page.close(); await runRender(created.id);
@@ -87,7 +87,7 @@ try {
   await page.goto(`${base}/?project=${angled.id}`); await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
   await page.locator('canvas').screenshot({ path: `${output}/angled-interactive.png` });
   const broken = (await post(`/api/projects/${angled.id}/renders`, { operationId: randomUUID(), source: { kind: 'current', revision: 1 } }, 202)).render; renderIds.push(broken.id);
-  await pool.query('UPDATE project_renders SET snapshot_hash=$2 WHERE id=$1 AND owner_id=$3', [broken.id, 'injected-invalid-digest', user.userId]);
+  await pool.query('UPDATE project_renders SET snapshot_hash=$2 WHERE id=$1 AND actor_id=$3', [broken.id, 'injected-invalid-digest', user.userId]);
   await runRender(broken.id);
   await page.setViewportSize({ width:390, height:844 });
   await page.goto(`${base}/?project=${angled.id}&view=renders&render=${broken.id}`);
@@ -107,11 +107,11 @@ try {
   const files = projects.length ? (await pool.query('SELECT object_key FROM resources WHERE project_id=ANY($1::uuid[])', [projects])).rows : [];
   await transaction(async client => {
     for (const id of projects) {
-      await client.query('DELETE FROM project_renders WHERE project_id=$1 AND owner_id=$2', [id,user.userId]);
+      await client.query('DELETE FROM project_renders WHERE project_id=$1 AND actor_id=$2', [id,user.userId]);
       await client.query('DELETE FROM resources WHERE project_id=$1', [id]);
-      await client.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2', [id,user.userId]);
+      await client.query('DELETE FROM operations WHERE project_id=$1 AND actor_id=$2', [id,user.userId]);
       await client.query('DELETE FROM project_revisions WHERE project_id=$1', [id]);
-      await client.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2', [id,user.userId]);
+      await client.query('DELETE FROM projects WHERE id=$1 AND created_by=$2', [id,user.userId]);
     }
     await client.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2', [invitation.id,email]);
     await client.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2', [user.userId,email]);

@@ -22,9 +22,9 @@ const input = (steps: TaskStep[] = [text(), lock], expectedRevision = 1) => ({ o
 async function expire(id: string) { await pool.query("UPDATE design_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [id]); }
 before(async () => { boss = await initializeQueue(queueSchema); });
 after(async () => {
-  await pool.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-  await pool.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+  await pool.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
   // The identifier is generated above, never derived from a user or an existing schema.
   assert.match(queueSchema, /^task_test_[a-f0-9]{32}$/);
   await pool.query(`DROP SCHEMA ${queueSchema} CASCADE`);
@@ -42,7 +42,7 @@ test('task + first event + pg-boss job commit together, duplicate acceptance ret
   const failedProject = await create(), failedRequest = input();
   await assert.rejects(createTask(owner, failedProject.id, failedRequest, createQueueClient(`${queueSchema}_none`)));
   assert.equal((await listTasks(owner, failedProject.id)).length, 0);
-  assert.equal((await pool.query('SELECT 1 FROM operations WHERE owner_id=$1 AND id=$2', [owner.userId, failedRequest.operationId])).rowCount, 0);
+  assert.equal((await pool.query('SELECT 1 FROM operations WHERE actor_id=$1 AND id=$2', [owner.userId, failedRequest.operationId])).rowCount, 0);
 });
 
 test('ownership, project binding, strict input and bounded event cursors cannot be bypassed', async () => {

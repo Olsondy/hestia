@@ -8,10 +8,10 @@ import { createProject, getProject, listProjects, renameProject, getResource, re
 const a = { userId: `test-project-a-${randomUUID()}` }, b = { userId: `test-project-b-${randomUUID()}` };
 after(async () => {
   // Delete only the records created by these random test identities.
-  await pool.query('DELETE FROM resources WHERE project_id IN (SELECT id FROM projects WHERE owner_id=ANY($1))', [[a.userId, b.userId]]);
-  await pool.query('DELETE FROM operations WHERE owner_id=ANY($1)', [[a.userId, b.userId]]);
-  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=ANY($1))', [[a.userId, b.userId]]);
-  await pool.query('DELETE FROM projects WHERE owner_id=ANY($1)', [[a.userId, b.userId]]);
+  await pool.query('DELETE FROM resources WHERE project_id IN (SELECT id FROM projects WHERE created_by=ANY($1))', [[a.userId, b.userId]]);
+  await pool.query('DELETE FROM operations WHERE actor_id=ANY($1)', [[a.userId, b.userId]]);
+  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=ANY($1))', [[a.userId, b.userId]]);
+  await pool.query('DELETE FROM projects WHERE created_by=ANY($1)', [[a.userId, b.userId]]);
   await pool.end();
 });
 test('concurrent creation retries persist one project, reopening from DB preserves fixed facts separately', async () => {

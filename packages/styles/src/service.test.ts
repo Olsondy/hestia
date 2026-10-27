@@ -27,10 +27,10 @@ before(async () => {
 after(async () => {
   try { await transaction(async client => {
     if (owner) {
-      await client.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-      await client.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-      await client.query('DELETE FROM resources WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-      await client.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+      await client.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+      await client.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+      await client.query('DELETE FROM resources WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+      await client.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
       await client.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2', [owner.userId, email]);
     }
     if (invitationId) await client.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2', [invitationId, email]);
@@ -120,7 +120,7 @@ test('local style snapshot, history and idempotency ledger roll back together af
   await assert.rejects(applyStyle(owner, project.id, request), { code: '23505' });
   assert.equal((await getProject(owner, project.id)).revision, 1);
   assert.equal((await pool.query('SELECT * FROM project_style_commands WHERE project_id=$1', [project.id])).rowCount, 0);
-  assert.equal((await pool.query('SELECT * FROM operations WHERE owner_id=$1 AND id=$2', [owner.userId, request.operationId])).rowCount, 0);
+  assert.equal((await pool.query('SELECT * FROM operations WHERE actor_id=$1 AND id=$2', [owner.userId, request.operationId])).rowCount, 0);
 });
 
 test('historical palette-only replacement plus lighting cannot be presented or silently discard visible furniture on style adoption', async () => {

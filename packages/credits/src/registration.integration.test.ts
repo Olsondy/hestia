@@ -22,10 +22,10 @@ async function login(email: string) {
 after(async () => {
   try { await transaction(async client => {
     const ids = (await client.query('SELECT id FROM hestia_auth_user WHERE email=ANY($1::text[])', [emails])).rows.map(row => row.id);
-    const projects = (await client.query('SELECT id FROM projects WHERE owner_id=ANY($1::text[])', [ids])).rows.map(row => row.id);
-    await client.query('DELETE FROM operations WHERE owner_id=ANY($1::text[])', [ids]);
+    const projects = (await client.query('SELECT id FROM projects WHERE created_by=ANY($1::text[])', [ids])).rows.map(row => row.id);
+    await client.query('DELETE FROM operations WHERE actor_id=ANY($1::text[])', [ids]);
     await client.query('DELETE FROM project_revisions WHERE project_id=ANY($1::uuid[])', [projects]);
-    await client.query('DELETE FROM projects WHERE owner_id=ANY($1::text[])', [ids]);
+    await client.query('DELETE FROM projects WHERE created_by=ANY($1::text[])', [ids]);
     await client.query('DELETE FROM hestia_invitation WHERE email=ANY($1::text[])', [emails]);
     await client.query('DELETE FROM hestia_auth_user WHERE email=ANY($1::text[])', [emails]);
   }); } finally { await pool.end(); }

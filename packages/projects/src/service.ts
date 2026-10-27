@@ -54,33 +54,33 @@ export async function getProject(principal: Principal, projectId: string): Promi
   };
 }
 export async function createProject(principal: Principal, input: unknown): Promise<ProjectView> {
-  const value = createProjectSchema.parse(input), ownerId = identity(principal);
+  const value = createProjectSchema.parse(input), actorId = identity(principal);
   const hash = createHash('sha256').update(JSON.stringify({ kind: 'create', ...value })).digest('hex');
   const result = await transaction(async client => {
-    // Same-owner retries serialize even before a project exists. No process-local mutex.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${ownerId}:${value.operationId}`]);
-    const previous = await client.query('SELECT request_hash,result FROM operations WHERE owner_id=$1 AND id=$2', [ownerId, value.operationId]);
+    // Same-actor retries serialize even before a project exists. No process-local mutex.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${actorId}:${value.operationId}`]);
+    const previous = await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [actorId, value.operationId]);
     if (previous.rowCount) {
       if (previous.rows[0].request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return previous.rows[0].result as { projectId: string };
     }
     const projectId = randomUUID(), state = initialState(value.template), workspaceId = await actingWorkspace(client, principal);
-    await client.query('INSERT INTO projects(id,owner_id,workspace_id,created_by,name,revision,snapshot) VALUES($1,$2,$3,$2,$4,1,$5)', [projectId, ownerId, workspaceId, value.name, state]);
+    await client.query('INSERT INTO projects(id,workspace_id,created_by,name,revision,snapshot) VALUES($1,$2,$3,$4,1,$5)', [projectId, workspaceId, actorId, value.name, state]);
     await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,1,$2,$3)', [projectId, state, value.operationId]);
     const saved = { projectId };
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [ownerId, value.operationId, projectId, hash, saved]);
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [actorId, value.operationId, projectId, hash, saved]);
     return saved;
   });
   return getProject(principal, result.projectId);
 }
 export async function renameProject(principal: Principal, projectId: string, input: unknown): Promise<ProjectView> {
-  const value = renameProjectSchema.parse(input), ownerId = identity(principal), id = idSchema.parse(projectId);
+  const value = renameProjectSchema.parse(input), actorId = identity(principal), id = idSchema.parse(projectId);
   const hash = createHash('sha256').update(JSON.stringify({ kind: 'rename', projectId: id, ...value })).digest('hex');
   await transaction(async client => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${ownerId}:${value.operationId}`]);
-    const row = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, ownerId])).rows[0];
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${actorId}:${value.operationId}`]);
+    const row = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, actorId])).rows[0];
     if (!row) throw notFound();
-    const previous = (await client.query('SELECT request_hash FROM operations WHERE owner_id=$1 AND id=$2', [ownerId, value.operationId])).rows[0];
+    const previous = (await client.query('SELECT request_hash FROM operations WHERE actor_id=$1 AND id=$2', [actorId, value.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return;
@@ -89,7 +89,7 @@ export async function renameProject(principal: Principal, projectId: string, inp
     const revision = row.revision + 1;
     await client.query('UPDATE projects SET name=$1,revision=$2,updated_at=now() WHERE id=$3', [value.name, revision, id]);
     await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,$2,$3,$4)', [id, revision, row.snapshot, value.operationId]);
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [ownerId, value.operationId, id, hash, { projectId: id, revision }]);
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [actorId, value.operationId, id, hash, { projectId: id, revision }]);
   });
   return getProject(principal, id);
 }
@@ -103,9 +103,9 @@ export async function getResource(principal: Principal, projectId: string, resou
 /** Reserve a project-owned private resource. Only the upload adapter can mark it ready. */
 export async function reserveResource(principal: Principal, projectId: string, input: unknown) {
   const value = z.object({ id: idSchema, mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']) }).strict().parse(input);
-  const ownerId = identity(principal), id = idSchema.parse(projectId);
+  const actorId = identity(principal), id = idSchema.parse(projectId);
   return transaction(async client => {
-    const project = await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`, [id, ownerId]);
+    const project = await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`, [id, actorId]);
     if (!project.rowCount) throw notFound();
     await client.query('INSERT INTO resources(id,project_id,object_key,media_type,state) VALUES($1,$2,$3,$4,\'pending\') ON CONFLICT(id) DO NOTHING',
       [value.id, id, `${id}/${randomUUID()}`, value.mediaType]);

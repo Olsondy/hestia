@@ -29,7 +29,7 @@ test('private underlay persistence and scope against PostgreSQL',async t=>{
       const failure:PrivateFileStore={...tracked,put:async(key,bytes)=>{failedKey=key;await tracked.put(key,bytes);throw new Error('synthetic disk failure');}};
       await rejects(saveUnderlay(owner,a.id,metadata,png,'image/png',failure),'FILE_SAVE_FAILED');
       assert.equal(await getUnderlay(owner,a.id),null);
-      const row=(await pool.query('SELECT r.id,r.state FROM resources r JOIN underlay_operations o ON o.resource_id=r.id WHERE o.owner_id=$1 AND o.id=$2',[owner.userId,metadata.operationId])).rows[0];
+      const row=(await pool.query('SELECT r.id,r.state FROM resources r JOIN underlay_operations o ON o.resource_id=r.id WHERE o.actor_id=$1 AND o.id=$2',[owner.userId,metadata.operationId])).rows[0];
       assert.equal(row.state,'failed');await rejects(readPrivateImage(owner,a.id,row.id,tracked),'RESOURCE_NOT_READY');await assert.rejects(store.read(failedKey));
       ready=await saveUnderlay(owner,a.id,metadata,png,'image/png',tracked);assert.equal(ready.resourceId,row.id);assert.equal(ready.version,1);
       const actual=await sharp(await readPrivateImage(owner,a.id,ready.resourceId,tracked)).raw().toBuffer();assert.deepEqual([...actual.subarray(0,3)],[204,34,68]);
@@ -65,7 +65,7 @@ test('private underlay persistence and scope against PostgreSQL',async t=>{
       const race:PrivateFileStore={...tracked,put:async(k,bytes)=>{key=k;await tracked.put(k,bytes);await updateUnderlay(owner,a.id,{operationId:randomUUID(),expectedVersion:1,resourceId:ready!.resourceId,display:{...ready!.display,opacity:.5}});}};
       await rejects(saveUnderlay(owner,a.id,metadata,png,'image/png',race),'UNDERLAY_VERSION_CONFLICT');
       assert.equal((await getUnderlay(owner,a.id))!.version,2);assert.equal((await getUnderlay(owner,a.id))!.resourceId,ready!.resourceId);
-      const state=(await pool.query('SELECT r.state FROM resources r JOIN underlay_operations o ON o.resource_id=r.id WHERE o.owner_id=$1 AND o.id=$2',[owner.userId,metadata.operationId])).rows[0].state;
+      const state=(await pool.query('SELECT r.state FROM resources r JOIN underlay_operations o ON o.resource_id=r.id WHERE o.actor_id=$1 AND o.id=$2',[owner.userId,metadata.operationId])).rows[0].state;
       assert.equal(state,'failed');await assert.rejects(store.read(key));
       await rejects(updateUnderlay(owner,a.id,{operationId:randomUUID(),expectedVersion:1,resourceId:ready!.resourceId,display:ready!.display}),'UNDERLAY_VERSION_CONFLICT');
     });

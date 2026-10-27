@@ -34,13 +34,13 @@ async function mutate(principal: Principal, projectId: string, kind: string, req
   await transaction(async client => {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${principal.userId}:${request.operationId}`]);
     const project = await projectRow(client, principal, id, true);
-    const previous = (await client.query('SELECT request_hash FROM operations WHERE owner_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
+    const previous = (await client.query('SELECT request_hash FROM operations WHERE actor_id=$1 AND id=$2', [principal.userId, request.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return;
     }
     await work(client, project);
-    await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [principal.userId, request.operationId, id, requestHash, { operationId: request.operationId }]);
+    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [principal.userId, request.operationId, id, requestHash, { operationId: request.operationId }]);
   });
 }
 async function save(client: PoolClient, project: ProjectRow, visualStyle: VisualStyle | null, operationId: string) {
@@ -70,7 +70,7 @@ export async function applyStyle(principal: Principal, projectId: string, input:
     const before = project.snapshot.visualStyle ?? null;
     const after = applyStyleCommand(project.snapshot, project.snapshot.currentLayout.objects, styleOf(before), request.command);
     const revision = await save(client, project, after, request.operationId);
-    await client.query('INSERT INTO project_style_commands(operation_id,owner_id,project_id,revision,command,before_style,after_style,layout_hash,fixed_facts_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    await client.query('INSERT INTO project_style_commands(operation_id,actor_id,project_id,revision,command,before_style,after_style,layout_hash,fixed_facts_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
       [request.operationId, principal.userId, project.id, revision, request.command, before, after, hash(project.snapshot.currentLayout), hash(project.snapshot.fixedFacts)]);
   });
   return result(principal, projectId, request.operationId);

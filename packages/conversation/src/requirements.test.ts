@@ -25,9 +25,9 @@ const proposal = (task: TaskView, questions = [{ key: 'reading_schedule', prompt
 const model = (brief?: unknown, decision: unknown = answer, onRequest?: () => void) => fixtureModel(toolChunks({ reply: '先整理会客和办公功能；阅读照明可独立控制。', decision, ...(brief ? { brief } : {}) }, 'resolve_turn'), onRequest);
 before(async () => { producer = await initializeQueue(schema); });
 after(async () => {
-  await pool.query('DELETE FROM operations WHERE owner_id=$1', [owner.userId]);
-  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE owner_id=$1)', [owner.userId]);
-  await pool.query('DELETE FROM projects WHERE owner_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
+  await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
+  await pool.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
   assert.match(schema, /^requirements_[a-f0-9]{32}$/); await pool.query(`DROP SCHEMA ${schema} CASCADE`); await pool.end();
 });
 
@@ -148,7 +148,7 @@ test('failed dispatch transaction rolls back answer, intent, generation and idem
   const waiting = await getTask(owner, p.id, task.id), request = { ...update(waiting), questionId: waiting.conversation!.brief!.questions[0].id };
   await assert.rejects(appendConversationInput(owner, p.id, task.id, request, createQueueClient(`${schema}_none`)));
   const unchanged = await getTask(owner, p.id, task.id); assert.deepEqual(unchanged, waiting);
-  assert.equal((await pool.query('SELECT 1 FROM operations WHERE owner_id=$1 AND id=$2', [owner.userId, request.operationId])).rowCount, 0);
+  assert.equal((await pool.query('SELECT 1 FROM operations WHERE actor_id=$1 AND id=$2', [owner.userId, request.operationId])).rowCount, 0);
   await assert.rejects(appendConversationInput(owner, p.id, task.id, { ...request, expectedIntentVersion: 99 }, producer), { code: 'INTENT_CONFLICT' });
   await assert.rejects(appendConversationInput(owner, p.id, task.id, { ...request, expectedRevision: 99 }, producer), { code: 'REVISION_CONFLICT' });
   await cancelTask(owner, p.id, task.id);

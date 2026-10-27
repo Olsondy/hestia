@@ -1,0 +1,92 @@
+{
+  "repository": "Olsondy/hestia",
+  "verifiedOn": "2026-10-28",
+  "specification": 29,
+  "tickets": [
+    {
+      "key": "D01",
+      "number": 30,
+      "blockedBy": []
+    },
+    {
+      "key": "D03",
+      "number": 31,
+      "blockedBy": []
+    },
+    {
+      "key": "D02",
+      "number": 32,
+      "blockedBy": [
+        30
+      ]
+    },
+    {
+      "key": "D04",
+      "number": 33,
+      "blockedBy": [
+        31
+      ]
+    },
+    {
+      "key": "D05",
+      "number": 34,
+      "blockedBy": [
+        30,
+        31
+      ]
+    },
+    {
+      "key": "D06",
+      "number": 35,
+      "blockedBy": [
+        32,
+        33,
+        34
+      ]
+    },
+    {
+      "key": "D07",
+      "number": 36,
+      "blockedBy": [
+        35
+      ]
+    },
+    {
+      "key": "D08",
+      "number": 37,
+      "blockedBy": [
+        32,
+        36
+      ]
+    },
+    {
+      "key": "P01",
+      "number": 38,
+      "blockedBy": []
+    },
+    {
+      "key": "H01",
+      "number": 39,
+      "blockedBy": [
+        38,
+        32,
+        34,
+        35,
+        36,
+        37
+      ]
+    },
+    {
+      "key": "D09",
+      "number": 40,
+      "blockedBy": [
+        39
+      ]
+    }
+  ],
+  "nativeSubIssuesVerified": true,
+  "nativeBlockingEdgesVerified": true,
+  "readyForAgentLabelVerified": true,
+  "implementationPerformed": false,
+  "servicesStartedOrRestarted": false
+}

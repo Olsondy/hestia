@@ -8,6 +8,20 @@
 - 许可：Apache-2.0；完整条款和上游声明见该目录的 `LICENSE`、`NOTICE.md`。
 - 用途：UI 设计规范和辅助命令；仅项目级安装，未安装或启用 hooks，未加入应用运行时依赖。
 
+## house-plan-designer（演示别墅数据）
+
+- 项目：https://github.com/ZWD11/house-plan-designer ；来源提交：`3257e5a3c4acc54786666fd9647913cf084742c6`。
+- 许可：MIT License，Copyright (c) 2026 ZWD11。
+- 改编内容：`packages/floorplan-import/fixtures/demo-villa.housespec.json` 由上游 `reference/example-gen-villa.py` 生成的 HouseSpec 三层别墅示例改编：家具尺寸按上游 `reference/catalog-sizes.json` 默认值显式写入，挂机空调与吊灯离地高度显式写入，名称改为中性演示名称，并加入 `demo` 来源与演示标注。仅包含数据，未复制上游代码、HTML 模板或图片。
+- 用途：多楼层空间、楼梯与楼板开洞的演示与测试数据；属于示意尺寸的演示数据，不是真实住宅或实测图纸。
+- MIT 条款要求在副本中保留以下声明：
+
+  > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+  >
+  > The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+  >
+  > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Three.js
 
 - 项目：https://github.com/mrdoob/three.js

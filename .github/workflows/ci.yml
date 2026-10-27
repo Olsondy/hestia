@@ -13,11 +13,46 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: npm run check
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm setup:local
+      - run: pnpm build:web
       - name: Verify the committed build matches the source
-        run: git diff --exit-code -- dist/index.html
+        run: git diff --exit-code -- dist/index.html example/prototypes/projects/index.html
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.7
+        env:
+          POSTGRES_DB: hestia
+          POSTGRES_USER: hestia
+          POSTGRES_PASSWORD: hestia-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U hestia -d hestia"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://hestia:hestia-ci-only@127.0.0.1:5432/hestia
+      BETTER_AUTH_SECRET: hestia-ci-only-secret-not-used-outside-ci-0001
+      BETTER_AUTH_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:local
+      - run: pnpm db:migrate
+      - run: pnpm test:db

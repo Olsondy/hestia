@@ -1,0 +1,4 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["./**/*.ts", "../../scripts/worker.ts", "../../scripts/render-worker.ts"]
+}

@@ -1,0 +1,59 @@
+import { chromium, expect } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { createInvitation, acceptInvitation } from '../../packages/identity/src/service';
+import { createProject, getProject } from '../../packages/projects/src/service';
+import { pool, transaction } from '../../packages/persistence/src/client';
+import { catalogInstance } from '../../packages/catalog/src/instances';
+import { getCatalog } from '../../packages/catalog/src/catalog';
+import type { CandidateView } from '../../packages/contracts/src/candidates';
+
+const base = process.env.BETTER_AUTH_URL!;
+if (!['127.0.0.1', 'localhost'].includes(new URL(base).hostname)) throw new Error('Existing local service only');
+const run = randomUUID(), email = `style-ui-${run}@example.test`, password = randomUUID(), out = '.impeccable/review/t16';
+await mkdir(out, { recursive: true });
+const invitation = await createInvitation(email), identity = await acceptInvitation(invitation.token, '风格验收', password), principal = { userId: identity.userId }, projectIds: string[] = [];
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader'] }), context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' }), page = await context.newPage();
+page.setDefaultTimeout(20000); const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+const capture = async (prefix: string) => { for (const [name, width, height] of [['desktop',1440,1000], ['1100',1100,900], ['mobile',390,844]] as const) { await page.setViewportSize({width,height}); await page.evaluate(() => document.fonts.ready); await expect(page.locator('[data-scene-ready=true]')).toBeVisible(); await page.evaluate(() => scrollTo(0,0)); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({path:`${out}/${prefix}-${name}.png`,fullPage:true}); } };
+try {
+  const created = await createProject(principal, { name: '材质与光的探索', template: 'courtyard', operationId: randomUUID() }); projectIds.push(created.id);
+  const asset = getCatalog().assets.find(item => item.id === 'prototype-sofa')!;
+  const sofa = { ...catalogInstance('sofa-a', {assetId:asset.id,assetVersion:asset.version,materialId:'prototype-wood',materialVersion:1},asset.defaultSize,{x:3,z:1.2,yaw:0}), dimensionSource: 'measured' };
+  // Owned synthetic fixture only: measured furniture may be styled, locked furniture may not.
+  await pool.query(`UPDATE projects SET snapshot=jsonb_set(jsonb_set(snapshot,'{currentLayout,lockedObjectIds}','["table-a"]'::jsonb),'{currentLayout,objects}',(SELECT jsonb_agg(CASE WHEN item->>'id'='sofa-a' THEN $3::jsonb ELSE item END) FROM jsonb_array_elements(snapshot->'currentLayout'->'objects') item)) WHERE id=$1 AND owner_id=$2`, [created.id,identity.userId,JSON.stringify(sofa)]);
+  const original = await getProject(principal, created.id), url = `${base}/?project=${created.id}&view=styles`;
+  await page.goto(base); await page.getByLabel('邮箱',{exact:true}).fill(email); await page.getByLabel('密码',{exact:true}).fill(password); await page.getByRole('button',{name:'登录',exact:true}).click(); await page.locator('.folio').waitFor();
+  await page.goto(url); await expect(page.locator('[data-scene-ready=true]')).toBeVisible(); await expect(page.getByLabel('展示材质',{exact:true})).toBeVisible();
+  assert.equal(await page.getByLabel('风格家具',{exact:true}).locator('option').count(),1); await expect(page.getByText('目录家具按自身部件显示这组材质。 已测尺寸保持不变。')).toBeVisible();
+  const before = await page.locator('.style-stage canvas').screenshot();
+  await page.getByLabel('展示材质',{exact:true}).selectOption('prototype-chinese'); await expect(page.getByText('风格预览 · 待保存确认',{exact:true})).toBeVisible(); await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
+  assert.equal(before.equals(await page.locator('.style-stage canvas').screenshot()),false);
+  assert.deepEqual((await getProject(principal,created.id)).scene,original.scene);
+  // Commit succeeds, response is lost. Retrying must replay the same operation, not create another revision.
+  const requests: string[] = []; let loseResponse = true;
+  await page.route(`**/api/projects/${created.id}/styles/commands`,async route => { requests.push(route.request().postDataJSON().operationId); if(loseResponse){loseResponse=false; const response=await route.fetch();assert.equal(response.status(),200);await route.abort('failed');}else await route.continue(); });
+  await page.getByRole('button',{name:'应用当前风格',exact:true}).click(); await expect(page.locator('.style-error')).toBeVisible(); await page.setViewportSize({width:390,height:844}); await page.screenshot({path:`${out}/retry-mobile.png`,fullPage:true});
+  await page.getByRole('button',{name:'应用当前风格',exact:true}).click(); await expect(page.getByText('风格已应用并保存；家具摆放与尺寸保持不变。')).toBeVisible(); assert.equal(requests[0],requests[1]); await page.unroute(`**/api/projects/${created.id}/styles/commands`);
+  let current = await getProject(principal,created.id); assert.equal(current.revision,2); assert.deepEqual(current.scene.objects,original.scene.objects); assert.deepEqual(current.currentLayout,original.currentLayout); assert.deepEqual(current.fixedFacts,original.fixedFacts);
+  await page.reload(); await expect(page.getByLabel('展示材质',{exact:true})).toHaveValue('prototype-chinese'); await capture('material');
+  await page.getByRole('button',{name:'撤销上次风格修改',exact:true}).click(); await expect(page.getByText('已撤销上次风格修改。')).toBeVisible(); current=await getProject(principal,created.id); assert.equal(current.revision,3); assert.deepEqual(current.scene.visualStyle,original.scene.visualStyle);
+  await page.getByRole('button',{name:'展示灯光',exact:true}).click(); await page.getByLabel('全场展示灯光',{exact:true}).selectOption('display-soft'); await page.getByRole('button',{name:'应用当前风格',exact:true}).click(); await expect(page.getByText('风格已应用并保存；家具摆放与尺寸保持不变。')).toBeVisible();
+  await page.reload(); await page.getByRole('button',{name:'展示灯光',exact:true}).click(); await expect(page.getByLabel('全场展示灯光',{exact:true})).toHaveValue('display-soft'); await page.setViewportSize({width:1440,height:1000}); await expect(page.locator('[data-scene-ready=true]')).toBeVisible(); await page.screenshot({path:`${out}/lighting-desktop.png`,fullPage:true});
+  current=await getProject(principal,created.id); assert.deepEqual(current.scene.objects,original.scene.objects); assert.deepEqual(current.currentLayout,original.currentLayout);
+  await page.getByRole('button',{name:'撤销上次风格修改',exact:true}).click(); await expect(page.getByText('已撤销上次风格修改。')).toBeVisible();
+  await page.goto(`${base}/?project=${created.id}&view=candidates`); await page.getByLabel('新候选名称').fill('深木与亚麻'); await page.getByRole('button',{name:'从当前方案创建',exact:true}).click(); await page.getByLabel('展示材质',{exact:true}).selectOption('prototype-chinese');
+  await expect(page.getByRole('button',{name:'检查这版方案',exact:true})).toBeDisabled(); await page.getByRole('button',{name:'保存候选风格',exact:true}).click(); await expect(page.getByText('视觉风格已保存到候选，当前方案保持不变。')).toBeVisible();
+  const list = (await (await context.request.get(`${base}/api/projects/${created.id}/candidates`)).json()).candidates;
+  let candidate: CandidateView = (await (await context.request.get(`${base}/api/projects/${created.id}/candidates/${list[0].id}`)).json()).candidate;
+  assert.equal(candidate.changeKind,'style'); assert.equal(candidate.styleChanges.length,1); assert.equal(candidate.objectChanges.length,0); assert.deepEqual((await getProject(principal,created.id)).scene.objects,original.scene.objects);
+  await page.getByRole('button',{name:'检查这版方案',exact:true}).click(); await expect(page.getByText('本版必要检查已通过。')).toBeVisible(); await expect(page.getByRole('button',{name:'采用这版风格',exact:true})).toBeEnabled();
+  await page.getByRole('button',{name:'展示灯光',exact:true}).click(); await page.getByLabel('全场展示灯光',{exact:true}).selectOption('display-soft'); await expect(page.getByRole('button',{name:'采用这版风格',exact:true})).toBeDisabled(); await page.getByRole('button',{name:'还原风格预览',exact:true}).click(); await expect(page.getByRole('button',{name:'采用这版风格',exact:true})).toBeEnabled(); await page.getByLabel('全场展示灯光',{exact:true}).selectOption('display-soft'); await page.getByRole('button',{name:'保存候选风格',exact:true}).click(); await expect(page.getByText('视觉风格已保存到候选，当前方案保持不变。')).toBeVisible(); await page.getByRole('button',{name:'检查这版方案',exact:true}).click(); await expect(page.getByRole('button',{name:'采用这版风格',exact:true})).toBeEnabled(); candidate=(await(await context.request.get(`${base}/api/projects/${created.id}/candidates/${list[0].id}`)).json()).candidate; assert.equal(candidate.styleChanges.length,2); assert.equal(candidate.changeKind,'style'); await page.getByRole('button',{name:'展示灯光',exact:true}).click(); await capture('candidate-style');
+  await page.getByRole('button',{name:'采用这版风格',exact:true}).click(); await expect(page.getByText('这版方案已采用并保存，可整体撤销。')).toBeVisible(); current=await getProject(principal,created.id); assert.equal(current.revision,6); assert.deepEqual(current.currentLayout,original.currentLayout); assert.deepEqual(current.scene.objects,original.scene.objects); assert.deepEqual(current.scene.visualStyle,candidate.visualStyle);
+  await page.reload(); await page.getByRole('button',{name:'整体撤销上次采用',exact:true}).click(); await expect(page.getByText('已整体撤销采用，恢复为新的当前方案版本。')).toBeVisible(); current=await getProject(principal,created.id); assert.equal(current.revision,7); assert.deepEqual(current.currentLayout,original.currentLayout); assert.deepEqual(current.scene.visualStyle,original.scene.visualStyle);
+  const empty=await createProject(principal,{name:'等待家具的空间',template:'empty',operationId:randomUUID()});projectIds.push(empty.id);await page.goto(`${base}/?project=${empty.id}&view=styles`);await expect(page.getByLabel('展示材质',{exact:true})).toBeDisabled();await expect(page.getByText('当前没有可调整的家具。固定设施与已锁定物品的材质保持不变；仍可查看全场展示灯光。')).toBeVisible();await page.screenshot({path:`${out}/empty-mobile.png`,fullPage:true});
+  assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.getAnimations().length),0);assert.equal(await page.evaluate(()=>document.fonts.check('400 14px "Tsanger YuYang"')),true);
+  await writeFile(`${out}/browser-result.json`,JSON.stringify({passed:true,widths:[1440,1100,390],realCanvasMaterialChanged:true,previewDidNotSave:true,lostResponseIdempotent:true,currentReloadAndUndo:true,lightingReload:true,measuredStyleAllowed:true,fixedLockedNotSelectable:true,pureStyleCandidate:true,dirtyBlockedChecksAndAdoption:true,layoutIdentityPreservedOnAdoptAndUndo:true,emptyState:true,pageErrors:errors},null,2));
+  console.log('T16 UI passed: real canvas change, saved/reopened material and light, lost-response replay, pure-style candidate adoption/undo preserves layout, protections, three widths.');
+}catch(error){await page.screenshot({path:`${out}/failure.png`,fullPage:true}).catch(()=>{});console.log((await page.locator('main').textContent().catch(()=>''))?.slice(0,3200));throw error;}finally{await browser.close();await transaction(async client=>{for(const id of projectIds){await client.query('DELETE FROM candidate_adoptions WHERE project_id=$1 AND owner_id=$2',[id,identity.userId]);await client.query('DELETE FROM operations WHERE project_id=$1 AND owner_id=$2',[id,identity.userId]);await client.query('DELETE FROM project_revisions WHERE project_id=$1',[id]);await client.query('DELETE FROM projects WHERE id=$1 AND owner_id=$2',[id,identity.userId]);}await client.query('DELETE FROM hestia_invitation WHERE id=$1 AND email=$2',[invitation.id,email]);await client.query('DELETE FROM hestia_auth_user WHERE id=$1 AND email=$2',[identity.userId,email]);});await pool.end();}

@@ -1,0 +1,16 @@
+仓耳渔阳体 W01–W05 / Tsanger YuYang W01–W05
+
+Copyright © 北京仓耳文字技术有限公司（仓耳字库）。
+
+The fonts are used under the Tsanger free commercial font license. The
+license permits commercial use, embedding, modification, subsetting and
+redistribution, provided the font or any standalone font component is not
+sold separately and any modified or unmodified distribution remains under
+the same license.
+
+Official license statement:
+https://www.tsanger.cn/107.html
+
+The original TTF files and generated WOFF/WOFF2 assets in this directory are
+distributed as part of Hestia and are not sold as standalone font
+files.

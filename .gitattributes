@@ -9,7 +9,13 @@
 *.css text eol=lf
 *.py text eol=lf
 *.yml text eol=lf
+*.yaml text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.sql text eol=lf
+*.txt text eol=lf
 *.png binary
 *.pdf binary
 # The offline bundle contains unmodified third-party shader strings.
 dist/index.html -whitespace linguist-generated=true
+example/prototypes/projects/index.html -whitespace linguist-generated=true

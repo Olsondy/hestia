@@ -1,0 +1,104 @@
+{
+  "recordedAt": "2026-10-24T22:54:59.495Z",
+  "evidence": "local-harness-error-no-network",
+  "model": "deepseek-flash",
+  "adapter": "@ai-sdk/openai-compatible@3.0.78",
+  "sdk": "ai@7.0.153",
+  "fixtureManifestSha256": "98e147f274670c4564c525991355fd1b11d783b560a6e139ef86d372c9b81731",
+  "maxRetries": 0,
+  "timeoutMs": 30000,
+  "results": [
+    {
+      "id": "quality-image-tool",
+      "profile": "design_quality",
+      "maxOutputTokens": 1024,
+      "payloads": [],
+      "status": "rejected",
+      "text": "",
+      "requests": [],
+      "failure": "PROVIDER_OR_STREAM_ERROR",
+      "finishReason": null,
+      "usage": {
+        "inputTokens": null,
+        "outputTokens": null
+      },
+      "elapsedMs": 21.96229999999997,
+      "firstTextMs": null
+    },
+    {
+      "id": "quality-blank-qa",
+      "profile": "design_quality",
+      "maxOutputTokens": 1024,
+      "payloads": [],
+      "status": "rejected",
+      "text": "",
+      "requests": [],
+      "failure": "PROVIDER_OR_STREAM_ERROR",
+      "finishReason": null,
+      "usage": {
+        "inputTokens": null,
+        "outputTokens": null
+      },
+      "elapsedMs": 1.287300000000016,
+      "firstTextMs": null
+    },
+    {
+      "id": "fast-unit-edit",
+      "profile": "edit_fast",
+      "maxOutputTokens": 512,
+      "payloads": [],
+      "status": "rejected",
+      "text": "",
+      "requests": [],
+      "failure": "PROVIDER_OR_STREAM_ERROR",
+      "finishReason": null,
+      "usage": {
+        "inputTokens": null,
+        "outputTokens": null
+      },
+      "elapsedMs": 0.7853000000000065,
+      "firstTextMs": null
+    },
+    {
+      "id": "fast-ambiguity",
+      "profile": "edit_fast",
+      "maxOutputTokens": 512,
+      "payloads": [],
+      "status": "rejected",
+      "text": "",
+      "requests": [],
+      "failure": "PROVIDER_OR_STREAM_ERROR",
+      "finishReason": null,
+      "usage": {
+        "inputTokens": null,
+        "outputTokens": null
+      },
+      "elapsedMs": 0.5396000000000072,
+      "firstTextMs": null
+    },
+    {
+      "id": "truncated-tool",
+      "profile": "failure",
+      "maxOutputTokens": 1,
+      "payloads": [],
+      "status": "rejected",
+      "text": "",
+      "requests": [],
+      "failure": "PROVIDER_OR_STREAM_ERROR",
+      "finishReason": null,
+      "usage": {
+        "inputTokens": null,
+        "outputTokens": null
+      },
+      "elapsedMs": 0.6416999999999575,
+      "firstTextMs": null
+    }
+  ],
+  "projectWrites": 0,
+  "realDrawingEvaluation": "not-run",
+  "assessment": "manual oracle comparison required; script completion is not acceptance",
+  "networkDispatchCount": 0,
+  "acceptedProviderResponses": 0,
+  "caseCount": 5,
+  "harnessFailure": "SDK 7 rejects system role in messages; use instructions. All five cases stopped before observed fetch; no API calls or model assessment."
+}

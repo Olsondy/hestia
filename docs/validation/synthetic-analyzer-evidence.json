@@ -1,0 +1,280 @@
+{
+  "evidence": "local-algorithm-on-synthetic-images-only",
+  "analyzerSha256": "397bb87eb88d424863db0fec6a96c10fa7ca5e7c25751b9c5a48c9f4296c0aad",
+  "dependencies": {
+    "python": "3.12.14",
+    "Pillow": "12.3.0",
+    "numpy": "2.2.6",
+    "opencv": "4.12.0"
+  },
+  "scale": {
+    "mmPerPixel": 20,
+    "source": "synthetic-generator-ground-truth"
+  },
+  "realDrawingEvaluation": "not-run",
+  "cases": [
+    {
+      "fixture": "clean.png",
+      "extraFlags": [],
+      "exitCode": 0,
+      "expected": {
+        "walls": 4,
+        "openings": 1
+      },
+      "actual": {
+        "walls": 4,
+        "openings": 1
+      },
+      "draft": {
+        "name": "我的户型",
+        "height": 2800,
+        "phase": "renovate",
+        "walls": [
+          {
+            "id": "W0",
+            "a": [
+              0,
+              100
+            ],
+            "b": [
+              6220,
+              100
+            ],
+            "t": 200,
+            "bearing": true
+          },
+          {
+            "id": "W1",
+            "a": [
+              100,
+              4080
+            ],
+            "b": [
+              6120,
+              4080
+            ],
+            "t": 200,
+            "bearing": true,
+            "openings": [
+              {
+                "type": "door",
+                "from": 1900,
+                "to": 2800,
+                "_gap": "G0"
+              }
+            ]
+          },
+          {
+            "id": "W3",
+            "a": [
+              100,
+              100
+            ],
+            "b": [
+              100,
+              4180
+            ],
+            "t": 200,
+            "bearing": true
+          },
+          {
+            "id": "W4",
+            "a": [
+              6120,
+              100
+            ],
+            "b": [
+              6120,
+              4180
+            ],
+            "t": 200,
+            "bearing": true
+          }
+        ],
+        "rooms": [],
+        "underlay": {
+          "image": "clean.png",
+          "mmPerPx": 20.0,
+          "x": -1100,
+          "y": -1120
+        }
+      },
+      "wallsInImageMm": [
+        {
+          "a": [
+            1100,
+            1220
+          ],
+          "b": [
+            7320,
+            1220
+          ]
+        },
+        {
+          "a": [
+            1200,
+            5200
+          ],
+          "b": [
+            7220,
+            5200
+          ]
+        },
+        {
+          "a": [
+            1200,
+            1220
+          ],
+          "b": [
+            1200,
+            5300
+          ]
+        },
+        {
+          "a": [
+            7220,
+            1220
+          ],
+          "b": [
+            7220,
+            5300
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "scan-like.png",
+      "extraFlags": [],
+      "exitCode": 0,
+      "expected": {
+        "walls": 4,
+        "openings": 1
+      },
+      "actual": {
+        "walls": 4,
+        "openings": 0
+      },
+      "draft": {
+        "name": "我的户型",
+        "height": 2800,
+        "phase": "renovate",
+        "walls": [
+          {
+            "id": "W0",
+            "a": [
+              0,
+              140
+            ],
+            "b": [
+              6140,
+              140
+            ],
+            "t": 200,
+            "bearing": true
+          },
+          {
+            "id": "W1",
+            "a": [
+              2840,
+              4105
+            ],
+            "b": [
+              6140,
+              4105
+            ],
+            "t": 200,
+            "bearing": true
+          },
+          {
+            "id": "W2",
+            "a": [
+              120,
+              140
+            ],
+            "b": [
+              120,
+              4260
+            ],
+            "t": 200,
+            "bearing": true
+          },
+          {
+            "id": "W3",
+            "a": [
+              6140,
+              140
+            ],
+            "b": [
+              6140,
+              4180
+            ],
+            "t": 200,
+            "bearing": true
+          }
+        ],
+        "rooms": [],
+        "underlay": {
+          "image": "scan-like.png",
+          "mmPerPx": 20.0,
+          "x": -1080,
+          "y": -1080
+        }
+      },
+      "wallsInImageMm": [
+        {
+          "a": [
+            1080,
+            1220
+          ],
+          "b": [
+            7220,
+            1220
+          ]
+        },
+        {
+          "a": [
+            3920,
+            5185
+          ],
+          "b": [
+            7220,
+            5185
+          ]
+        },
+        {
+          "a": [
+            1200,
+            1220
+          ],
+          "b": [
+            1200,
+            5340
+          ]
+        },
+        {
+          "a": [
+            7220,
+            1220
+          ],
+          "b": [
+            7220,
+            5260
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "handdrawn-like.png",
+      "extraFlags": [
+        "--outlined"
+      ],
+      "exitCode": 1,
+      "expected": {
+        "walls": 4,
+        "openings": 1
+      },
+      "failure": "没有识别到墙体：试试调高 --gray-max 或 --sat-max",
+      "actual": null
+    }
+  ]
+}

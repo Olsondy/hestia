@@ -1,0 +1,106 @@
+{
+  "repository": "Olsondy/hestia",
+  "verifiedOn": "2026-10-25",
+  "parent": 1,
+  "specification": {
+    "number": 26,
+    "id": 6018547402,
+    "url": "https://github.com/Olsondy/hestia/issues/26",
+    "source": "spec.md"
+  },
+  "tickets": [
+    {
+      "key": "C01",
+      "number": 27,
+      "id": 6018549301,
+      "url": "https://github.com/Olsondy/hestia/issues/27",
+      "source": "C01.md",
+      "blockedBy": [
+        5
+      ],
+      "openBlockersAtVerification": []
+    },
+    {
+      "key": "C02",
+      "number": 28,
+      "id": 6018550799,
+      "url": "https://github.com/Olsondy/hestia/issues/28",
+      "source": "C02.md",
+      "blockedBy": [
+        27,
+        9,
+        22
+      ],
+      "openBlockersAtVerification": [
+        27,
+        9,
+        22
+      ]
+    }
+  ],
+  "nativeSubIssueEdgesVerified": [
+    [
+      1,
+      26
+    ],
+    [
+      26,
+      27
+    ],
+    [
+      26,
+      28
+    ]
+  ],
+  "nativeBlockingEdgesVerified": [
+    [
+      27,
+      5
+    ],
+    [
+      28,
+      27
+    ],
+    [
+      28,
+      9
+    ],
+    [
+      28,
+      22
+    ],
+    [
+      25,
+      26
+    ]
+  ],
+  "bodyAndReadyLabelVerified": [
+    26,
+    27,
+    28
+  ],
+  "testingScopeConfirmedByUser": true,
+  "parentUpdateComment": "https://github.com/Olsondy/hestia/issues/1#issuecomment-6390638939",
+  "implementationPerformedInThisPublication": false,
+  "servicesStartedOrRestarted": false,
+  "latestExecutionState": {
+    "verifiedOn": "2026-10-28",
+    "C01": {
+      "number": 27,
+      "state": "CLOSED",
+      "openBlockers": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted: registration, one-time grant, public example, HTTP/PG and independent UI review",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/27#issuecomment-6450149412",
+      "validationReport": "docs/validation/C01-registration-credits.md"
+    },
+    "C02": {
+      "number": 28,
+      "state": "OPEN",
+      "openBlockers": [],
+      "progress": "unblocked; paused by user, do not start"
+    }
+  }
+}

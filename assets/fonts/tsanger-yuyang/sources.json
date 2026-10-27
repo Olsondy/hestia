@@ -1,0 +1,52 @@
+[
+  {
+    "family": "Tsanger YuYang",
+    "weight": 300,
+    "format": "woff2",
+    "file": "tsanger-yuyang-W01-300.woff2",
+    "source": "仓耳渔阳体W01.ttf",
+    "sourceSha256": "4a3c5566858037d31ea290b9d436dd3f636b30c4e350aeff0dcd5ebdf71f4071",
+    "license": "NOTICE.txt",
+    "coverage": "Complete original glyph coverage; no copy-based subsetting."
+  },
+  {
+    "family": "Tsanger YuYang",
+    "weight": 400,
+    "format": "woff2",
+    "file": "tsanger-yuyang-W02-400.woff2",
+    "source": "仓耳渔阳体W02.ttf",
+    "sourceSha256": "3fe4d0d53fa429b4b663d8c401a83bb0c6a40a3814c081b0ba313e27d18020fa",
+    "license": "NOTICE.txt",
+    "coverage": "Complete original glyph coverage; no copy-based subsetting."
+  },
+  {
+    "family": "Tsanger YuYang",
+    "weight": 500,
+    "format": "woff2",
+    "file": "tsanger-yuyang-W03-500.woff2",
+    "source": "仓耳渔阳体W03.ttf",
+    "sourceSha256": "43b381d44c6f66683384b28f985215a6f5d01976d6f01b0aa011d04881462835",
+    "license": "NOTICE.txt",
+    "coverage": "Complete original glyph coverage; no copy-based subsetting."
+  },
+  {
+    "family": "Tsanger YuYang",
+    "weight": 600,
+    "format": "woff2",
+    "file": "tsanger-yuyang-W04-600.woff2",
+    "source": "仓耳渔阳体W04.ttf",
+    "sourceSha256": "e4f2a0648f616dc4e44fb482b436a3e1bc916e8ab509d6e46beb4820dc5e6b07",
+    "license": "NOTICE.txt",
+    "coverage": "Complete original glyph coverage; no copy-based subsetting."
+  },
+  {
+    "family": "Tsanger YuYang",
+    "weight": 700,
+    "format": "woff2",
+    "file": "tsanger-yuyang-W05-700.woff2",
+    "source": "仓耳渔阳体W05.ttf",
+    "sourceSha256": "67f4c70c1fbb6935dfb0923695bc3ab882ff9ee24ab2859fe08fedcccaaa75a1",
+    "license": "NOTICE.txt",
+    "coverage": "Complete original glyph coverage; no copy-based subsetting."
+  }
+]

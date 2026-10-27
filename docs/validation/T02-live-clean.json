@@ -1,0 +1,37 @@
+{
+  "evidence": "live-model-synthetic-only",
+  "generatedAtUtc": "2026-10-24T22:54:40.153Z",
+  "model": "deepseek-flash",
+  "fixture": "clean.png",
+  "fixtureSha256": "03a73de7a090e2589efb8ad1f4ae5da2fdd5f4c6055ed295da8755c7bc8368eb",
+  "prompt": "Analyze only the attached generated floorplan, not a real residence. Return one report_floorplan tool call with your observations.\nImage canvas is 420 x 320 pixels. External test-scale assumption is 20 millimetres per pixel. Coordinates are millimetres from the TOP LEFT of the full image, x right, y down. Height 2800 mm is a TEST ASSUMPTION, not an observed dimension.\nExtract each physical wall ONCE by its centreline a,b and thickness t, not its two drawn edges. Represent a gap as an opening inside its parent wall rather than omitting the parent segment. Infer no door/window subtype without visible evidence: a plain gap is hole. For horizontal walls opening from/to are absolute x; for vertical walls absolute y; for diagonal walls distances from endpoint a. Mild scan skew may be approximated as orthogonal; disclose that approximation. Do not invent room labels or fixed facilities when none are visible. Report uncertainty, including absent real dimensions and unverified load-bearing status. This returns an unconfirmed concept candidate only; it does not confirm feasibility or modify a project.",
+  "configuration": {
+    "maxRetries": 0,
+    "maxOutputTokens": 2500,
+    "timeoutMs": 60000,
+    "samplingParameters": "provider defaults",
+    "scaleMmPerPixel": 20,
+    "scaleStatus": "estimated"
+  },
+  "thresholdsFrozenBeforeRun": {
+    "wallEndpointMm": 100,
+    "wallThicknessMm": 40,
+    "openingEndpointMm": 100,
+    "openingWidthMm": 100,
+    "roundTripMm": 1e-9
+  },
+  "firstContentMs": null,
+  "elapsedMs": 14051.2977,
+  "finishReason": "length",
+  "usage": {
+    "inputTokens": 1358,
+    "outputTokens": 2500
+  },
+  "failure": "INCOMPLETE_OR_MISSING_SINGLE_TOOL",
+  "text": "",
+  "modelObservation": null,
+  "candidate": null,
+  "metrics": null,
+  "realDrawingEvaluation": "not-run",
+  "projectWrites": 0
+}

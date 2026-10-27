@@ -1,6 +1,6 @@
 ---
 name: "Hestia"
-description: "建筑展馆目录与家居杂志实时空间刊页"
+description: "生产基线：家居杂志实时空间刊页；建筑展馆仅为原型历史"
 colors:
   gallery-bg: "#f5f7f8"
   gallery-surface: "#fff"
@@ -41,52 +41,52 @@ colors:
   night: "#192b35"
 typography:
   gallery-display:
-    fontFamily: "Noto Sans SC, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "clamp(28px,2.6vw,39px)"
     fontWeight: 550
     lineHeight: 1.45
     letterSpacing: "-.035em"
   editorial-display:
-    fontFamily: "Noto Serif SC, Songti SC, SimSun, serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "clamp(48px,5.1vw,78px)"
     fontWeight: 500
     lineHeight: 1.2
     letterSpacing: "-.04em"
   gallery-showcase:
-    fontFamily: "Noto Sans SC, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "clamp(26px,2.9vw,43px)"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "-.035em"
   editorial-showcase:
-    fontFamily: "Noto Serif SC, Songti SC, SimSun, serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "54px"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "-.025em"
   gallery-title:
-    fontFamily: "Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "17px"
     fontWeight: 600
   editorial-title:
-    fontFamily: "Noto Serif SC, Songti SC, SimSun, serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "23px"
     fontWeight: 500
     lineHeight: 1.4
   body:
-    fontFamily: "Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "14px"
   description:
-    fontFamily: "Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "13px"
     lineHeight: 1.8
   button:
-    fontFamily: "Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 550
     lineHeight: 1.4
   label:
-    fontFamily: "Segoe UI, Microsoft YaHei, system-ui, sans-serif"
+    fontFamily: "Tsanger YuYang, Segoe UI, Microsoft YaHei, system-ui, sans-serif"
     fontSize: "12px"
 rounded:
   folio: "0px"
@@ -175,22 +175,22 @@ components:
 
 ## Overview
 
-**Creative North Star: "建筑展馆 × 空间作品刊页"**
+**Creative North Star: "家居杂志 · 空间作品刊页"**
 
-同一份可编辑空间保留两种表达。建筑展馆以冷白工作面、深海蓝侧栏与湖蓝操作色组织项目目录；家居杂志以暖纸导读、宋体项目名和实时三维空间组织作品刊页。杂志首先让用户探索真实家具关系，再进入编辑；项目管理收进索引。
+2026-10-25 用户明确选择家居杂志（editorial）作为唯一生产视觉基线，并亲自将原型移至 `example/prototypes/projects`。暖纸导读、仓耳渔阳体项目名和实时三维空间组成作品刊页：先探索空间，再进入编辑，项目管理收进索引。生产不再要求建筑展馆主题或主题切换。
 
-编辑工作台保留工具、房间、画布和演示助手的任务层级，独立展示页以空间浏览为主。模型、运行时过渡截图与图示来自项目自身的 Three.js 几何和 SVG；不使用商业室内摄影代替实际空间。当前是本地前端原型，保留演示助手、本地保存和示例尺寸标注。
+编辑工作台保留工具、房间、画布和演示助手的任务层级，独立展示页以空间浏览为主。模型、运行时过渡截图与图示来自项目自身的 Three.js 几何和 SVG；不使用商业室内摄影代替实际空间。保留原型仍为本地前端，带演示助手、本地保存和示例尺寸标注；生产 T04 另以真实邀请身份和服务端项目状态显示信息，不继承原型的演示身份。
 
 **Key Characteristics:**
 
-- 展馆保留侧栏与模型封面目录；杂志为导读、实时空间与方案轨道。
+- 生产采用杂志导读、实时空间与方案轨道；原型历史仍保留展馆侧栏与模型封面目录。
 - 纸色与墨色承载内容；酒红用于动作、选中与项目名字的强调。
 - 示例方案共享观察方位，比较实际家具摆放与组合。
 - 平面刊页、细分隔线和少量浮动控件形成层级。
 
-本规范记录 2026-10-19 用户授权的结构重做，取代旧 editorial 精选卡片首页规范；gallery 继续保留。依据为 `src/style.css` 的最终覆盖层、`editorial.js`、`motion.js`、`scene.js` 与 `app.js`。这是 code-led 实现，没有 approved raster comp。具体表面契约见 `docs/prototype-brief.md` 顶部六块契约；验证事实与历史分界见 `docs/prototype-review.md`。
+本规范记录 2026-10-19 用户授权的结构重做，取代旧 editorial 精选卡片首页规范；gallery 继续保留。依据为 `example/prototypes/projects/src/style.css` 的最终覆盖层、`editorial.js`、`motion.js`、`scene.js` 与 `app.js`。这是 code-led 实现，没有 approved raster comp。具体表面契约见 `docs/prototype-brief.md` 顶部六块契约；验证事实与历史分界见 `docs/prototype-review.md`。
 
-前置 token 是规范值。gallery / editorial 前缀对应两套主题变量；folio 前缀记录刊页的局部颜色与形状，不能将其误写为整套 editorial 变量已经替换。旧卡片 CSS 仍在源码中，当前 editorial 项目路由进入实时刊页。
+前置 token 按适用范围使用：生产选择 editorial / folio；gallery 及原先以 gallery 为默认的通用组件条目仅记录历史原型，不是生产默认值。gallery / editorial 前缀保留两套历史主题变量；folio 前缀记录刊页的局部颜色与形状，不能将其误写为整套 editorial 变量已经替换。旧卡片 CSS 仍在源码中，当前 editorial 项目路由进入实时刊页。
 
 ## Colors
 
@@ -206,13 +206,13 @@ components:
 - **工作台暖纸**：editorial-bg / surface / ink 等继续服务导入、编辑与展示控件，不将旧酒红导航样式套到刊页页头。
 - **空间与反馈**：canvas-bg / plan-grid / plan-floor 服务三维与二维图。night 仅是三维夜景底；危险操作使用 danger。展馆焦点用 focus，杂志焦点用强调色。
 
-**The Shared Action Rule.** 主操作、房间选中、输入焦点和材质选中沿用当前主题的强调色；主题切换不改变操作含义。
+**The Shared Action Rule.** 生产主操作、房间选中、输入焦点和材质选中沿用家居杂志的酒红强调色；历史原型的主题切换不改变操作含义。
 
 侧车八阶 OKLCH 色条仅为色板预览，由实际色值派生，不是新增 UI token。
 
 ## Typography
 
-展馆标题使用本地 Noto Sans SC；杂志标题使用本地 Noto Serif SC，回退为 Songti SC / SimSun / serif。操作文字使用 Segoe UI / Microsoft YaHei / system-ui。字体构建后内嵌，无运行时字体请求。资源仅有 Noto Sans SC 600 与 Noto Serif SC 500 子集；CSS 请求的字重不代表每个字重都有单独字体文件，`font-synthesis:none`。
+用户于 2026-10-25 指定统一使用仓耳渔阳体（Tsanger YuYang），覆盖展馆、杂志的标题、正文与操作文字。共享资源为 `assets/fonts/tsanger-yuyang/`，W01–W05 分别对应 300、400、500、600、700，WOFF2 保留原始 TTF 的完整字形，支持新项目名；回退为 Segoe UI / Microsoft YaHei / system-ui。原型构建将字体内嵌，无运行时字体请求。保留 `font-synthesis:none`，550 等中间请求由浏览器匹配实际字重。
 
 - 刊页项目名使用 editorial-display；常规桌面四字示例名分两行，后半段酒红。超过八字时使用 36px、1.4 行高、最多三行的长标题分支。
 - 701–1100px 横向布局标题 59px；701px 以上且宽高比不超过 1 的竖向布局标题 43px、1.3 行高；700px 及以下为 35px、1.35 行高，并取消强制换行。
@@ -220,7 +220,7 @@ components:
 - 展馆目录标题沿用 gallery-display，展示页沿用 gallery-showcase / editorial-showcase。杂志展示标题桌面 54px、手机 32px，房间聚焦时隐藏大标题。
 - 字段与工具通常为 11–14px，刊页事实与页脚为 10–11px；这些是组件实际值，不是强制等比字阶。
 
-**The Two Voices Rule.** 展馆的大标题使用 Noto Sans SC，杂志的大标题使用 Noto Serif SC；紧凑工具与数值编辑保留无衬线操作字体。
+**The Editorial Production Rule.** 生产统一采用家居杂志布局、字号、留白与仓耳渔阳体；紧凑工具与数值编辑沿用操作字号。两套视觉的对比仅保留在历史原型。
 
 ## Layout
 
@@ -286,8 +286,8 @@ gallery 侧栏目录保留。editorial 刊页页头提供项目索引、导入�
 
 ### Do:
 
-- **Do** 保留 gallery 目录与 editorial 实时空间刊页各自的结构。
-- **Do** 使用当前主题变量，并区分 folio 局部纸色与工作台纸色。
+- **Do** 生产继承 editorial 实时空间刊页结构；gallery 目录仅在历史原型保留。
+- **Do** 生产使用 editorial / folio 变量，并区分刊页局部纸色与工作台纸色。
 - **Do** 保留真实模型、示例尺寸、手动描绘、演示助手和本地保存标识。
 - **Do** 检查横屏、竖屏与手机构图，以及键盘焦点和 reduced-motion 分支。
 
@@ -295,5 +295,5 @@ gallery 侧栏目录保留。editorial 刊页页头提供项目索引、导入�
 
 - **Don't** 将旧的精选卡片首页继续当作当前杂志方向，或把换色称为结构重做。
 - **Don't** 将固定设施随家具风格移动，或把仅换色称为布局方案。
-- **Don't** 将真实模型接入、账号、自动识图、云服务或预算模块写成现有能力。
+- **Don't** 将尚未验收的真实模型、自动识图、云部署或预算模块写成现有能力；账号与项目保存仅按 T04 本地验收范围说明。
 - **Don't** 将辅助小字推广为正文标准，或把测试通过、历史 ship 当作获奖品质证明。

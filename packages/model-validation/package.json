@@ -1,0 +1,8 @@
+{
+  "name": "@hestia/model-validation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/restricted-turn.ts",
+  "dependencies": { "ai": "7.0.153", "@ai-sdk/openai-compatible": "3.0.78", "zod": "4.6.7" }
+}

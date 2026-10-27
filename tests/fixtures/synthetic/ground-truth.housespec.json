@@ -1,0 +1,74 @@
+{
+  "name": "Synthetic rectangular room",
+  "height": 2800,
+  "north": 0,
+  "walls": [
+    {
+      "id": "synthetic-wall-1",
+      "a": [
+        1200,
+        1200
+      ],
+      "b": [
+        7200,
+        1200
+      ],
+      "t": 200
+    },
+    {
+      "id": "synthetic-wall-2",
+      "a": [
+        7200,
+        1200
+      ],
+      "b": [
+        7200,
+        5200
+      ],
+      "t": 200
+    },
+    {
+      "id": "synthetic-wall-3",
+      "a": [
+        7200,
+        5200
+      ],
+      "b": [
+        1200,
+        5200
+      ],
+      "t": 200,
+      "openings": [
+        {
+          "id": "synthetic-opening",
+          "type": "door",
+          "from": 3000,
+          "to": 3900,
+          "sill": 0,
+          "head": 2100
+        }
+      ]
+    },
+    {
+      "id": "synthetic-wall-4",
+      "a": [
+        1200,
+        5200
+      ],
+      "b": [
+        1200,
+        1200
+      ],
+      "t": 200
+    }
+  ],
+  "rooms": [
+    {
+      "at": [
+        4200,
+        3200
+      ],
+      "name": "Synthetic room"
+    }
+  ]
+}

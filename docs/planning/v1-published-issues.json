@@ -1,0 +1,659 @@
+{
+  "repository": "Olsondy/hestia",
+  "parent": {
+    "url": "https://github.com/Olsondy/hestia/issues/1",
+    "number": 1
+  },
+  "tickets": [
+    {
+      "id": "T01",
+      "number": 2,
+      "url": "https://github.com/Olsondy/hestia/issues/2",
+      "title": "验证平台模型的图片与受限工具调用",
+      "blockedBy": [],
+      "blockedByNumbers": [],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "progress": "accepted: real API independent synthetic image/tool baseline; production and real drawing quality excluded",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/2#issuecomment-6390606221",
+      "validationReport": "docs/validation/T01-model-protocol.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T02",
+      "number": 3,
+      "url": "https://github.com/Olsondy/hestia/issues/3",
+      "title": "验证图纸到空间候选的识别与转换",
+      "blockedBy": [],
+      "blockedByNumbers": [],
+      "state": "OPEN",
+      "openBlockerCount": 0,
+      "progress": "real API synthetic evaluation failed geometry/output gates; real drawings not evaluated",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/3#issuecomment-6390615092",
+      "validationReport": "docs/validation/T02-floorplan-import.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T03",
+      "number": 4,
+      "url": "https://github.com/Olsondy/hestia/issues/4",
+      "title": "验证通用户型的交互与后台渲染",
+      "blockedBy": [],
+      "blockedByNumbers": [],
+      "stateReason": "completed",
+      "validationReport": "docs/validation/T03-rendering.md",
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T04",
+      "number": 5,
+      "url": "https://github.com/Olsondy/hestia/issues/5",
+      "title": "创建并重新打开隔离的空间项目",
+      "blockedBy": [
+        "T03"
+      ],
+      "blockedByNumbers": [
+        4
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "progress": "local acceptance passed; code not committed or pushed",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/5#issuecomment-6389225582",
+      "stateReason": "completed",
+      "validationReport": "docs/validation/T04-projects.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T05",
+      "number": 6,
+      "url": "https://github.com/Olsondy/hestia/issues/6",
+      "title": "精确修改单件家具并撤销",
+      "blockedBy": [
+        "T04"
+      ],
+      "blockedByNumbers": [
+        5
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "progress": "local acceptance passed; independent backend and UI review complete; code not committed or pushed",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/6#issuecomment-6389869550",
+      "stateReason": "completed",
+      "validationReport": "docs/validation/T05-editing.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T06",
+      "number": 7,
+      "url": "https://github.com/Olsondy/hestia/issues/7",
+      "title": "预览候选并采用具体版本",
+      "blockedBy": [
+        "T05"
+      ],
+      "blockedByNumbers": [
+        6
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "stateReason": "completed",
+      "progress": "local acceptance passed; code not committed or pushed",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/7#issuecomment-6389977429",
+      "validationReport": "docs/validation/T06-candidates.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T07",
+      "number": 8,
+      "url": "https://github.com/Olsondy/hestia/issues/8",
+      "title": "提交可关页继续的后台设计任务",
+      "blockedBy": [
+        "T05"
+      ],
+      "blockedByNumbers": [
+        6
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "stateReason": "completed",
+      "progress": "local acceptance passed; code not committed or pushed",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/8#issuecomment-6390043910",
+      "validationReport": "docs/validation/T07-runtime.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T08",
+      "number": 9,
+      "url": "https://github.com/Olsondy/hestia/issues/9",
+      "title": "用平台模型完成准确局部修改",
+      "blockedBy": [
+        "T01",
+        "T06",
+        "T07"
+      ],
+      "blockedByNumbers": [
+        2,
+        7,
+        8
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted: unified conversation, real API synthetic mixed answer/exact move/undo, UI ship; no service started",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/9#issuecomment-6390844935",
+      "validationReport": "docs/validation/T08-conversation.md",
+      "stateReason": "completed"
+    },
+    {
+      "id": "T09",
+      "number": 10,
+      "url": "https://github.com/Olsondy/hestia/issues/10",
+      "title": "上传图纸并选择、保存 PDF 页面",
+      "blockedBy": [
+        "T04"
+      ],
+      "blockedByNumbers": [
+        5
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "progress": "local acceptance passed; synthetic PDF/image workflow and independent review; private local storage adapter only",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/10#issuecomment-6389893120",
+      "stateReason": "completed",
+      "validationReport": "docs/validation/T09-underlay.md",
+      "assignees": [
+        "Olsondy"
+      ]
+    },
+    {
+      "id": "T10",
+      "number": 11,
+      "url": "https://github.com/Olsondy/hestia/issues/11",
+      "title": "整理有来源的居住需求并回答必要问题",
+      "blockedBy": [
+        "T08"
+      ],
+      "blockedByNumbers": [
+        9
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted: sourced requirements, durable questions, real API synthetic two rounds, UI ship",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/11#issuecomment-6390968409",
+      "validationReport": "docs/validation/T10-requirements.md",
+      "stateReason": "completed"
+    },
+    {
+      "id": "T11",
+      "number": 12,
+      "url": "https://github.com/Olsondy/hestia/issues/12",
+      "title": "将用户图纸识别为可审查空间初稿",
+      "blockedBy": [
+        "T02",
+        "T08",
+        "T09"
+      ],
+      "blockedByNumbers": [
+        3,
+        9,
+        10
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 1,
+      "assignees": []
+    },
+    {
+      "id": "T12",
+      "number": 13,
+      "url": "https://github.com/Olsondy/hestia/issues/13",
+      "title": "在产品内纠正墙体和门窗初稿",
+      "blockedBy": [
+        "T11"
+      ],
+      "blockedByNumbers": [
+        12
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 1,
+      "assignees": []
+    },
+    {
+      "id": "T13",
+      "number": 14,
+      "url": "https://github.com/Olsondy/hestia/issues/14",
+      "title": "补充可靠尺度并采用初始空间",
+      "blockedBy": [
+        "T12"
+      ],
+      "blockedByNumbers": [
+        13
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 1,
+      "assignees": []
+    },
+    {
+      "id": "T14",
+      "number": 15,
+      "url": "https://github.com/Olsondy/hestia/issues/15",
+      "title": "独立确认固定事实的纠正",
+      "blockedBy": [
+        "T13"
+      ],
+      "blockedByNumbers": [
+        14
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 1,
+      "assignees": []
+    },
+    {
+      "id": "T15",
+      "number": 16,
+      "url": "https://github.com/Olsondy/hestia/issues/16",
+      "title": "从受控目录调整候选家具组合",
+      "blockedBy": [
+        "T06"
+      ],
+      "blockedByNumbers": [
+        7
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "local acceptance passed; code not committed or pushed",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/16#issuecomment-6390151399",
+      "validationReport": "docs/validation/T15-catalog.md"
+    },
+    {
+      "id": "T16",
+      "number": 17,
+      "url": "https://github.com/Olsondy/hestia/issues/17",
+      "title": "对候选应用一致的材质和展示灯光",
+      "blockedBy": [
+        "T15"
+      ],
+      "blockedByNumbers": [
+        16
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted locally: independent visual style, UI and shared rendering verified",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/17#issuecomment-6390286698",
+      "validationReport": "docs/validation/T16-style.md"
+    },
+    {
+      "id": "T17",
+      "number": 18,
+      "url": "https://github.com/Olsondy/hestia/issues/18",
+      "title": "自主生成满足功能要求的单房间布局",
+      "blockedBy": [
+        "T10",
+        "T15"
+      ],
+      "blockedByNumbers": [
+        11,
+        16
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted: synthetic live model candidate, geometry/image review and UI ship; real housing not validated",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/18#issuecomment-6424010947",
+      "validationReport": "docs/validation/T17-layout-planning.md",
+      "stateReason": "completed"
+    },
+    {
+      "id": "T18",
+      "number": 19,
+      "url": "https://github.com/Olsondy/hestia/issues/19",
+      "title": "将单房间设计扩展为整层推荐与比较",
+      "blockedBy": [
+        "T13",
+        "T16",
+        "T17"
+      ],
+      "blockedByNumbers": [
+        14,
+        17,
+        18
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 1,
+      "assignees": []
+    },
+    {
+      "id": "T19",
+      "number": 20,
+      "url": "https://github.com/Olsondy/hestia/issues/20",
+      "title": "让运行中的设计遵循用户最新要求",
+      "blockedBy": [
+        "T10",
+        "T17"
+      ],
+      "blockedByNumbers": [
+        11,
+        18
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted: same-task synthetic live continuation, current intent fencing, UI ship",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/20#issuecomment-6450314868",
+      "validationReport": "docs/validation/T19-continuation.md",
+      "stateReason": "completed"
+    },
+    {
+      "id": "T20",
+      "number": 21,
+      "url": "https://github.com/Olsondy/hestia/issues/21",
+      "title": "关闭页面后生成并领取静态成果",
+      "blockedBy": [
+        "T03",
+        "T06",
+        "T07"
+      ],
+      "blockedByNumbers": [
+        4,
+        7,
+        8
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "local acceptance passed, including authorized isolated Render Worker",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/21#issuecomment-6390200671",
+      "validationReport": "docs/validation/T20-renders.md"
+    },
+    {
+      "id": "T21",
+      "number": 22,
+      "url": "https://github.com/Olsondy/hestia/issues/22",
+      "title": "任务到限或模型故障时保留可用成果",
+      "blockedBy": [
+        "T08",
+        "T10"
+      ],
+      "blockedByNumbers": [
+        9,
+        11
+      ],
+      "state": "CLOSED",
+      "openBlockerCount": 0,
+      "assignees": [
+        "Olsondy"
+      ],
+      "progress": "accepted: persisted usage, bounded retry and retained results; qualified fallback fixture only",
+      "progressComment": "https://github.com/Olsondy/hestia/issues/22#issuecomment-6424021072",
+      "validationReport": "docs/validation/T21-resilience.md",
+      "stateReason": "completed"
+    },
+    {
+      "id": "T22",
+      "number": 23,
+      "url": "https://github.com/Olsondy/hestia/issues/23",
+      "title": "在组合故障和取消竞争中保持状态正确",
+      "blockedBy": [
+        "T18",
+        "T19",
+        "T20",
+        "T21"
+      ],
+      "blockedByNumbers": [
+        19,
+        20,
+        21,
+        22
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 1,
+      "assignees": []
+    },
+    {
+      "id": "T23",
+      "number": 24,
+      "url": "https://github.com/Olsondy/hestia/issues/24",
+      "title": "在试用环境恢复项目及其全部资料",
+      "blockedBy": [
+        "T14",
+        "T18",
+        "T20",
+        "T21"
+      ],
+      "blockedByNumbers": [
+        15,
+        19,
+        21,
+        22
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 2,
+      "assignees": []
+    },
+    {
+      "id": "T24",
+      "number": 25,
+      "url": "https://github.com/Olsondy/hestia/issues/25",
+      "title": "用十个授权样本完成首版试用验收",
+      "blockedBy": [
+        "T22",
+        "T23"
+      ],
+      "blockedByNumbers": [
+        23,
+        24
+      ],
+      "state": "OPEN",
+      "openBlockerCount": 3,
+      "assignees": []
+    }
+  ],
+  "verified": true,
+  "verifiedEdges": 39,
+  "verifiedChildren": 24,
+  "executionStatus": "resumed",
+  "resumedAt": "2026-10-25",
+  "architectureBaseline": [
+    "docs/web-stack.md",
+    "docs/decisions/0003-modular-monolith-with-durable-workers.md",
+    "docs/decisions/0004-mainland-invited-pilot-managed-services.md",
+    "docs/decisions/0005-unified-conversation-entry.md"
+  ],
+  "uiBaseline": {
+    "prototype": "example/prototypes/projects",
+    "skill": "impeccable",
+    "font": "Tsanger YuYang",
+    "hooksEnabled": false,
+    "browserReviewRequired": true,
+    "productionDirection": "editorial",
+    "historicalPrototypeDirections": [
+      "gallery",
+      "editorial"
+    ],
+    "prototypeEntry": "example/prototypes/projects/index.html"
+  },
+  "validationBoundary": {
+    "currentSamples": "synthetic",
+    "realModelApi": "pending user configuration",
+    "realModelAndFloorPlanAcceptance": "pending",
+    "doNotCloseBasedOnlyOnSynthetic": [
+      "T01",
+      "T02"
+    ]
+  },
+  "architectureSync": {
+    "verifiedAtUtc": "2026-10-24T20:13:20.2935481Z",
+    "issues": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "bodiesMatch": true,
+    "titlesLabelsPreserved": true,
+    "stateChanges": [
+      {
+        "number": 4,
+        "state": "closed",
+        "reason": "completed",
+        "evidence": "docs/validation/T03-rendering.md"
+      }
+    ],
+    "nativeChildren": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "nativeDependencyEdges": 39,
+    "dependenciesMatchPublishedMapping": true,
+    "assigned": [
+      2,
+      3,
+      4
+    ],
+    "openDependencyFrontier": [
+      2,
+      3,
+      5
+    ]
+  },
+  "editorialBaselineSync": {
+    "verifiedAtUtc": "2026-10-24T20:34:42.488253Z",
+    "issues": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "productionDirection": "editorial",
+    "prototype": "example/prototypes/projects",
+    "bodiesMatch": true,
+    "statesTitlesLabelsAssigneesPreserved": true,
+    "nativeChildren": 24,
+    "nativeDependencyEdges": 39,
+    "comments": "Body-only edits; existing comments retained",
+    "t04State": "open"
+  },
+  "latestExecutionState": {
+    "verifiedAtUtc": "2026-10-27T18:28:52.579485+00:00",
+    "completed": [
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      16,
+      17,
+      18,
+      20,
+      21,
+      22
+    ],
+    "openDependencyFrontier": [
+      3
+    ],
+    "modelApi": "configured; T01 real API synthetic baseline accepted; T02 quality not accepted",
+    "codeDelivery": "local acceptance; not committed or pushed",
+    "t04Comment": "https://github.com/Olsondy/hestia/issues/5#issuecomment-6389225582",
+    "summaryComment": "https://github.com/Olsondy/hestia/issues/1#issuecomment-6450336671",
+    "pause": "Other unfinished tickets paused by user on 2026-10-28; resume only on user instruction."
+  }
+}

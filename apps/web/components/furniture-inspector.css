@@ -1,0 +1,31 @@
+.furniture-inspector{display:flex;flex-direction:column;min-width:0;min-height:100%;gap:0}
+.workspace-body>.space-details,.workspace-body>.space-outline{min-height:0;overflow-y:auto}
+.furniture-inspector h2{font-size:18px;font-weight:500}
+.object-identity{margin-top:12px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.space-details .object-measures{display:block;margin:26px 0 30px;font-size:13px}
+.space-details .object-measures dd{text-align:left;margin-top:7px;line-height:1.7;font-variant-numeric:tabular-nums}
+.position-form fieldset{margin:0;padding:0;border:0;min-width:0}
+.position-form legend{font-size:14px;font-weight:500;margin-bottom:18px}
+.position-form .field{font-size:12px;gap:9px;margin-bottom:18px;position:relative}
+.position-form .field>span{position:absolute;right:1px;top:0;color:var(--muted);font-size:11px}
+.position-form input{width:100%;height:42px;padding:9px 10px;font-size:14px;font-variant-numeric:tabular-nums}
+.position-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.position-submit{width:100%;margin-top:3px}
+.lock-control{align-self:flex-start;margin-top:10px;margin-bottom:26px;font-size:12px}
+.edit-feedback{padding:16px 0;border-top:1px solid var(--line);color:#9d352d;font-size:12px;line-height:1.8}
+.edit-issue{margin-top:10px}.edit-issue .text-button{display:flex;color:var(--accent);padding:6px 0;font-size:12px}
+.edit-success{font-size:12px;color:var(--accent);line-height:1.8;margin:0 0 18px}
+.undo-section{border-top:1px solid var(--line);margin-top:12px;padding-top:22px}
+.undo-section .button{width:100%;font-size:12px}
+.undo-section p{font-size:11px;color:var(--muted);margin-top:10px}
+.inspector-note{font-size:12px;color:var(--muted);line-height:1.85;margin-top:24px}
+.furniture-inspector .detail-bottom{margin-top:auto;padding-top:28px}
+.space-outline .object-list-title{margin-top:30px;margin-bottom:12px;font-size:13px;font-weight:500}
+.space-outline .object-list{display:flex;flex-direction:column;gap:5px}
+.object-list .outline-item{display:flex;justify-content:space-between;gap:8px;text-align:left}
+.object-list .outline-item small{color:var(--muted);font-size:10px}
+.view-tabs{display:flex;align-items:center;gap:3px}
+.view-tabs button{font-size:12px;min-height:32px;padding:6px 12px;color:var(--muted);border-radius:3px}
+.view-tabs button[aria-pressed=true]{background:var(--surface);color:var(--accent)}
+@media(max-width:700px){.workspace-body>.space-details,.workspace-body>.space-outline{min-height:310px;overflow-y:visible}.furniture-inspector h2{font-size:16px}.space-details .object-measures{font-size:12px;margin:22px 0}.position-coordinates{grid-template-columns:1fr;gap:0}.position-form input{font-size:16px}.object-identity{font-size:11px}.space-outline .object-list-title{margin-top:24px}.object-list .outline-item{flex-direction:column;align-items:flex-start}.undo-section .button{padding-inline:8px}.furniture-inspector .detail-bottom{padding-top:28px}.inspector-note{font-size:11px}.view-tabs button{min-height:34px}}
+@media(max-width:700px){.canvas-toolbar{height:auto;min-height:48px;flex-wrap:wrap;gap:6px;padding-block:8px}.canvas-toolbar .view-tabs{max-width:100%;overflow-x:auto;flex-wrap:nowrap}.canvas-toolbar .view-tabs button{flex-shrink:0}.canvas-toolbar>span:last-child{display:none}}

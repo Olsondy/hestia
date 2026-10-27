@@ -1,0 +1,12 @@
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { mkdir, copyFile, cp } from 'node:fs/promises';
+const require = createRequire(import.meta.url);
+const source = path.dirname(require.resolve('pdfjs-dist/package.json'));
+const destination = fileURLToPath(new URL('../apps/web/public/vendor/pdfjs/', import.meta.url));
+await mkdir(destination, {recursive:true});
+await copyFile(path.join(source,'build/pdf.worker.min.mjs'),path.join(destination,'pdf.worker.min.mjs'));
+await copyFile(path.join(source,'LICENSE'),path.join(destination,'LICENSE'));
+for (const directory of ['cmaps','standard_fonts','wasm']) await cp(path.join(source,directory),path.join(destination,directory),{recursive:true});
+console.log('Prepared local PDF.js worker, rendering assets and license.');

@@ -1,0 +1,302 @@
+{
+  "evidence": "live-model-synthetic-only",
+  "generatedAtUtc": "2026-10-24T22:55:35.814Z",
+  "model": "deepseek-flash",
+  "fixture": "handdrawn-like.png",
+  "fixtureSha256": "5b44bc2c4f1e3aba5feb7aa18b17427afb2f62e1db0f47fd122e930afdc818eb",
+  "prompt": "Analyze only the attached generated floorplan, not a real residence. Return one report_floorplan tool call with your observations.\nImage canvas is 420 x 320 pixels. External test-scale assumption is 20 millimetres per pixel. Coordinates are millimetres from the TOP LEFT of the full image, x right, y down. Height 2800 mm is a TEST ASSUMPTION, not an observed dimension.\nExtract each physical wall ONCE by its centreline a,b and thickness t, not its two drawn edges. Represent a gap as an opening inside its parent wall rather than omitting the parent segment. Infer no door/window subtype without visible evidence: a plain gap is hole. For horizontal walls opening from/to are absolute x; for vertical walls absolute y; for diagonal walls distances from endpoint a. Mild scan skew may be approximated as orthogonal; disclose that approximation. Do not invent room labels or fixed facilities when none are visible. Report uncertainty, including absent real dimensions and unverified load-bearing status. This returns an unconfirmed concept candidate only; it does not confirm feasibility or modify a project.",
+  "configuration": {
+    "maxRetries": 0,
+    "maxOutputTokens": 6000,
+    "timeoutMs": 60000,
+    "samplingParameters": "provider defaults",
+    "scaleMmPerPixel": 20,
+    "scaleStatus": "estimated"
+  },
+  "thresholdsFrozenBeforeRun": {
+    "wallEndpointMm": 100,
+    "wallThicknessMm": 40,
+    "openingEndpointMm": 100,
+    "openingWidthMm": 100,
+    "roundTripMm": 1e-9
+  },
+  "firstContentMs": 9304.8265,
+  "reasoningDeltaCharacters": 6521,
+  "elapsedMs": 11704.070899999999,
+  "finishReason": "tool-calls",
+  "usage": {
+    "inputTokens": 1358,
+    "outputTokens": 2269
+  },
+  "failure": null,
+  "text": "",
+  "modelObservation": {
+    "height": 2800,
+    "walls": [
+      {
+        "a": [
+          1000,
+          1280
+        ],
+        "b": [
+          7140,
+          1280
+        ],
+        "t": 160,
+        "openings": []
+      },
+      {
+        "a": [
+          1080,
+          1200
+        ],
+        "b": [
+          1080,
+          5360
+        ],
+        "t": 160,
+        "openings": []
+      },
+      {
+        "a": [
+          7060,
+          1200
+        ],
+        "b": [
+          7060,
+          5360
+        ],
+        "t": 160,
+        "openings": []
+      },
+      {
+        "a": [
+          1000,
+          5280
+        ],
+        "b": [
+          7140,
+          5280
+        ],
+        "t": 160,
+        "openings": [
+          {
+            "type": "hole",
+            "from": 2900,
+            "to": 3900
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "at": [
+          4070,
+          3280
+        ],
+        "name": "Unlabelled single space"
+      }
+    ],
+    "structs": [],
+    "uncertainty": "Concept-only reading of a generated diagram; nothing here is verified. No real dimensions are shown, so all sizes come from the stated 20 mm/px test scale and are approximate (±1 px ≈ ±20 mm per edge; wall thickness estimated at ~8 px ≈ 160 mm, not measured). The four walls form a single closed rectangular envelope; the only visible discontinuity is the gap in the bottom wall, which is recorded as a plain hole because no leaf, frame, swing arc, sill or glazing line is drawn (it could equally be a doorway — subtype not inferable). The drawn bottom edges are not perfectly collinear (the right-hand segment sits slightly lower and the corner joins are ragged tick marks), which is treated as mild scan/drawing skew and approximated as orthogonal; the building outline is therefore reconstructed as a rectangle rather than a slightly sheared one. Outer corner ticks were read as join artefacts, not as separate wall stubs. The room is single and unlabelled — no fixtures, partitions, doors, windows or structural elements are visible, so none are reported, and load-bearing status is entirely unverified. The 2800 mm height is a test assumption, not an observed dimension. This is an unconfirmed candidate observation and does not confirm feasibility or modify any project."
+  },
+  "candidate": {
+    "schemaVersion": "hestia.import-candidate.v1",
+    "sourceId": "model-handdrawn-like",
+    "sourceFormat": "housespec-mm-v1",
+    "unit": "m",
+    "plane": "xz",
+    "sourceOriginMm": [
+      0,
+      0
+    ],
+    "scale": {
+      "status": "estimated"
+    },
+    "conceptOnly": true,
+    "confirmed": false,
+    "northClockwiseRadians": null,
+    "walls": [
+      {
+        "id": "model-handdrawn-like-wall-1",
+        "a": {
+          "x": 1,
+          "z": 1.28
+        },
+        "b": {
+          "x": 7.14,
+          "z": 1.28
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "openings": [],
+        "bearingHypothesis": null,
+        "confirmed": false
+      },
+      {
+        "id": "model-handdrawn-like-wall-2",
+        "a": {
+          "x": 1.08,
+          "z": 1.2
+        },
+        "b": {
+          "x": 1.08,
+          "z": 5.36
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "openings": [],
+        "bearingHypothesis": null,
+        "confirmed": false
+      },
+      {
+        "id": "model-handdrawn-like-wall-3",
+        "a": {
+          "x": 7.06,
+          "z": 1.2
+        },
+        "b": {
+          "x": 7.06,
+          "z": 5.36
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "openings": [],
+        "bearingHypothesis": null,
+        "confirmed": false
+      },
+      {
+        "id": "model-handdrawn-like-wall-4",
+        "a": {
+          "x": 1,
+          "z": 5.28
+        },
+        "b": {
+          "x": 7.14,
+          "z": 5.28
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "openings": [
+          {
+            "id": "model-handdrawn-like-wall-4-opening-1",
+            "wallId": "model-handdrawn-like-wall-4",
+            "sourceType": "hole",
+            "offset": 1.9,
+            "width": 1,
+            "sill": 0,
+            "head": 2.1,
+            "hinge": null,
+            "openingSidePoint": null,
+            "confirmed": false
+          }
+        ],
+        "bearingHypothesis": null,
+        "confirmed": false
+      }
+    ],
+    "roomLabels": [
+      {
+        "id": "model-handdrawn-like-label-1",
+        "position": {
+          "x": 4.07,
+          "z": 3.28
+        },
+        "name": "Unlabelled single space",
+        "confirmed": false
+      }
+    ],
+    "fixedObjectCandidates": [],
+    "warnings": [
+      {
+        "code": "ASSUMED_OPENING_HEIGHT",
+        "objectId": "model-handdrawn-like-wall-4-opening-1",
+        "detail": "Opening height defaults are unconfirmed assumptions."
+      },
+      {
+        "code": "UNMAPPED_SOURCE_FIELDS",
+        "detail": "uncertainty"
+      },
+      {
+        "code": "TOPOLOGY_NOT_CHECKED",
+        "detail": "Room labels are not closed-room polygons; wall intersection and enclosure checks remain required."
+      }
+    ]
+  },
+  "metrics": {
+    "wallCount": 4,
+    "openingCount": 1,
+    "walls": [
+      {
+        "matched": true,
+        "maxEndpointErrorMm": 215.40659228538016,
+        "thicknessErrorMm": 40.00000000000001
+      },
+      {
+        "matched": true,
+        "maxEndpointErrorMm": 212.60291625469347,
+        "thicknessErrorMm": 40.00000000000001
+      },
+      {
+        "matched": true,
+        "maxEndpointErrorMm": 215.40659228538016,
+        "thicknessErrorMm": 40.00000000000001
+      },
+      {
+        "matched": true,
+        "maxEndpointErrorMm": 200.00000000000003,
+        "thicknessErrorMm": 40.00000000000001
+      }
+    ],
+    "opening": {
+      "maxEndpointErrorMm": 128.06248474865708,
+      "widthErrorMm": 100
+    },
+    "roundTripErrorMm": 0,
+    "roomLabelCount": 1,
+    "fixedObjectCount": 0,
+    "immutableBoundary": true,
+    "geometryGate": false
+  },
+  "realDrawingEvaluation": "not-run",
+  "projectWrites": 0,
+  "scoringRevision": {
+    "version": 2,
+    "reason": "Floating-point comparisons use 1e-7 mm epsilon; no additional API request.",
+    "previousMetrics": {
+      "wallCount": 4,
+      "openingCount": 1,
+      "walls": [
+        {
+          "matched": true,
+          "maxEndpointErrorMm": 215.40659228538016,
+          "thicknessErrorMm": 40.00000000000001
+        },
+        {
+          "matched": true,
+          "maxEndpointErrorMm": 212.60291625469347,
+          "thicknessErrorMm": 40.00000000000001
+        },
+        {
+          "matched": true,
+          "maxEndpointErrorMm": 215.40659228538016,
+          "thicknessErrorMm": 40.00000000000001
+        },
+        {
+          "matched": true,
+          "maxEndpointErrorMm": 200.00000000000003,
+          "thicknessErrorMm": 40.00000000000001
+        }
+      ],
+      "opening": {
+        "maxEndpointErrorMm": 128.06248474865708,
+        "widthErrorMm": 100
+      },
+      "roundTripErrorMm": 0,
+      "roomLabelCount": 1,
+      "fixedObjectCount": 0,
+      "immutableBoundary": true,
+      "geometryGate": false
+    }
+  }
+}

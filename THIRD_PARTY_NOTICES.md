@@ -13,7 +13,7 @@
 - 项目：https://github.com/mrdoob/three.js
 - 许可：MIT，版权信息以安装包 `LICENSE` 为准。
 - 用途：3D 渲染、相机控制、几何、材质与环境光。
-- `scripts/build.mjs` 将安装包完整许可证嵌入 `dist/index.html`。
+- `scripts/build.mjs` 将安装包完整许可证嵌入 `example/prototypes/index.html` 与 `dist/index.html`。
 
 ## esbuild
 
@@ -21,11 +21,17 @@
 - 许可：MIT；Copyright (c) 2020 Evan Wallace。
 - 用途：开发时将 JavaScript 打包，不作为在线服务使用。
 
-## Noto Sans SC / Noto Serif SC
+## 仓耳渔阳体 / Tsanger YuYang
 
-- 来源：Google Fonts 官方分发；字体与来源记录在 `src/fonts/`。
+- 来源：用户指定的 `CONTEXTA/contexta-server/resources/fonts/tsanger-yuyang`，原始 TTF、WOFF2 和来源哈希记录在 `assets/fonts/tsanger-yuyang/`。
+- 版权：北京仓耳文字技术有限公司（仓耳字库）。采用仓耳免费商用字体授权；条款摘要与官方授权链接见该目录 `NOTICE.txt`。允许嵌入、修改、子集化及按相同授权分发，不单独销售字体。此授权不等同于 SIL OFL。
+- 用途：两套原型及后续产品界面的中文标题、正文、操作文字；W01–W05 对应 300–700 五档字重。压缩为 WOFF2 时保留原始字形覆盖，不按当前文案裁剪。
+- `npm run fonts` 从本地原始 TTF 重新生成 WOFF2，需 Python fontTools 与 Brotli；正常构建无需网络或 Python。字体与声明内嵌两个原型 HTML 入口。
+
+## Noto Sans SC / Noto Serif SC（历史原型资源）
+
+- 来源：Google Fonts 官方分发；历史字体与来源记录随原型迁移保留在 `example/prototypes/src/fonts/`。
 - 许可：SIL Open Font License 1.1，两份完整许可分别为 `gallery-OFL.txt`、`editorial-OFL.txt`。
-- 用途：建筑展馆版无衬线标题、家居杂志版中文衬线标题。按当前原型文案请求官方字符子集；用户输入中不在子集内的字使用系统回退字体。
-- `npm run fonts`（`scripts/source-fonts.mjs`）可主动更新字体子集；普通构建无需网络，字体与许可均内嵌原型 HTML。
+- 曾用于建筑展馆版无衬线标题、家居杂志版中文衬线标题；2026-10-25 按用户指定替换为仓耳渔阳体，当前构建不再使用这些历史子集。
 
 模型和纹理由项目代码生成，当前没有外部商业家具资产库。工作台标题字体随仓库提供。

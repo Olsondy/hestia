@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "requestCount": 5,
+  "repeats": 1,
+  "maxRetries": 0,
+  "timeoutMs": 30000,
+  "gates": {
+    "quality": "2/2 correct visual descriptions: rectangle with exactly one left-side gap; blank image has no room/doors/dimensions. No metric scale or safe-fit claim. First case has exactly one expected (2,1) proposal; blank has none.",
+    "fast": "2/2 intents correct: exact synthetic-chair target at (2.2,1), with 20cm=0.2m explanation and no execution claim; ambiguity asks clarification and emits no tool.",
+    "failure": "Truncated response is rejected and releases zero proposals. Existing offline refusal/error/invalid-field tests must pass. Zero project writes by construction.",
+    "latency": "Initial investigation ceiling (not SLA): each edit_fast <=10s total and <=5s first text when text exists; design_quality <=30s total and <=10s first text when text exists. Missing timing fails latency qualification. One sample per case cannot establish reliability or percentiles."
+  },
+  "images": {
+    "left-gap.png": {
+      "sha256": "edcf6e2b94aef98f20fd60c82e35691b6d1d1833c8cc3cad1974ae2dfeb888b0",
+      "rectangle": true,
+      "gapSide": "left",
+      "gapCount": 1,
+      "metricScaleVisible": false
+    },
+    "blank.png": {
+      "sha256": "44f93386ad417ac3d11b191b971f963cc6743c27aa8decd8b90ee17b704d1d4b",
+      "blank": true
+    }
+  },
+  "cases": [
+    {
+      "id": "quality-image-tool",
+      "profile": "design_quality",
+      "maxOutputTokens": 1024,
+      "requireTool": true,
+      "prompt": "Describe the visible content of this attached image, including any discontinuities and their side relative to the image. Is its real-world scale known? Separately, propose moving synthetic-chair in synthetic-candidate to x=2,z=1. Do not execute."
+    },
+    {
+      "id": "quality-blank-qa",
+      "profile": "design_quality",
+      "maxOutputTokens": 1024,
+      "requireTool": false,
+      "prompt": "Describe what is visible in this attached image. Can you determine a room shape, doors or dimensions? This is a question only; do not change anything."
+    },
+    {
+      "id": "fast-unit-edit",
+      "profile": "edit_fast",
+      "maxOutputTokens": 512,
+      "requireTool": true,
+      "prompt": "In synthetic-candidate, the uniquely selected synthetic-chair is at x=2,z=1 metres. Image-right is world +x. Explain whether 20 centimetres equals 0.2 metres, and propose moving only that chair image-right by 20 centimetres, retaining z. This is a proposal; placement validation will happen later."
+    },
+    {
+      "id": "fast-ambiguity",
+      "profile": "edit_fast",
+      "maxOutputTokens": 512,
+      "requireTool": false,
+      "prompt": "Move it a bit over there. Nothing is selected and there is no direction or distance. Ask the necessary question, without guessing or changing the candidate."
+    },
+    {
+      "id": "truncated-tool",
+      "profile": "failure",
+      "maxOutputTokens": 1,
+      "requireTool": true,
+      "prompt": "Propose moving synthetic-chair in synthetic-candidate to x=2,z=1. Give a full explanation and the complete tool request."
+    }
+  ],
+  "system": "This is an isolated validation. Tools propose edits only; no executor exists. Never claim edits have happened. Only propose an edit explicitly requested by the user for a unique target. Ambiguous requests require clarification without tools. Image coordinates have no verified metric scale: do not infer metres, bearing walls, compass directions, collision clearance or that furniture fits from pixels. Describe visible content, not expected fixture content. Respond concisely."
+}

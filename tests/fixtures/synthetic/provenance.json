@@ -1,0 +1,14 @@
+{
+  "synthetic": true,
+  "generator": "scripts/validation/generate-synthetic.py",
+  "seed": 20261025,
+  "units": "mm",
+  "millimetresPerPixel": 20,
+  "expected": {
+    "walls": 4,
+    "openings": 1,
+    "centrelineWidthMm": 6000,
+    "centrelineDepthMm": 4000
+  },
+  "note": "All images are generated fixtures. Distortions are not evidence for real scans or hand drawings. Ground truth describes ideal geometry before image effects."
+}

@@ -1,0 +1,169 @@
+{
+  "recordedAt": "2026-10-24T22:56:04.872Z",
+  "evidence": "real-api-synthetic-only",
+  "model": "deepseek-flash",
+  "adapter": "@ai-sdk/openai-compatible@3.0.78",
+  "sdk": "ai@7.0.153",
+  "fixtureManifestSha256": "98e147f274670c4564c525991355fd1b11d783b560a6e139ef86d372c9b81731",
+  "caseCount": 5,
+  "networkDispatchCount": 5,
+  "acceptedProviderResponses": 5,
+  "maxRetries": 0,
+  "timeoutMs": 30000,
+  "results": [
+    {
+      "id": "quality-image-tool",
+      "profile": "design_quality",
+      "maxOutputTokens": 1024,
+      "payloads": [
+        {
+          "imageHashes": [
+            "edcf6e2b94aef98f20fd60c82e35691b6d1d1833c8cc3cad1974ae2dfeb888b0"
+          ],
+          "stream": true,
+          "maxTokens": 1024
+        }
+      ],
+      "status": "validated-request",
+      "text": "**Visible content:** A rectangular outline drawn in a thick dark grey stroke on a white background.\n\n**Discontinuity:** The left-hand vertical edge is interrupted — the stroke stops partway down and resumes lower, leaving a clear gap on the left side, roughly at mid‑height. The top, right and bottom edges appear continuous.\n\n**Scale:** Not known. There are no dimension lines, labels, or other reference cues, so the real-world size of the rectangle cannot be determined from the image.\n\n**Proposed edit (not executed):** move `synthetic-chair` within `synthetic-candidate` to x=2, z=1.",
+      "requests": [
+        {
+          "toolCallId": "call_00_PcJ0lYw6vY3p6hR0rlq10674",
+          "toolName": "edit_candidate",
+          "input": {
+            "candidateId": "synthetic-candidate",
+            "operation": {
+              "type": "move_furniture",
+              "objectId": "synthetic-chair",
+              "position": {
+                "x": 2,
+                "z": 1
+              }
+            }
+          }
+        }
+      ],
+      "failure": null,
+      "finishReason": "tool-calls",
+      "usage": {
+        "inputTokens": 798,
+        "outputTokens": 307
+      },
+      "elapsedMs": 2156.6399,
+      "firstTextMs": 1272.0238
+    },
+    {
+      "id": "quality-blank-qa",
+      "profile": "design_quality",
+      "maxOutputTokens": 1024,
+      "payloads": [
+        {
+          "imageHashes": [
+            "44f93386ad417ac3d11b191b971f963cc6743c27aa8decd8b90ee17b704d1d4b"
+          ],
+          "stream": true,
+          "maxTokens": 1024
+        }
+      ],
+      "status": "text-only",
+      "text": "The attached image appears to be entirely blank — a plain white field with no visible lines, shapes, labels, or objects.\n\nBecause of that, I can't determine:\n- **Room shape** — no walls or boundaries are drawn.\n- **Doors** — no door symbols, swings, or openings are visible.\n- **Dimensions** — there are no measurements, scale bar, or grid, and pixel coordinates wouldn't give a reliable metric scale anyway.\n\nIf you intended to share a floor plan, the file may have failed to render or was exported empty. Nothing has been modified.",
+      "requests": [],
+      "failure": null,
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 778,
+        "outputTokens": 137
+      },
+      "elapsedMs": 1108.8901,
+      "firstTextMs": 547.0343000000003
+    },
+    {
+      "id": "fast-unit-edit",
+      "profile": "edit_fast",
+      "maxOutputTokens": 512,
+      "payloads": [
+        {
+          "imageHashes": [],
+          "stream": true,
+          "maxTokens": 512
+        }
+      ],
+      "status": "validated-request",
+      "text": "Yes — 20 centimetres equals 0.2 metres (1 cm = 0.01 m). Since image-right is world +x, moving the chair 20 cm image-right shifts x from 2 to 2.2, with z unchanged at 1.",
+      "requests": [
+        {
+          "toolCallId": "call_00_3lfZwjJq5n19dNkFw4cV8589",
+          "toolName": "edit_candidate",
+          "input": {
+            "candidateId": "synthetic-candidate",
+            "operation": {
+              "type": "move_furniture",
+              "objectId": "synthetic-chair",
+              "position": {
+                "x": 2.2,
+                "z": 1
+              }
+            }
+          }
+        }
+      ],
+      "failure": null,
+      "finishReason": "tool-calls",
+      "usage": {
+        "inputTokens": 621,
+        "outputTokens": 229
+      },
+      "elapsedMs": 1287.6659000000004,
+      "firstTextMs": 991.6686999999997
+    },
+    {
+      "id": "fast-ambiguity",
+      "profile": "edit_fast",
+      "maxOutputTokens": 512,
+      "payloads": [
+        {
+          "imageHashes": [],
+          "stream": true,
+          "maxTokens": 512
+        }
+      ],
+      "status": "text-only",
+      "text": "I can't act on that as stated — there's no selected object, no direction, and no distance, so any move would be a guess. Two things I need:\n\n1. **Which object** should move? (The candidate contains a single furniture item, `synthetic-chair`.)\n2. **Where to**, in candidate coordinates (x: 0–6, z: 0–4)? For example \"x 3.0, z 1.5\" — either a target position or a relative offset with a specific amount.\n\nNote I can't interpret \"over there\" from the image: pixel positions carry no verified metric scale, so I won't convert a point in the picture into coordinates or infer distances. Give me the numbers and I'll propose the move.",
+      "requests": [],
+      "failure": null,
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 583,
+        "outputTokens": 233
+      },
+      "elapsedMs": 1967.6645999999992,
+      "firstTextMs": 988.4348
+    },
+    {
+      "id": "truncated-tool",
+      "profile": "failure",
+      "maxOutputTokens": 1,
+      "payloads": [
+        {
+          "imageHashes": [],
+          "stream": true,
+          "maxTokens": 1
+        }
+      ],
+      "status": "rejected",
+      "text": "",
+      "requests": [],
+      "failure": "INCOMPLETE_OR_REFUSED",
+      "finishReason": "length",
+      "usage": {
+        "inputTokens": 580,
+        "outputTokens": 1
+      },
+      "elapsedMs": 548.0133999999998,
+      "firstTextMs": null
+    }
+  ],
+  "projectWrites": 0,
+  "realDrawingEvaluation": "not-run",
+  "assessment": "manual oracle comparison required; script completion is not acceptance"
+}

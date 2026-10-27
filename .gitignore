@@ -9,6 +9,8 @@ __pycache__/
 .venv/
 .tmp/
 coverage/
+.next/
+*.tsbuildinfo
 
 # dist/index.html is the committed offline build; nothing else is kept there.
 dist/*
@@ -23,3 +25,5 @@ dist/*
 # User uploads belong in local/project storage, never in the repository.
 uploads/
 private-data/
+example/pdf/
+apps/web/public/vendor/

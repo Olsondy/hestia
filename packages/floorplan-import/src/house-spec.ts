@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-const finite = z.number().finite();
-const point = z.tuple([finite, finite]);
+export const finite = z.number().finite();
+export const point = z.tuple([finite, finite]);
 const opening = z.object({
   id: z.string().min(1).optional(), type: z.string().min(1),
   from: finite, to: finite, sill: finite.nonnegative().optional(), head: finite.positive().optional(),
@@ -12,12 +12,15 @@ const wall = z.object({
   bearing: z.boolean().optional(), flush: z.enum(['N', 'S', 'E', 'W', 'C']).optional(),
   openings: z.array(opening).max(100).default([]),
 }).passthrough();
-const sourceSchema = z.object({
-  name: z.string().max(200).optional(), height: finite.positive(), north: finite.optional(),
+export const floorFieldsSchema = {
+  height: finite.positive(),
   walls: z.array(wall).min(1).max(1000),
   rooms: z.array(z.object({ id: z.string().optional(), at: point, name: z.string().max(100) }).passthrough()).max(300).default([]),
   structs: z.array(z.object({ id: z.string().optional(), kind: z.string().min(1), at: point,
     w: finite.positive().optional(), d: finite.positive().optional(), rot: finite.optional() }).passthrough()).max(500).default([]),
+};
+const sourceSchema = z.object({
+  name: z.string().max(200).optional(), north: finite.optional(), ...floorFieldsSchema,
 }).passthrough();
 
 export type PointXZ = { x: number; z: number };
@@ -60,18 +63,24 @@ export function pointXZToMm(p: PointXZ, origin: readonly [number, number] = [0, 
 }
 export function clockwiseDegreesToYaw(degrees: number): number { return finite.parse(-finite.parse(degrees) / 180 * Math.PI); }
 
-export function convertHouseSpec(input: unknown, options: ImportOptions) {
-  const config = optionsSchema.parse(options);
-  const source = sourceSchema.parse(input);
-  const origin = config.originMm ?? [0, 0] as const;
+type FloorSource = Pick<z.infer<typeof sourceSchema>, 'height' | 'walls' | 'rooms' | 'structs'>;
+export type ImportWarning = { code: string; objectId?: string; detail: string };
+type Config = z.infer<typeof optionsSchema>;
+
+export function uniqueIds() {
   const ids = new Set<string>();
-  const uniqueId = (value: string) => {
+  return (value: string) => {
     if (ids.has(value)) throw new FloorplanImportError('DUPLICATE_ID', value, 'Object IDs must be unique.');
     ids.add(value); return value;
   };
-  const warnings: { code: string; objectId?: string; detail: string }[] = [];
+}
+export function parseImportOptions(options: ImportOptions) { return optionsSchema.parse(options); }
+
+/** One storey of HouseSpec geometry; `prefix` namespaces generated IDs. Heights stay relative to the storey floor. */
+export function convertFloor(source: FloorSource, origin: readonly [number, number], prefix: string,
+  uniqueId: (value: string) => string, warnings: ImportWarning[]) {
   const walls = source.walls.map((w, wi) => {
-    const id = uniqueId(w.id ?? `${config.sourceId}-wall-${wi + 1}`);
+    const id = uniqueId(w.id ?? `${prefix}-wall-${wi + 1}`);
     const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], length = Math.hypot(dx, dy);
     if (!Number.isFinite(length) || length < 0.5) throw new FloorplanImportError('DEGENERATE_WALL', id, 'Wall centreline must have a finite positive length.');
     if (w.flush && w.flush !== 'C') throw new FloorplanImportError('UNSUPPORTED_FLUSH', id, 'Non-centred flush requires explicit geometry reconciliation.');
@@ -106,11 +115,20 @@ export function convertHouseSpec(input: unknown, options: ImportOptions) {
     return { id, a: mmToPointXZ(w.a, origin), b: mmToPointXZ(w.b, origin), thickness: w.t / 1000,
       height: source.height / 1000, openings, bearingHypothesis: w.bearing ?? null, confirmed: false as const };
   });
-  const roomLabels = source.rooms.map((r, i) => ({ id: uniqueId(r.id ?? `${config.sourceId}-label-${i + 1}`),
+  const roomLabels = source.rooms.map((r, i) => ({ id: uniqueId(r.id ?? `${prefix}-label-${i + 1}`),
     position: mmToPointXZ(r.at, origin), name: r.name, confirmed: false as const }));
-  const fixedObjectCandidates = source.structs.map((s, i) => ({ id: uniqueId(s.id ?? `${config.sourceId}-fixed-${i + 1}`),
+  const fixedObjectCandidates = source.structs.map((s, i) => ({ id: uniqueId(s.id ?? `${prefix}-fixed-${i + 1}`),
     kind: s.kind, position: mmToPointXZ(s.at, origin), width: s.w === undefined ? null : s.w / 1000,
     depth: s.d === undefined ? null : s.d / 1000, yaw: clockwiseDegreesToYaw(s.rot ?? 0), confirmed: false as const }));
+  return { walls, roomLabels, fixedObjectCandidates };
+}
+
+export function convertHouseSpec(input: unknown, options: ImportOptions) {
+  const config: Config = optionsSchema.parse(options);
+  const source = sourceSchema.parse(input);
+  const origin = config.originMm ?? [0, 0] as const;
+  const warnings: ImportWarning[] = [];
+  const { walls, roomLabels, fixedObjectCandidates } = convertFloor(source, origin, config.sourceId, uniqueIds(), warnings);
   const unmappedFields = Object.keys(source).filter(k => !['name', 'height', 'north', 'walls', 'rooms', 'structs'].includes(k));
   if (unmappedFields.length) warnings.push({ code: 'UNMAPPED_SOURCE_FIELDS', detail: unmappedFields.join(', ') });
   warnings.push({ code: 'TOPOLOGY_NOT_CHECKED', detail: 'Room labels are not closed-room polygons; wall intersection and enclosure checks remain required.' });

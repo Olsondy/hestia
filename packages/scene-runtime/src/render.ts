@@ -4,16 +4,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFile } from 'node:fs/promises';
 import { sceneSnapshotSchema, type SceneSnapshot } from './snapshot';
+import { sceneViewSchema, type SceneView } from '../../contracts/src/building';
 
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
-export async function sceneDocument(snapshot: SceneSnapshot, inspection = false) {
+export async function sceneDocument(snapshot: SceneSnapshot, inspection = false, sceneView: SceneView = { mode: 'building' }) {
   const safe = JSON.stringify(sceneSnapshotSchema.parse(snapshot)).replace(/</g, '\\u003c');
+  const safeView = JSON.stringify(sceneViewSchema.parse(sceneView)).replace(/</g, '\\u003c');
   const compiled = await build({
     stdin: { contents: `import { SpatialScene } from './scene.ts';
       const view = new SpatialScene(document.getElementById('space'), id => { document.getElementById('selection').textContent = id || ''; });
       const snapshot = ${safe};
       view.renderer.domElement.addEventListener('webglcontextlost', () => { document.documentElement.dataset.sceneError = 'WebGL context lost'; });
-      view.load(snapshot); document.getElementById('label').textContent = snapshot.label;
+      view.load(snapshot, false, ${safeView}); document.getElementById('label').textContent = snapshot.label;
       ${inspection ? `// Inspection adapter is included only in the local validation harness, never production output.
         window.sceneInspection = { view };` : ''}
       requestAnimationFrame(() => {
@@ -36,8 +38,8 @@ export async function sceneDocument(snapshot: SceneSnapshot, inspection = false)
 }
 
 /** Bounded local/headless renderer. Accepts data, not user-provided HTML or scripts. */
-export async function renderSnapshotToPng(snapshot: SceneSnapshot, outputPath: string, existingBrowser?: Browser) {
-  const html = await sceneDocument(snapshot);
+export async function renderSnapshotToPng(snapshot: SceneSnapshot, outputPath: string, existingBrowser?: Browser, sceneView?: SceneView) {
+  const html = await sceneDocument(snapshot, false, sceneView);
   // Explicit software ANGLE keeps headless jobs independent of desktop GPU availability.
   const browser = existingBrowser ?? await chromium.launch({ headless: true, args: ['--use-angle=swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { sceneSnapshotSchema, type SceneSnapshot } from './scene';
+import { addBuildingIssues, sceneSnapshotSchema, type SceneSnapshot } from './scene';
+import { checkBuilding } from './building';
 import { visualStyleSchema } from './styles';
 
 export const idSchema = z.string().uuid();
@@ -24,7 +25,8 @@ export const spatialStateSchema = z.object({
   scale: z.enum(['missing', 'estimated', 'calibrated', 'synthetic']),
   fixedFacts: z.object({
     id: idSchema, revision: z.number().int().positive(),
-    rooms: sceneSnapshotSchema.shape.rooms, walls: sceneSnapshotSchema.shape.walls,
+    levels: sceneSnapshotSchema.shape.levels, rooms: sceneSnapshotSchema.shape.rooms, walls: sceneSnapshotSchema.shape.walls,
+    stairs: sceneSnapshotSchema.shape.stairs, slabOpenings: sceneSnapshotSchema.shape.slabOpenings,
     objects: sceneSnapshotSchema.shape.objects,
     openingClearances: z.array(openingClearanceSchema).max(1000).default([]),
   }).strict(),
@@ -47,7 +49,13 @@ export const spatialStateSchema = z.object({
   const openingIds = new Set(s.fixedFacts.walls.flatMap(w => w.openings.filter(o => o.sill <= .001).map(o => o.id)));
   if (new Set(s.fixedFacts.openingClearances.map(o => o.openingId)).size !== s.fixedFacts.openingClearances.length || s.fixedFacts.openingClearances.some(o => !openingIds.has(o.openingId)))
     ctx.addIssue({ code: 'custom', message: 'Clearances must uniquely reference existing floor-level openings' });
+  addBuildingIssues(ctx, checkBuilding({ ...s.fixedFacts, objects: [...s.fixedFacts.objects, ...s.currentLayout.objects] }));
 });
+/** Optional multi-storey facts carried from fixed facts into a scene; absent for single-storey projects. */
+export function buildingFacts(facts: SpatialState['fixedFacts']) {
+  return { ...(facts.levels ? { levels: facts.levels } : {}), ...(facts.stairs ? { stairs: facts.stairs } : {}),
+    ...(facts.slabOpenings ? { slabOpenings: facts.slabOpenings } : {}) };
+}
 export type SpatialState = z.infer<typeof spatialStateSchema>;
 export const candidateReferenceSchema = z.object({
   id: idSchema, projectId: idSchema, revision: z.number().int().positive(),

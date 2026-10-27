@@ -30,3 +30,18 @@ export const angled: SceneSnapshot = {
 };
 
 export const syntheticScenes = [courtyard, angled];
+
+export const rect = (x0: number, z0: number, x1: number, z1: number) => [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }];
+/** Two storeys of a 6 × 5 m plan, a straight stair climbing towards -z and a stairwell above it. */
+export function twoStorey(): SceneSnapshot {
+  return {
+    version: 1, unit: 'm', plane: 'xz', label: '合成两层', synthetic: true,
+    levels: [{ id: 'l1', elevation: 0, height: 2.8, slabThickness: .2 }, { id: 'l2', elevation: 3, height: 2.8, slabThickness: .2 }],
+    rooms: [{ id: 'r1', levelId: 'l1', outline: rect(0, 0, 6, 5), floorColor: '#d7c5ae' }, { id: 'r2', levelId: 'l2', outline: rect(0, 0, 6, 5), floorColor: '#c8a77f' }],
+    walls: [{ id: 'w1', levelId: 'l1', a: { x: 0, z: 0 }, b: { x: 6, z: 0 }, thickness: .2, height: 2.8, openings: [] },
+      { id: 'w2', levelId: 'l2', a: { x: 0, z: 0 }, b: { x: 6, z: 0 }, thickness: .2, height: 2.8, openings: [] }],
+    stairs: [{ id: 's1', kind: 'straight', fromLevelId: 'l1', toLevelId: 'l2', position: { x: 1.5, z: 2.5 }, yaw: 0, width: 1, depth: 4, rise: 3, steps: 18 }],
+    slabOpenings: [{ id: 'well', levelId: 'l2', kind: 'stairwell', outline: rect(1, .5, 2, 4.5) }],
+    objects: [{ id: 'bed', levelId: 'l2', kind: 'furniture', position: { x: 4, y: 0, z: 3 }, size: { width: 1.5, height: .5, depth: 2 }, yaw: 0, color: '#b3aaa0' }],
+  };
+}

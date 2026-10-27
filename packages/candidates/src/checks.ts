@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { spatialStateSchema, type SpatialState } from '../../contracts/src/project';
+import { buildingFacts, spatialStateSchema, type SpatialState } from '../../contracts/src/project';
 import type { CandidateCheck, CandidateView } from '../../contracts/src/candidates';
 import type { FurniturePose } from '../../contracts/src/commands';
 import { validatePlacement } from '../../geometry/src/placement';
@@ -37,7 +37,7 @@ export function inspectLayout(base: SpatialState, objects: SpatialState['current
   const checks: CandidateCheck['checks'] = [], issues: CandidateCheck['issues'] = [];
   const add = (code: string, status: CandidateCheck['checks'][number]['status'], required: boolean, objectId?: string) => checks.push({ code, status, required, ...(objectId ? { objectId } : {}) });
   const state = spatialStateSchema.safeParse({ ...base, currentLayout: { ...base.currentLayout, objects } });
-  const scene = sceneSnapshotSchema.safeParse({ version: 1, unit: 'm', plane: 'xz', label: 'Candidate check', synthetic: base.synthetic, rooms: base.fixedFacts.rooms, walls: base.fixedFacts.walls, objects: [...base.fixedFacts.objects, ...objects] });
+  const scene = sceneSnapshotSchema.safeParse({ version: 1, unit: 'm', plane: 'xz', label: 'Candidate check', synthetic: base.synthetic, rooms: base.fixedFacts.rooms, walls: base.fixedFacts.walls, ...buildingFacts(base.fixedFacts), objects: [...base.fixedFacts.objects, ...objects] });
   if (!state.success || !scene.success) return { adoptable: false, checks: [{ code: 'input', status: 'failed', required: true }], issues: [{ code: 'INVALID_CANDIDATE', message: '候选数据不符合当前空间契约。' }] };
   const original = new Map(base.currentLayout.objects.map(object => [object.id, object]));
   const immutable = (object: SpatialState['currentLayout']['objects'][number]) => ({ ...object, position: { ...object.position, x: 0, z: 0 }, yaw: 0 });

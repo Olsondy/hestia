@@ -3,6 +3,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import { transaction } from '../../persistence/src/client';
 import { issueRegistrationGrant } from '../../credits/src/service';
+import { ensurePersonalWorkspace } from '../../workspaces/src/service';
 
 const emailSchema = z.string().trim().toLowerCase().email().max(254);
 export const acceptInvitationSchema = z.object({
@@ -54,6 +55,7 @@ export async function acceptInvitation(token: string, name: string, password: st
     // New accounts created through a still-valid legacy invitation are new users too.
     // Existing identities are never backfilled, and invitation/grant commit atomically.
     await issueRegistrationGrant(client, userId);
+    await ensurePersonalWorkspace(client, userId);
     await client.query('UPDATE hestia_invitation SET user_id=$2 WHERE id=$1', [invitation.id, userId]);
     return { userId, email: invitation.email };
   });

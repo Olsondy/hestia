@@ -8,7 +8,9 @@ import { sceneSnapshotSchema, type SceneSnapshot } from '../../scene-runtime/src
 import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema, DomainError,
   type SpatialState, type ProjectView, type ProjectSummary } from '../../contracts/src/project';
 
-export type Principal = { userId: string };
+import { actingWorkspace } from '../../workspaces/src/service';
+import type { Principal } from '../../workspaces/src/access';
+export type { Principal } from '../../workspaces/src/access';
 const notFound = () => new DomainError('NOT_FOUND', '项目或资源不存在。', 404);
 function identity(principal: Principal) {
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
@@ -62,8 +64,8 @@ export async function createProject(principal: Principal, input: unknown): Promi
       if (previous.rows[0].request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return previous.rows[0].result as { projectId: string };
     }
-    const projectId = randomUUID(), state = initialState(value.template);
-    await client.query('INSERT INTO projects(id,owner_id,name,revision,snapshot) VALUES($1,$2,$3,1,$4)', [projectId, ownerId, value.name, state]);
+    const projectId = randomUUID(), state = initialState(value.template), workspaceId = await actingWorkspace(client, principal);
+    await client.query('INSERT INTO projects(id,owner_id,workspace_id,created_by,name,revision,snapshot) VALUES($1,$2,$3,$2,$4,1,$5)', [projectId, ownerId, workspaceId, value.name, state]);
     await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,1,$2,$3)', [projectId, state, value.operationId]);
     const saved = { projectId };
     await client.query('INSERT INTO operations(owner_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [ownerId, value.operationId, projectId, hash, saved]);

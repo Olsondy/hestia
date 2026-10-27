@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { transaction } from '../../persistence/src/client';
 import { issueRegistrationGrant } from '../../credits/src/service';
+import { ensurePersonalWorkspace } from '../../workspaces/src/service';
 
 export const registrationSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
@@ -23,6 +24,7 @@ export async function createRegistrationInTransaction(client: PoolClient, input:
   await client.query('INSERT INTO hestia_auth_account(id,account_id,provider_id,user_id,password) VALUES($1,$2,$3,$2,$4)',
     [randomUUID(), userId, 'credential', passwordHash]);
   await issueRegistrationGrant(client, userId);
+  await ensurePersonalWorkspace(client, userId);
 }
 
 export async function register(input: unknown) {

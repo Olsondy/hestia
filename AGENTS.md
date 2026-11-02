@@ -53,7 +53,7 @@ Single-context：根目录 `CONTEXT.md` + `docs/decisions/`。读取与维护规
 - Node.js >= 22.12，pnpm workspace（版本见 `package.json` 的 `packageManager`），根目录 `pnpm-lock.yaml`；不用 npm 生成第二套锁文件。
 - Web：Next.js 16 + React 19（`apps/web`）；Worker：`apps/worker`。
 - 模型调用：AI SDK Core；后台任务：pg-boss + Hestia 有限状态运行器；流式事件：SSE 持久化。
-- 数据库：PostgreSQL 17.7（本地 Compose 联调，生产未定）。
+- 数据库：PostgreSQL 17.7（本地 Compose 联调，生产未定）；Drizzle ORM（`pg` 驱动）+ drizzle-kit，规则见下文「Database Rules」与 `docs/decisions/0009-drizzle-schema-and-migrations.md`。
 - 3D：Three.js（`packages/scene-runtime` 与原型内嵌）。
 - 字体：仓耳渔阳体（Tsanger YuYang）W01–W05，资源与授权声明在 `assets/fonts/tsanger-yuyang`。
 
@@ -61,7 +61,7 @@ Single-context：根目录 `CONTEXT.md` + `docs/decisions/`。读取与维护规
 
 - `apps/web`：Next.js 页面与 API。
 - `apps/worker`：模型调用与后台任务 Worker。
-- `packages/contracts`、`projects`、`persistence`、`identity`、`credits`：共享契约、项目、存储（含 `migrations`）、身份、积分。
+- `packages/contracts`、`projects`、`persistence`、`identity`、`credits`：共享契约、项目、存储、身份、积分。`persistence/src/schema/` 是表结构来源，`persistence/drizzle/` 是生成的迁移，`persistence/migrations/` 是冻结的旧迁移链。
 - `packages/conversation`、`tasks`、`commands`、`candidates`、`layout-planner`、`styles`、`catalog`、`renders`、`files`、`geometry`：领域服务。
 - `packages/scene-runtime`：场景输入和 Three.js 适配。
 - `packages/model-validation`、`floorplan-import`：仅记录合成/协议验证，不代替真实评估。
@@ -105,6 +105,12 @@ pnpm test:db       # 本地真实 PostgreSQL 验证
 
 - 新决定写入 `docs/decisions/`，进度与范围变化更新 `docs/status.md`，验收证据写入 `docs/validation/`；不在本文件追加带日期的进度日志。
 - 文档和展示文案使用中性名称，不包含真实住宅名称、地名或住户身份；企业品牌名称、石材素材和商业资料不提交到仓库。
+
+### Database Rules
+
+- 表结构以 `packages/persistence/src/schema/` 为准：改 schema → `pnpm db:generate` → 提交生成的 SQL 和 `meta/`。不手写迁移，不手改 snapshot，不往 `packages/persistence/migrations/` 加文件（已冻结，`db:migrate` 会拒绝）。`pnpm check` 中的 `db:check` 会拦截有 schema 改动但没有生成迁移的情况。
+- 新查询默认用 Drizzle（`db`、`orm(client)` 或 `transaction((client, tx) => …)` 的 `tx`），行类型从 schema 推导。行锁用 `.for('update')`；advisory 锁、`jsonb_set` 等可以用 `` sql`...` `` 或参数化 SQL。修改到含手写 SQL 的模块时顺手迁移，范例见 `packages/finishes/src/catalog.ts`。
+- 触发器、函数、视图、数据回填用 `drizzle-kit generate --custom`；Drizzle 不支持 `DEFERRABLE` 外键，涉及时用自定义迁移。
 
 ### Next.js Guardrails
 

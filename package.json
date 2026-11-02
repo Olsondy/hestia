@@ -12,7 +12,7 @@
   "scripts": {
     "build": "node scripts/build.mjs && node scripts/build-client-h5.mjs && node scripts/build-enterprise-workbench.mjs && node scripts/build-client-h5-styles.mjs && node scripts/build-client-h5-layouts.mjs",
     "test": "node --test scripts/check.mjs",
-    "check": "pnpm build && pnpm test && pnpm typecheck && pnpm test:core",
+    "check": "pnpm build && pnpm test && pnpm typecheck && pnpm db:check && pnpm test:core",
     "preview": "node scripts/serve.mjs",
     "fonts": "node scripts/source-fonts.mjs",
     "typecheck": "next typegen apps/web && tsc --noEmit && tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p apps/worker/tsconfig.json",
@@ -26,6 +26,9 @@
     "setup:local": "node scripts/setup-local.mjs",
     "db:up": "docker compose up -d --wait",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check && node scripts/db-drift.mjs",
+    "db:studio": "node --env-file=.env node_modules/drizzle-kit/bin.cjs studio",
     "invite": "node --env-file=.env --import tsx scripts/invite.ts",
     "workspace:create": "node --env-file=.env --import tsx scripts/workspace.ts",
     "validate:candidates": "node --env-file=.env --import tsx scripts/validation/candidate-ui.ts",
@@ -76,6 +79,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@types/three": "0.186.0",
+    "drizzle-kit": "0.31.10",
     "esbuild": "^0.28.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3"

@@ -11,7 +11,7 @@ Hestia 已确认平台模型、关页后继续以及候选/正式方案分离。
 
 - 采用 TypeScript 模块化单体，使用 pnpm workspace 管理 Web、Worker 和必要共享模块。代码包的拆分不改变单一 Hestia 领域上下文，不要求新增业务微服务。
 - Web 使用 Next.js App Router / React，提供 HTTP JSON API 与可恢复的 SSE 任务事件；统一对话入口允许同轮问答与修改，所有模型调用在 Worker 中执行，普通问答走短执行路径，Next 请求不持有模型或设计任务生命周期。
-- PostgreSQL 保存项目、候选、固定事实、修订、采用事件、操作结果、任务和用量；Drizzle 管理数据访问与迁移，关键提交通过同一事务和版本检查实现。
+- PostgreSQL 保存项目、候选、固定事实、修订、采用事件、操作结果、任务和用量；Drizzle 管理数据访问与迁移（具体规则见 [ADR-0009](0009-drizzle-schema-and-migrations.md)），关键提交通过同一事务和版本检查实现。
 - pg-boss 使用同一 PostgreSQL 调度后台任务，优先验证事务入队集成；不通过时使用同事务待调度记录投递。业务任务状态、执行代次、幂等和取消仍由 Hestia 负责，不把队列语义等同模型调用或设计变更 exactly-once。
 - AI SDK Core 负责供应商协议和结构化工具调用；Hestia 专用有限状态运行器负责阶段、预算、授权与恢复，领域执行器独立负责最终修改。通用调度与重试使用 pg-boss，不自写通用队列或工作流框架；首版不引入额外图编排框架或多主 Agent。
 - 交互 3D 优先复用 Three.js，通过独立场景适配器读取领域数据；React 只管理挂载与交互。2D 使用 Konva 做最小校正；后台 Playwright Chromium 复用同一场景模块生成静态图，运行效果仍需验证。

@@ -17,13 +17,13 @@ import type { PrivateFileStore } from '../../files/src/storage';
 import { enqueueSchemeRender, readRenderImage, renderStatuses } from '../../renders/src/service';
 import { generateSchemes } from './generate';
 
-type RequestRow = {
+export type RequestRow = {
   id: string; workspace_id: string; customer_id: string; project_id: string; request_id: string; request_hash: string;
   source: 'demo-villa' | 'drawing'; floorplan_import_id: string | null; finish_ids: string[]; stones: { stoneId: string; stoneVersion: number }[];
   note: string | null; status: 'awaiting_drawing' | 'converting' | 'pending_review' | 'published'; review_reason: string | null;
   published_at: Date | null; published_by: string | null; created_at: Date; updated_at: Date;
 };
-type SchemeRow = { id: string; request_id: string; ordinal: number; name: string; summary: string; revision: number;
+export type SchemeRow = { id: string; request_id: string; ordinal: number; name: string; summary: string; revision: number;
   surface_design: FinishSchemeView['surfaceDesign']; report: { adoptable: boolean; issues: FinishSchemeView['issues'] }; render_id: string | null };
 export type RequestDeps = { renderQueue?: PgBoss; importQueue?: PgBoss; store?: PrivateFileStore };
 
@@ -38,7 +38,7 @@ const labels: Record<FinishRequestStatus, string> = {
 };
 
 /** Customer access: logged in, entered through this workspace's entry. Recorded as a customer relation. */
-async function customer(client: PoolClient, principal: Principal, slug: string) {
+export async function customer(client: PoolClient, principal: Principal, slug: string) {
   const userId = actorOf(principal), entry = await customerEntry(client, slug);
   await ensureCustomer(client, entry.id, userId);
   return { userId, entry };
@@ -51,7 +51,7 @@ async function importStatus(client: Pick<PoolClient, 'query'>, row: RequestRow):
   const status = (await client.query<{ status: string }>('SELECT status FROM floorplan_imports WHERE id=$1', [row.floorplan_import_id])).rows[0]?.status;
   return status === 'assisted_conversion' ? 'assisted_conversion' : status === 'pending_review' || status === 'failed' ? 'pending_review' : 'converting';
 }
-async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience: 'customer' | 'member', slug?: string): Promise<FinishRequestView> {
+export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience: 'customer' | 'member', slug?: string): Promise<FinishRequestView> {
   const status = await importStatus(client, row);
   const schemes = audience === 'customer' && row.status !== 'published' ? []
     : (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE request_id=$1 ORDER BY ordinal', [row.id])).rows;
@@ -64,9 +64,17 @@ async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience
       return { id: s.id, ordinal: s.ordinal, name: s.name, summary: s.summary, revision: s.revision, adoptable: s.report.adoptable, issues: s.report.issues,
         surfaceDesign: s.surface_design, render: render ? { id: render.id, status: render.status, width: render.width, height: render.height, error: render.error, imageHref } : null };
     }),
+    confirmation: await confirmationOf(client, row.id, schemes),
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(), publishedAt: row.published_at?.toISOString() ?? null };
 }
-async function lockedRequest(client: PoolClient, id: string) {
+async function confirmationOf(client: Pick<PoolClient, 'query'>, requestId: string, schemes: SchemeRow[]): Promise<FinishRequestView['confirmation']> {
+  const event = (await client.query<{ scheme_id: string; scheme_revision: number; created_at: Date }>(
+    "SELECT scheme_id,scheme_revision,created_at FROM finish_request_events WHERE request_id=$1 AND kind='confirmation' ORDER BY created_at DESC LIMIT 1", [requestId])).rows[0];
+  if (!event) return null;
+  const scheme = schemes.find(s => s.id === event.scheme_id);
+  return { schemeId: event.scheme_id, revision: event.scheme_revision, current: !!scheme && scheme.revision === event.scheme_revision, confirmedAt: event.created_at.toISOString() };
+}
+export async function lockedRequest(client: PoolClient, id: string) {
   const row = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1 FOR UPDATE', [idSchema.parse(id)])).rows[0];
   if (!row) throw notFound(); return row;
 }
@@ -94,6 +102,8 @@ async function generate(client: PoolClient, row: RequestRow, state: SpatialState
     const renderId = await enqueueSchemeRender(client, { projectId: row.project_id, actorId: row.customer_id, projectRevision,
       state: spatialStateSchema.parse({ ...state, surfaceDesign: scheme.design }), scheme: { schemeId: id, revision: 1 }, label: `方案 ${scheme.name}` }, deps.renderQueue);
     await client.query('UPDATE finish_schemes SET render_id=$1 WHERE id=$2', [renderId, id]);
+    await client.query('INSERT INTO finish_scheme_revisions(scheme_id,revision,surface_design,report,render_id) VALUES($1,1,$2,$3,$4)',
+      [id, scheme.design, { adoptable: scheme.adoptable, issues: scheme.issues }, renderId]);
   }
   return { count: schemes.length, adoptable: schemes.length >= 2 && schemes.every(s => s.adoptable) };
 }
@@ -153,12 +163,14 @@ export async function uploadRequestDrawing(principal: Principal, slug: string, r
   });
 }
 
+/** The request when the principal is its customer at this entry. */
+export async function customerRequest(client: PoolClient, principal: Principal, slug: string, requestId: string) {
+  const { userId, entry } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
+  if (row.customer_id !== userId || row.workspace_id !== entry.id) throw notFound();
+  return { row, userId };
+}
 export async function getFinishRequest(principal: Principal, slug: string, requestId: string) {
-  return transaction(async client => {
-    const { userId, entry } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
-    if (row.customer_id !== userId || row.workspace_id !== entry.id) throw notFound();
-    return view(client, row, 'customer', slug);
-  });
+  return transaction(async client => view(client, (await customerRequest(client, principal, slug, requestId)).row, 'customer', slug));
 }
 export async function listMyFinishRequests(principal: Principal, slug: string) {
   return transaction(async client => {
@@ -187,7 +199,11 @@ export async function listLeads(principal: Principal, workspaceId: string): Prom
     const rows = (await client.query<RequestRow & { phone_number: string | null; name: string | null }>(`SELECT r.*,u.phone_number,u.name FROM finish_requests r
       LEFT JOIN hestia_auth_user u ON u.id=r.customer_id WHERE r.workspace_id=$1 ORDER BY r.created_at DESC LIMIT 200`, [id])).rows;
     return Promise.all(rows.map(async row => ({ ...await view(client, row, 'member'), reviewReason: row.review_reason,
-      customer: { userId: row.customer_id, phone: row.phone_number, name: row.name } })));
+      customer: { userId: row.customer_id, phone: row.phone_number, name: row.name },
+      events: (await client.query<{ id: string; kind: 'confirmation' | 'message'; scheme_id: string | null; scheme_revision: number | null; message: string | null;
+        contact_requested: boolean; preferred_time: string | null; created_at: Date }>('SELECT * FROM finish_request_events WHERE request_id=$1 ORDER BY created_at', [row.id])).rows
+        .map(event => ({ id: event.id, kind: event.kind, schemeId: event.scheme_id, schemeRevision: event.scheme_revision, message: event.message,
+          contactRequested: event.contact_requested, preferredTime: event.preferred_time, createdAt: event.created_at.toISOString() })) })));
   });
 }
 

@@ -27,7 +27,29 @@ export type FinishRequestView = {
   floorplanImportId: string | null;
   /** Published schemes only for customers; members also see schemes waiting for review. */
   schemes: FinishSchemeView[];
+  /** Latest confirmation; `current` turns false once the confirmed scheme is adjusted again (needs re-confirming). */
+  confirmation: { schemeId: string; revision: number; current: boolean; confirmedAt: string } | null;
   createdAt: string; updatedAt: string; publishedAt: string | null;
 };
 export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; demoVilla: { finishes: Finish[] } };
-export type LeadView = FinishRequestView & { customer: { userId: string; phone: string | null; name: string | null }; reviewReason: string | null };
+export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; schemeId: string | null; schemeRevision: number | null;
+  message: string | null; contactRequested: boolean; preferredTime: string | null; createdAt: string };
+export type LeadView = FinishRequestView & { customer: { userId: string; phone: string | null; name: string | null }; reviewReason: string | null; events: RequestEventView[] };
+
+const tileSize = z.object({ length: z.number().finite().positive().max(4), width: z.number().finite().positive().max(4) }).strict();
+/** One option-based change to one finish of a scheme. Omitted fields keep their current value. */
+export const adjustSchemeSchema = z.object({
+  operationId: idSchema, expectedRevision: z.number().int().positive(), finishId: z.string().min(1).max(120),
+  stone: stoneRef.optional(), tile: tileSize.optional(),
+  pattern: z.enum(['straight', 'running-bond', 'herringbone', 'diagonal']).optional(), border: z.boolean().optional(),
+}).strict().refine(value => value.stone || value.tile || value.pattern || value.border !== undefined, { message: 'No change requested' });
+export const undoSchemeSchema = z.object({ operationId: idSchema, expectedRevision: z.number().int().positive() }).strict();
+export const confirmSchemeSchema = z.object({ operationId: idSchema, schemeId: idSchema, revision: z.number().int().positive(),
+  message: z.string().trim().max(500).optional(), contactRequested: z.boolean().optional(), preferredTime: z.string().trim().max(40).optional() }).strict();
+export const requestMessageSchema = z.object({ operationId: idSchema, message: z.string().trim().max(500).optional(),
+  contactRequested: z.boolean(), preferredTime: z.string().trim().max(40).optional() }).strict()
+  .refine(value => value.contactRequested || !!value.message, { message: 'Empty message' });
+export type SchemeOptionsView = { schemeId: string; revision: number; finishes: { finishId: string; name: string; kind: 'floor' | 'wall' | 'stair';
+  current: { stoneId: string; stoneVersion: number; tile: { length: number; width: number }; pattern: string; border: boolean } | null;
+  stones: { stoneId: string; stoneVersion: number; name: string; sizes: { length: number; width: number }[] }[];
+  patterns: string[]; border: boolean }[] };

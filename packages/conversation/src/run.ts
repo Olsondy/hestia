@@ -6,7 +6,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, transaction, type Database } from '../../persistence/src/client';
 import { designTasks, operations, projects, taskEvents } from '../../persistence/src/schema';
 import { canAccessProject } from '../../workspaces/src/access';
-import { appendEvent, type TaskRow } from '../../tasks/src/service';
+import { appendEvent, taskRow, type TaskRow } from '../../tasks/src/service';
 import { claimTask, fenced, type TaskClaim } from '../../tasks/src/runner';
 import { resolveConversation, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
 import { exactLocalCommand } from './intent';
@@ -33,10 +33,7 @@ async function saveConversation(tx: Database, row: TaskRow) {
 /** Full task row in the snake_case shape shared with the tasks runner. */
 async function readTask(taskId: string) {
   const [t] = await db.select().from(designTasks).where(eq(designTasks.id, taskId));
-  return { id: t.id, actor_id: t.actorId, project_id: t.projectId, request_id: t.requestId, request_hash: t.requestHash, protocol: t.protocol,
-    status: t.status, steps: t.steps, next_step: t.nextStep, expected_revision: t.expectedRevision, generation: t.generation, lease_until: t.leaseUntil,
-    attempts: t.attempts, usage_limit: t.usageLimit, usage_used: t.usageUsed, usage_reserved: t.usageReserved, event_seq: t.eventSeq, error: t.error,
-    created_at: t.createdAt, updated_at: t.updatedAt, conversation: t.conversation } as TaskRow;
+  return taskRow(t);
 }
 const leaseFromNow = sql`clock_timestamp() + interval '15 seconds'`;
 async function fail(claim: TaskClaim, code: string, message: string) {

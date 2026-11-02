@@ -8,7 +8,7 @@ import {
   type FloorplanCandidateView, type FloorplanFormat, type FloorplanImportView, type FloorplanIssue,
 } from '../../contracts/src/floorplan-imports';
 import { actorOf, canAccessProject, type Principal } from '../../workspaces/src/access';
-import { db, orm, pool, transaction, type Database } from '../../persistence/src/client';
+import { db, driverError, orm, pool, transaction, type Database } from '../../persistence/src/client';
 import { floorplanCandidates, floorplanImportOperations, floorplanImports, projects, resources } from '../../persistence/src/schema';
 import { privateStore, type PrivateFileStore } from '../../files/src/storage';
 import { buildFloorplanCandidate } from '../../floorplan-import/src/dxf';
@@ -95,7 +95,7 @@ export async function createFloorplanImport(principal: Principal, projectId: str
   const tx = async <T>(work: () => Promise<T>) => {
     await lease.query('BEGIN');
     try { const result = await work(); await lease.query('COMMIT'); return result; }
-    catch (error) { await lease.query('ROLLBACK'); throw error; }
+    catch (error) { await lease.query('ROLLBACK'); throw driverError(error); }
   };
   const previous = async () => {
     const [row] = await leaseDb.select().from(floorplanImports)

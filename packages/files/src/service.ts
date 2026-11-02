@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import type { PoolClient } from 'pg';
 import { and, eq, ne, sql } from 'drizzle-orm';
-import { db, orm, pool, transaction, type Database } from '../../persistence/src/client';
+import { db, driverError, orm, pool, transaction, type Database } from '../../persistence/src/client';
 import { projects, projectUnderlays, resources, underlayOperations } from '../../persistence/src/schema';
 import { DomainError, idSchema } from '../../contracts/src/project';
 import { MAX_IMAGE_PIXELS, MAX_UPLOAD_BYTES, saveUnderlaySchema, sourceToImage, updateUnderlaySchema, type UnderlayView } from '../../contracts/src/underlay';
@@ -13,7 +13,7 @@ import { privateStore, type PrivateFileStore } from './storage';
 async function leaseTransaction<T>(client: PoolClient, work: (tx: Database) => Promise<T>) {
   await client.query('BEGIN');
   try { const value = await work(orm(client)); await client.query('COMMIT'); return value; }
-  catch(error) { await client.query('ROLLBACK'); throw error; }
+  catch(error) { await client.query('ROLLBACK'); throw driverError(error); }
 }
 const conflict = () => new DomainError('UNDERLAY_VERSION_CONFLICT', '底图已更新，请重新读取后再保存。', 409);
 const notFound = () => new DomainError('NOT_FOUND', '项目或资源不存在。', 404);

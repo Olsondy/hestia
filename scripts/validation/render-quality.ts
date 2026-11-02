@@ -3,20 +3,19 @@
 // Images go to .impeccable/review/v01/<run>/ (ignored) for manual review.
 //   node --import tsx scripts/validation/render-quality.ts [run-name] [--fps] [--chrome]
 import { chromium, type Browser } from '@playwright/test';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { sceneDocument } from '../../packages/scene-runtime/src/render';
-import { convertHouseSpecBuilding, buildingCandidateToScene } from '../../packages/floorplan-import/src/building';
+import { demoVillaScene } from '../../packages/finishes/src/demo-villa-scene';
 import type { SceneView } from '../../packages/contracts/src/building';
 
 const args = process.argv.slice(2), run = args.find(arg => !arg.startsWith('--')) ?? 'after';
 const directory = path.resolve('.impeccable/review/v01', run);
 await mkdir(directory, { recursive: true });
-const source = JSON.parse(await readFile('packages/floorplan-import/fixtures/demo-villa.housespec.json', 'utf8'));
-const candidate = convertHouseSpecBuilding(source, { sourceId: 'demo-villa', sourceFormat: 'housespec-mm-v1', scaleEvidence: { status: 'estimated' } });
-const scene = buildingCandidateToScene(candidate, '演示别墅 · 三层（演示数据，示意尺寸）', true);
+// Demo villa with the D04 example surface design (demo stones: polished and honed).
+const scene = demoVillaScene('演示别墅 · 三层（演示数据，示意尺寸，示意素材）');
 const [l1, l2] = scene.levels!;
-type Shot = { name: string; view: SceneView; camera?: { position: number[]; target: number[]; fov: number }; lighting?: 'day' | 'night'; floor?: 'polished' | 'honed' };
+type Shot = { name: string; view: SceneView; camera?: { position: number[]; target: number[]; fov: number }; lighting?: 'day' | 'night' };
 // Fixed cameras shared by the before/after comparison; world metres, y up.
 const shots: Shot[] = [
   { name: 'aerial', view: { mode: 'building' }, camera: { position: [27, 22, 32], target: [10.4, 2.5, 8.5], fov: 38 } },
@@ -25,9 +24,11 @@ const shots: Shot[] = [
   { name: 'bedroom-l2', view: { mode: 'building' }, camera: { position: [10.85, l2.elevation + 1.55, 5.2], target: [7.8, l2.elevation + .55, 9.8], fov: 62 } },
   { name: 'living-l1-night', view: { mode: 'building' }, camera: { position: [12.9, 1.45, 4.8], target: [11.2, 1.0, 9.8], fov: 62 }, lighting: 'night' },
   { name: 'aerial-night', view: { mode: 'building' }, camera: { position: [27, 22, 32], target: [10.4, 2.5, 8.5], fov: 38 }, lighting: 'night' },
-  // Finish hand-off check: a stand-in MeshPhysicalMaterial on the living floor, polished vs honed (D04 owns real stone).
-  { name: 'floor-polished', view: { mode: 'building' }, camera: { position: [12.9, 1.45, 4.8], target: [11.2, .6, 9.8], fov: 62 }, floor: 'polished' },
-  { name: 'floor-honed', view: { mode: 'building' }, camera: { position: [12.9, 1.45, 4.8], target: [11.2, .6, 9.8], fov: 62 }, floor: 'honed' },
+  // Stone close-ups (cameras from scripts/validation/finishes-render.ts): polished floor, TV wall, honed/dining patterns.
+  { name: 'stone-living-floor', view: { mode: 'building' }, camera: { position: [10.1, 1.25, 10.55], target: [11.2, 0, 8.6], fov: 62 } },
+  { name: 'stone-tv-wall', view: { mode: 'building' }, camera: { position: [10.2, 1.5, 6.4], target: [13.2, 1.4, 4.2], fov: 62 } },
+  { name: 'stone-dining', view: { mode: 'building' }, camera: { position: [14.8, 1.6, 4.1], target: [12.6, 0, 1.6], fov: 62 } },
+  { name: 'stone-hall', view: { mode: 'building' }, camera: { position: [15.6, 1.6, 5.7], target: [17.6, 0, 3.6], fov: 62 } },
   { name: 'section-l1', view: { mode: 'section', levelId: l1.id } },
 ];
 
@@ -42,13 +43,6 @@ async function shoot(browser: Browser, shot: Shot, preset?: string) {
     const applied = await page.evaluate(`(() => {
       const view = window.sceneInspection.view, camera = ${JSON.stringify(shot.camera ?? null)}, preset = ${JSON.stringify(preset ?? null)};
       if (view.setLighting) view.setLighting({ mode: ${JSON.stringify(shot.lighting ?? 'day')} });
-      const floor = ${JSON.stringify(shot.floor ?? null)};
-      if (floor && window.sceneInspection.THREE) {
-        const THREE = window.sceneInspection.THREE, mesh = view.getObject(${JSON.stringify(scene.rooms.find(room => room.name?.includes('客厅'))!.id)});
-        // The rug would hide most of the floor; it is hidden for this check only.
-        for (const object of view.getSnapshot().objects) if (object.name === 'rug') { const node = view.getObject(object.id); if (node) node.visible = false; }
-        mesh.material = new THREE.MeshPhysicalMaterial(floor === 'polished' ? { color: '#e9e3d9', roughness: .06, clearcoat: 1, clearcoatRoughness: .04 } : { color: '#e9e3d9', roughness: .62 });
-      }
       if (preset) view.applyCameraPreset(preset);
       else if (camera) { view.camera.fov = camera.fov; view.camera.updateProjectionMatrix(); view.setCamera(camera); }
       if (view.render) view.render(); else view.renderer.render(view.scene, view.camera);
@@ -103,7 +97,10 @@ const records: object[] = [];
 const softwareBrowser = await chromium.launch(args.includes('--gpu') ? { headless: true, channel: 'chrome', args: ['--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=metal'] }
   : { headless: true, args: ['--use-angle=swiftshader'] });
 try {
-  for (const shot of shots) records.push(await shoot(softwareBrowser, shot));
+  // --only=a,b limits the run to named shots (presets are skipped) to keep iteration light.
+  const only = args.find(arg => arg.startsWith('--only='))?.slice(7).split(',');
+  for (const shot of shots) if (!only || only.includes(shot.name)) records.push(await shoot(softwareBrowser, shot));
+  if (only) throw Object.assign(new Error('partial'), { partial: true });
   const presets = await (async () => {
     const page = await softwareBrowser.newPage();
     try {
@@ -113,7 +110,7 @@ try {
     } finally { await page.close(); }
   })();
   for (const preset of presets) records.push({ preset: preset.name, ...await shoot(softwareBrowser, { name: preset.id, view: preset.view }, preset.id) });
-} finally { await softwareBrowser.close(); }
+} catch (error) { if (!(error as { partial?: boolean }).partial) throw error; } finally { await softwareBrowser.close(); }
 const fps: object[] = [];
 if (args.includes('--fps')) {
   // GPU-backed local Chrome approximates a device; SwiftShader numbers only show the CPU fallback floor.

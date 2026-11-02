@@ -18,7 +18,7 @@ import type { Lamp } from './architecture';
 export type LightingMode = 'day' | 'night';
 export type LightingState = { mode: LightingMode; interiorLights: boolean };
 
-const day = { background: '#f3ece2', environment: .55, probe: .5, exposure: 1 };
+const day = { background: '#f3ece2', environment: .55, probe: .8, exposure: .8 };
 const night = { background: '#192b35', environment: .07, probe: .6, exposure: 1.15 };
 
 export class RenderStage {

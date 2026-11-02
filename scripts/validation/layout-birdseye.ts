@@ -32,7 +32,7 @@ try {
     await page.waitForFunction(() => document.documentElement.dataset.sceneReady === 'true' || !!document.documentElement.dataset.sceneError, undefined, { timeout: 15000 });
     assert.equal(await page.evaluate(() => document.documentElement.dataset.sceneError), undefined);
     const projected = await page.evaluate(({ camera, ids }) => {
-      const view = (window as any).sceneInspection.view; view.setCamera(camera); view.renderer.render(view.scene, view.camera);
+      const view = (window as any).sceneInspection.view; view.setCamera(camera); view.render();
       const points: { id: string; x: number; y: number; z: number }[] = [];
       view.scene.traverse((item: any) => { if (ids.includes(item.userData.id)) { const position = item.getWorldPosition(view.camera.position.clone()).project(view.camera); points.push({ id: item.userData.id, x: position.x, y: position.y, z: position.z }); } });
       return { camera: view.getCamera(), points };

@@ -18,8 +18,8 @@ import type { Lamp } from './architecture';
 export type LightingMode = 'day' | 'night';
 export type LightingState = { mode: LightingMode; interiorLights: boolean };
 
-const day = { background: '#f3ece2', environment: .55, probe: 1, exposure: 1 };
-const night = { background: '#192b35', environment: .07, probe: 1, exposure: 1.15 };
+const day = { background: '#f3ece2', environment: .55, probe: .5, exposure: 1 };
+const night = { background: '#192b35', environment: .07, probe: .6, exposure: 1.15 };
 
 export class RenderStage {
   readonly sun = new T.DirectionalLight();
@@ -40,6 +40,8 @@ export class RenderStage {
   private probe?: { texture: T.Texture; position: T.Vector3 };
   private interior = false;
   state: LightingState = { mode: 'day', interiorLights: false };
+  /** Page colour shown behind the model in daylight (host pages may match their own surface). */
+  private dayBackdrop = day.background;
 
   constructor(readonly renderer: T.WebGLRenderer, readonly scene: T.Scene, readonly camera: T.PerspectiveCamera, private tier: QualityTier) {
     this.quality = qualitySettings(tier);
@@ -80,6 +82,8 @@ export class RenderStage {
     this.dropProbe();
     this.applyLighting();
   }
+
+  setBackdrop(color: string) { this.dayBackdrop = color; this.applyLighting(); }
 
   setLighting(state: Partial<LightingState>) {
     this.state = { ...this.state, ...state };
@@ -141,7 +145,8 @@ export class RenderStage {
     const preset = this.preset, isNight = this.state.mode === 'night', look = isNight ? night : day;
     (this.ground.material as T.ShadowMaterial).opacity = isNight ? .1 : .22;
     // With post-processing the backdrop is tone mapped too; pre-compensate so the page colour is shown unchanged.
-    const backdrop = this.composer ? untoneMapped(look.background, (preset?.exposure ?? 1) * look.exposure) : new T.Color(look.background);
+    const background = isNight ? look.background : this.dayBackdrop;
+    const backdrop = this.composer ? untoneMapped(background, (preset?.exposure ?? 1) * look.exposure) : new T.Color(background);
     if (this.scene.background instanceof T.Color) this.scene.background.copy(backdrop); else this.scene.background = backdrop;
     this.scene.environmentIntensity = look.environment;
     this.renderer.toneMappingExposure = (preset?.exposure ?? 1) * look.exposure;

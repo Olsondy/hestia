@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SceneSnapshot } from '../../../packages/scene-runtime/src/snapshot';
 import type { SpatialScene } from '../../../packages/scene-runtime/src/scene';
-import type { Color } from 'three';
 import { useViewState } from './view-state';
 import { arriveScene, fitRememberedCamera, registerScene, unregisterScene } from './scene-transition';
 
@@ -21,9 +20,8 @@ export function SceneViewport({ projectId, scene, onReadyChange, publicExample =
       if (disposed || !host.current) return;
       const instance = new SpatialScene(host.current, id => useViewState.getState().select(projectId, id));
       view.current = instance;
+      instance.setBackdrop('#e2d8ca');
       instance.load(scene);
-      (instance.scene.background as Color).set('#e2d8ca');
-      instance.renderer.render(instance.scene, instance.camera);
       const camera = useViewState.getState().cameras[projectId];
       if (camera) instance.setCamera(fitRememberedCamera(camera, camera.aspect, instance.camera.aspect));
       else if (initialView === 'overhead') {

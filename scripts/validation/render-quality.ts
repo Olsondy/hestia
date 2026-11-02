@@ -45,6 +45,8 @@ async function shoot(browser: Browser, shot: Shot, preset?: string) {
       const floor = ${JSON.stringify(shot.floor ?? null)};
       if (floor && window.sceneInspection.THREE) {
         const THREE = window.sceneInspection.THREE, mesh = view.getObject(${JSON.stringify(scene.rooms.find(room => room.name?.includes('客厅'))!.id)});
+        // The rug would hide most of the floor; it is hidden for this check only.
+        for (const object of view.getSnapshot().objects) if (object.name === 'rug') { const node = view.getObject(object.id); if (node) node.visible = false; }
         mesh.material = new THREE.MeshPhysicalMaterial(floor === 'polished' ? { color: '#e9e3d9', roughness: .06, clearcoat: 1, clearcoatRoughness: .04 } : { color: '#e9e3d9', roughness: .62 });
       }
       if (preset) view.applyCameraPreset(preset);

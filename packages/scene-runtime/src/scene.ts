@@ -214,6 +214,8 @@ export class SpatialScene {
   /** Day/night and interior lamps; night switches lamps on unless told otherwise. */
   setLighting(state: Partial<LightingState>) { this.stage.setLighting(state); this.draw(); }
   getLighting(): LightingState { return { ...this.stage.state }; }
+  /** Daytime backdrop colour as displayed (compensated for tone mapping). */
+  setBackdrop(color: string) { this.stage.setBackdrop(color); this.draw(); }
   setQuality(tier: QualityTier) { this.stage.setQuality(tier); this.resize(); this.draw(); }
   getQuality(): QualityTier { return this.stage.getQuality(); }
   /** Preset aerial and eye-level shots for the loaded snapshot (shared with background stills). */

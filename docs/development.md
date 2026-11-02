@@ -41,6 +41,6 @@
 
 原型源代码位于 `example/prototypes/projects/src/`。构建内嵌 Three.js、CSS、仓耳渔阳体 W01–W05 完整字体与许可，运行时无需字体 CDN，也不请求模型。字体源与生成资源位于 `assets/fonts/tsanger-yuyang`，`pnpm fonts` 从本地源重建，不按当前文案裁剪字符覆盖。新 Web 页面使用同一字体资源。
 
-原型使用 localStorage 键 `hestia.studio.v1`，不同浏览器和 origin 数据独立。图片限 8 MiB，最长边缩至 1600px 后存储；空间不足会提示保存失败。JSON 仅能导出。内置示例来自 `example/prototypes/projects/src/sample/`，不是用户图纸识别结果。原型数据不会自动上传为服务端项目；新流程需独立处理版本、归属与输入校验。
+原型使用 localStorage 键 `hestia.studio.v1`，不同浏览器和 origin 数据独立。图片导入支持 PNG / JPG / WebP，PDF 须先转为图片；图片限 8 MiB，最长边缩至 1600px 后存储；空间不足会提示保存失败。JSON 仅能导出。内置示例来自 `example/prototypes/projects/src/sample/`，不是用户图纸识别结果。原型数据不会自动上传为服务端项目；新流程需独立处理版本、归属与输入校验。
 
 不要手改生成 HTML。原型改动提交源码及两个同步构建产物；生产改动提交相关源、迁移、锁文件与必要验证记录，不提交私密图纸、密钥、依赖目录和调试截图。

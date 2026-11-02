@@ -74,7 +74,7 @@ export function inspectLayout(base: SpatialState, objects: SpatialState['current
   if (!objects.length) { add('furniture-geometry', 'not-applicable', true); }
   for (const object of objects) {
     if (!scaled) { add('furniture-geometry', 'not-checked', true, object.id); continue; }
-    const report = validatePlacement({ rooms: base.fixedFacts.rooms, walls: base.fixedFacts.walls, objects: [...base.fixedFacts.objects, ...objects] }, object.id, pose(object), base.fixedFacts.openingClearances);
+    const report = validatePlacement({ levels: base.fixedFacts.levels, rooms: base.fixedFacts.rooms, walls: base.fixedFacts.walls, objects: [...base.fixedFacts.objects, ...objects] }, object.id, pose(object), base.fixedFacts.openingClearances);
     for (const check of report.checks) add(check.code, check.status, true, object.id);
     issues.push(...report.issues);
     // A thrown/early-return geometry failure must never appear covered by partial successful rows.

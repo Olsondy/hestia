@@ -4,6 +4,7 @@ import { furniturePoseSchema, type FurniturePose } from './commands';
 import type { SceneSnapshot } from './scene';
 import { catalogSizeSchema, catalogReferenceSchema } from './catalog';
 import { styleCommandSchema, type VisualStyle, type StyleChange, type ChangeKind } from './styles';
+import { tilingCommandSchema, type SurfaceDesign, type TilingChange } from './finishes';
 
 const revision = z.number().int().positive();
 const operation = { operationId: idSchema };
@@ -12,6 +13,7 @@ const objectId = z.string().min(1).max(120);
 const newPose = furniturePoseSchema.extend({ yaw: z.number().finite().min(-Math.PI * 2).max(Math.PI * 2) });
 export const candidateCommandSchema = z.discriminatedUnion('type', [
   ...styleCommandSchema.options,
+  ...tilingCommandSchema.options,
   newPose.extend({ type: z.literal('move-furniture'), objectId }).strict(),
   newPose.extend({ type: z.literal('add-furniture'), ...catalogReferenceSchema.shape, size: catalogSizeSchema }).strict(),
   z.object({ type: z.literal('replace-furniture'), objectId, ...catalogReferenceSchema.shape, size: catalogSizeSchema }).strict(),
@@ -39,6 +41,7 @@ export type CandidateSummary = {
 };
 export type CandidateView = CandidateSummary & {
   visualStyle: VisualStyle; styleChanges: StyleChange[];
+  surfaceDesign: SurfaceDesign | null; tilingChanges: TilingChange[];
   scene: SceneSnapshot; lockedObjectIds: string[]; synthetic: boolean; scale: ProjectView['scale'];
   differences: { objectId: string; before: FurniturePose; after: FurniturePose }[];
   objectChanges: { objectId: string; kind: 'added' | 'removed' | 'replaced' | 'moved'; before: SceneSnapshot['objects'][number] | null; after: SceneSnapshot['objects'][number] | null }[];

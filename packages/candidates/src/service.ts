@@ -13,18 +13,22 @@ import { applyStyleCommand, styleOf, styleChanges, validateStyle } from '../../s
 import type { ChangeKind, VisualStyle } from '../../contracts/src/styles';
 import type { PlannerContext, LayoutPlan } from '../../layout-planner/src/contract';
 import { inspectPlannerLayout } from '../../layout-planner/src/checks';
+import type { SurfaceDesign } from '../../contracts/src/finishes';
+import { stoneCatalog, type StoneCatalog } from '../../finishes/src/catalog';
+import { applyTilingCommand, tilingChanges } from '../../finishes/src/commands';
+import { inspectSurfaceDesign } from '../../finishes/src/plan';
 
 type ProjectRow = { id: string; name: string; revision: number; snapshot: SpatialState; updated_at: Date };
 type CandidateRow = { id: string; project_id: string; actor_id: string; name: string; revision: number; base_revision: number; base_state: SpatialState;
   planner_context?: PlannerContext | null;
-  visual_style: VisualStyle | null;
+  visual_style: VisualStyle | null; surface_design: SurfaceDesign | null;
   objects: SpatialState['currentLayout']['objects']; status: CandidateSummary['status']; created_at: Date; updated_at: Date };
 type CheckRow = { id: string; candidate_id: string; candidate_revision: number; base_revision: number; content_hash: string; checker_version: string;
   report: Pick<CandidateCheck, 'adoptable' | 'checks' | 'issues'>; created_at: Date };
 type PresentationRow = { id: string; candidate_id: string; candidate_revision: number; base_revision: number; check_id: string; actor_id: string; session_hash: string; content_hash: string; created_at: Date };
 type SelectionRow = { id: string; presentation_id: string; actor_id: string; session_hash: string; adopted_operation_id: string | null; created_at: Date };
 type AdoptionRow = { operation_id: string; actor_id: string; project_id: string; candidate_id: string; candidate_revision: number; revision: number;
-  before_style: VisualStyle | null; after_style: VisualStyle | null; change_kind: ChangeKind;
+  before_style: VisualStyle | null; after_style: VisualStyle | null; before_surface: SurfaceDesign | null; after_surface: SurfaceDesign | null; change_kind: ChangeKind;
   before_layout: SpatialState['currentLayout']; after_layout: SpatialState['currentLayout']; fixed_facts_hash: string; undone_by: string | null };
 const notFound = () => new DomainError('NOT_FOUND', '项目、候选或操作不存在。', 404);
 const conflict = (message = '当前方案已有变化，请基于最新空间重新建立候选。') => new DomainError('REVISION_CONFLICT', message, 409);
@@ -42,11 +46,15 @@ async function candidateRow(client: PoolClient, projectId: string, candidateId: 
   if (!row) throw notFound(); row.base_state = spatialStateSchema.parse(row.base_state); return row;
 }
 const visualStyle = (candidate: CandidateRow) => styleOf(candidate.visual_style ?? candidate.base_state.visualStyle);
+const surfaceDesign = (candidate: CandidateRow): SurfaceDesign | null => candidate.surface_design ?? candidate.base_state.surfaceDesign ?? null;
+const surfaceChanges = (candidate: CandidateRow) => tilingChanges(candidate.base_state.surfaceDesign, surfaceDesign(candidate) ?? undefined);
 function changeKind(candidate: CandidateRow): ChangeKind {
-  const layout = hasLayoutChange(candidate.base_state, candidate.objects), style = styleChanges(candidate.base_state.visualStyle, visualStyle(candidate)).length > 0;
-  return layout ? style ? 'mixed' : 'layout' : style ? 'style' : 'none';
+  const kinds = ([['layout', hasLayoutChange(candidate.base_state, candidate.objects)], ['style', styleChanges(candidate.base_state.visualStyle, visualStyle(candidate)).length > 0],
+    ['surface', surfaceChanges(candidate).length > 0]] as const).filter(([, changed]) => changed).map(([kind]) => kind);
+  return kinds.length > 1 ? 'mixed' : kinds[0] ?? 'none';
 }
-const contentHash = (candidate: CandidateRow) => hash({ baseRevision: candidate.base_revision, base: candidate.base_state, objects: candidate.objects, visualStyle: visualStyle(candidate), revision: candidate.revision,
+const loadCatalog = (client: PoolClient, candidate: CandidateRow) => stoneCatalog(client, candidate.project_id);
+const contentHash = (candidate: CandidateRow) => hash({ baseRevision: candidate.base_revision, base: candidate.base_state, objects: candidate.objects, visualStyle: visualStyle(candidate), surfaceDesign: surfaceDesign(candidate), revision: candidate.revision,
   ...(candidate.planner_context ? { plannerContext: candidate.planner_context } : {}) });
 function isStale(project: ProjectRow, candidate: CandidateRow) { return project.revision !== candidate.base_revision || hash(project.snapshot) !== hash(candidate.base_state); }
 function current(project: ProjectRow, candidate: CandidateRow, revision?: number) {
@@ -73,7 +81,7 @@ async function checked(client: PoolClient, candidate: CandidateRow, checkId: str
   const row = (await client.query<CheckRow>('SELECT * FROM candidate_checks WHERE id=$1 AND candidate_id=$2', [checkId, candidate.id])).rows[0];
   if (!row || row.candidate_revision !== candidate.revision || row.base_revision !== candidate.base_revision || row.content_hash !== contentHash(candidate) || row.checker_version !== CHECKER_VERSION)
     throw new DomainError('STALE_CHECK', '检查已过期，请重新检查并展示候选。', 409);
-  if (hash(row.report) !== hash(candidateReport(candidate))) throw new DomainError('STALE_CHECK', '检查覆盖与当前候选不一致，请重新检查。', 409);
+  if (hash(row.report) !== hash(candidateReport(candidate, await loadCatalog(client, candidate)))) throw new DomainError('STALE_CHECK', '检查覆盖与当前候选不一致，请重新检查。', 409);
   if (!row.report.adoptable || !row.report.checks.length || row.report.checks.some(item => item.required && !['passed', 'not-applicable'].includes(item.status)))
     throw new DomainError('CANDIDATE_NOT_ADOPTABLE', '候选仍有冲突或必要检查未完成。', 400, row.report);
   return row;
@@ -81,14 +89,14 @@ async function checked(client: PoolClient, candidate: CandidateRow, checkId: str
 function summary(project: ProjectRow, candidate: CandidateRow): CandidateSummary {
   return { id: candidate.id, projectId: candidate.project_id, name: candidate.name, revision: candidate.revision, baseRevision: candidate.base_revision,
     fixedFactsId: candidate.base_state.fixedFacts.id, fixedFactsRevision: candidate.base_state.fixedFacts.revision, status: candidate.status,
-    stale: isStale(project, candidate), changeKind: changeKind(candidate), changedObjectIds: [...new Set([...objectChanges(candidate.base_state, candidate.objects).map(item => item.objectId), ...styleChanges(candidate.base_state.visualStyle, visualStyle(candidate)).flatMap(item => item.kind === 'material' ? [item.objectId] : [])])],
+    stale: isStale(project, candidate), changeKind: changeKind(candidate), changedObjectIds: [...new Set([...objectChanges(candidate.base_state, candidate.objects).map(item => item.objectId), ...styleChanges(candidate.base_state.visualStyle, visualStyle(candidate)).flatMap(item => item.kind === 'material' ? [item.objectId] : []), ...surfaceChanges(candidate).map(item => item.finishId)])],
     createdAt: candidate.created_at.toISOString(), updatedAt: candidate.updated_at.toISOString() };
 }
 async function candidateView(client: PoolClient, project: ProjectRow, candidate: CandidateRow): Promise<CandidateView> {
   const row = (await client.query<CheckRow>('SELECT * FROM candidate_checks WHERE candidate_id=$1 AND candidate_revision=$2 ORDER BY created_at DESC LIMIT 1', [candidate.id, candidate.revision])).rows[0];
-  const sceneState = spatialStateSchema.parse({ ...candidate.base_state, visualStyle: visualStyle(candidate), currentLayout: { ...candidate.base_state.currentLayout, objects: candidate.objects } });
+  const sceneState = spatialStateSchema.parse({ ...candidate.base_state, visualStyle: visualStyle(candidate), surfaceDesign: surfaceDesign(candidate) ?? undefined, currentLayout: { ...candidate.base_state.currentLayout, objects: candidate.objects } });
   const sourceCurrent = await plannerIntentCurrent(client, candidate);
-  return { ...summary(project, candidate), stale: isStale(project, candidate) || !sourceCurrent, visualStyle: visualStyle(candidate), styleChanges: styleChanges(candidate.base_state.visualStyle, visualStyle(candidate)), scene: toScene(sceneState, candidate.name), lockedObjectIds: sceneState.currentLayout.lockedObjectIds,
+  return { ...summary(project, candidate), stale: isStale(project, candidate) || !sourceCurrent, visualStyle: visualStyle(candidate), styleChanges: styleChanges(candidate.base_state.visualStyle, visualStyle(candidate)), surfaceDesign: surfaceDesign(candidate), tilingChanges: surfaceChanges(candidate), scene: toScene(sceneState, candidate.name), lockedObjectIds: sceneState.currentLayout.lockedObjectIds,
     synthetic: sceneState.synthetic, scale: sceneState.scale, differences: differences(candidate.base_state, candidate.objects), objectChanges: objectChanges(candidate.base_state, candidate.objects), check: row ? checkView(row) : null };
 }
 async function projectView(client: PoolClient, project: ProjectRow): Promise<ProjectView> {
@@ -125,8 +133,9 @@ export async function createCandidate(principal: Principal, projectId: string, i
   const result = await mutate(principal, projectId, 'candidate:create', request, async (client, project) => {
     if (project.revision !== request.expectedRevision) throw conflict();
     const candidateId = randomUUID();
-    await client.query("INSERT INTO candidates(id,project_id,actor_id,name,revision,base_revision,base_state,objects,visual_style,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,'draft')", [candidateId, project.id, principal.userId, request.name, project.revision, project.snapshot, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle)]);
-    await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style) VALUES($1,1,$2,$3)', [candidateId, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle)]);
+    const surface = project.snapshot.surfaceDesign ?? null;
+    await client.query("INSERT INTO candidates(id,project_id,actor_id,name,revision,base_revision,base_state,objects,visual_style,surface_design,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,$9,'draft')", [candidateId, project.id, principal.userId, request.name, project.revision, project.snapshot, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle), surface]);
+    await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style,surface_design) VALUES($1,1,$2,$3,$4)', [candidateId, JSON.stringify(project.snapshot.currentLayout.objects), styleOf(project.snapshot.visualStyle), surface]);
     return { candidateId };
   });
   return getCandidate(principal, projectId, result.candidateId);
@@ -148,12 +157,12 @@ export async function savePlannedCandidateInTransaction(client: PoolClient, prin
   if (project.revision !== request.expectedRevision || hash(project.snapshot) !== request.baseHash) throw conflict();
   const candidateId = randomUUID(), candidate: CandidateRow = { id: candidateId, project_id: projectId, actor_id: principal.userId,
     name: '会客与办公 · 布局推荐', revision: 1, base_revision: project.revision, base_state: project.snapshot,
-    objects: request.objects, planner_context: request.context, visual_style: styleOf(project.snapshot.visualStyle), status: 'checked', created_at: new Date(), updated_at: new Date() };
+    objects: request.objects, planner_context: request.context, visual_style: styleOf(project.snapshot.visualStyle), surface_design: project.snapshot.surfaceDesign ?? null, status: 'checked', created_at: new Date(), updated_at: new Date() };
   await assertPlannerIntent(client, candidate);
-  const report = candidateReport(candidate);
+  const report = candidateReport(candidate, await loadCatalog(client, candidate));
   if (!report.adoptable) throw new DomainError('PLANNER_CHECK_REJECTED', '规划结果在保存前复核未通过，没有保存可采用推荐。', 400, report);
-  await client.query("INSERT INTO candidates(id,project_id,actor_id,name,revision,base_revision,base_state,objects,visual_style,planner_context,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,$9,'checked')", [candidateId, projectId, principal.userId, candidate.name, project.revision, project.snapshot, JSON.stringify(candidate.objects), candidate.visual_style, request.context]);
-  await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style) VALUES($1,1,$2,$3)', [candidateId, JSON.stringify(candidate.objects), candidate.visual_style]);
+  await client.query("INSERT INTO candidates(id,project_id,actor_id,name,revision,base_revision,base_state,objects,visual_style,surface_design,planner_context,status) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,$9,$10,'checked')", [candidateId, projectId, principal.userId, candidate.name, project.revision, project.snapshot, JSON.stringify(candidate.objects), candidate.visual_style, candidate.surface_design, request.context]);
+  await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style,surface_design) VALUES($1,1,$2,$3,$4)', [candidateId, JSON.stringify(candidate.objects), candidate.visual_style, candidate.surface_design]);
   const checkId = randomUUID();
   await client.query('INSERT INTO candidate_checks(id,candidate_id,candidate_revision,base_revision,content_hash,checker_version,report) VALUES($1,$2,1,$3,$4,$5,$6)', [checkId, candidateId, project.revision, contentHash(candidate), CHECKER_VERSION, report]);
   const result = { candidateId, candidateRevision: 1, checkId, report: request.report, plannerRequestHash: request.plannerRequestHash };
@@ -168,8 +177,10 @@ export async function editCandidate(principal: Principal, projectId: string, can
   await mutate(principal, projectId, 'candidate:edit', { ...request, candidateId: idSchema.parse(candidateId) }, async (client, project) => {
     const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
     const command = request.command;
-    candidate.visual_style = visualStyle(candidate);
-    if (command.type === 'set-material' || command.type === 'reset-material' || command.type === 'set-display-lighting') {
+    candidate.visual_style = visualStyle(candidate); candidate.surface_design = surfaceDesign(candidate);
+    if (command.type === 'set-tiling' || command.type === 'clear-tiling') {
+      candidate.surface_design = applyTilingCommand(candidate.base_state.fixedFacts.finishes, candidate.surface_design ?? undefined, command, await loadCatalog(client, candidate));
+    } else if (command.type === 'set-material' || command.type === 'reset-material' || command.type === 'set-display-lighting') {
       candidate.visual_style = applyStyleCommand(candidate.base_state, candidate.objects, candidate.visual_style, command);
     } else if (command.type === 'add-furniture') {
       const reference = { assetId: command.assetId, assetVersion: command.assetVersion, materialId: command.materialId, materialVersion: command.materialVersion };
@@ -198,15 +209,15 @@ export async function editCandidate(principal: Principal, projectId: string, can
         }
       }
     }
-    spatialStateSchema.parse({ ...candidate.base_state, visualStyle: candidate.visual_style, currentLayout: { ...candidate.base_state.currentLayout, objects: candidate.objects } });
+    spatialStateSchema.parse({ ...candidate.base_state, visualStyle: candidate.visual_style, surfaceDesign: candidate.surface_design ?? undefined, currentLayout: { ...candidate.base_state.currentLayout, objects: candidate.objects } });
     validateStyle(candidate.base_state, candidate.objects, candidate.visual_style);
-    await client.query("UPDATE candidates SET objects=$1,visual_style=$3,revision=revision+1,status='draft',updated_at=now() WHERE id=$2", [JSON.stringify(candidate.objects), candidate.id, candidate.visual_style]);
-    await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style) VALUES($1,$2,$3,$4)', [candidate.id, candidate.revision + 1, JSON.stringify(candidate.objects), candidate.visual_style]);
+    await client.query("UPDATE candidates SET objects=$1,visual_style=$3,surface_design=$4,revision=revision+1,status='draft',updated_at=now() WHERE id=$2", [JSON.stringify(candidate.objects), candidate.id, candidate.visual_style, candidate.surface_design]);
+    await client.query('INSERT INTO candidate_revisions(candidate_id,revision,objects,visual_style,surface_design) VALUES($1,$2,$3,$4,$5)', [candidate.id, candidate.revision + 1, JSON.stringify(candidate.objects), candidate.visual_style, candidate.surface_design]);
     return { candidateId: candidate.id };
   });
   return getCandidate(principal, projectId, candidateId);
 }
-function candidateReport(candidate: CandidateRow) {
+function candidateReport(candidate: CandidateRow, catalog: StoneCatalog) {
   const report = inspectLayout(candidate.base_state, candidate.objects);
   if (candidate.planner_context) {
     const planner = inspectPlannerLayout(candidate.base_state, candidate.objects, candidate.planner_context);
@@ -221,9 +232,17 @@ function candidateReport(candidate: CandidateRow) {
   try { validateStyle(candidate.base_state, candidate.objects, visualStyle(candidate)); }
   catch (error) { styleValid = false; report.adoptable = false; report.issues.push({ code: error instanceof DomainError ? error.code : 'INVALID_STYLE', message: '候选风格不符合目录、对象范围或锁定约束。' }); }
   report.checks.push({ code: 'visual-style', status: styleValid ? 'passed' : 'failed', required: true });
+  const design = surfaceDesign(candidate);
+  if (design?.tilings.length) {
+    // Retired catalog versions block only the tilings this candidate changes; inherited ones are reported as hints.
+    const surface = inspectSurfaceDesign(candidate.base_state.fixedFacts, design, catalog.lookup, { changedFinishIds: surfaceChanges(candidate).map(item => item.finishId) });
+    report.checks.push({ code: 'surface-design', status: surface.adoptable ? 'passed' : 'failed', required: true });
+    report.issues.push(...surface.issues.map(issue => ({ code: issue.code, objectId: issue.objectId, message: issue.message })));
+    report.adoptable &&= surface.adoptable;
+  } else report.checks.push({ code: 'surface-design', status: 'not-applicable', required: true });
   const changed = changeKind(candidate) !== 'none';
   report.checks.push({ code: 'change-set', status: changed ? 'passed' : 'failed', required: true });
-  if (!changed) { report.adoptable = false; report.issues.push({ code: 'NO_CHANGE', message: '候选与当前方案没有布局或风格差异。' }); }
+  if (!changed) { report.adoptable = false; report.issues.push({ code: 'NO_CHANGE', message: '候选与当前方案没有布局、风格或铺贴差异。' }); }
   return report;
 }
 export async function checkCandidate(principal: Principal, projectId: string, candidateId: string, input: unknown): Promise<CandidateCheck> {
@@ -231,7 +250,7 @@ export async function checkCandidate(principal: Principal, projectId: string, ca
   const result = await mutate(principal, projectId, 'candidate:check', { ...request, candidateId: idSchema.parse(candidateId) }, async (client, project) => {
     const candidate = await candidateRow(client, project.id, candidateId, true); current(project, candidate, request.expectedCandidateRevision);
     await assertPlannerIntent(client, candidate);
-    const checkId = randomUUID(), report = candidateReport(candidate);
+    const checkId = randomUUID(), report = candidateReport(candidate, await loadCatalog(client, candidate));
     await client.query('INSERT INTO candidate_checks(id,candidate_id,candidate_revision,base_revision,content_hash,checker_version,report) VALUES($1,$2,$3,$4,$5,$6,$7)', [checkId, candidate.id, candidate.revision, candidate.base_revision, contentHash(candidate), CHECKER_VERSION, report]);
     await client.query("UPDATE candidates SET status=$1,updated_at=now() WHERE id=$2", [report.adoptable ? 'checked' : 'draft', candidate.id]);
     return { checkId };
@@ -266,7 +285,8 @@ export async function selectCandidate(user: BrowserUser, projectId: string, cand
   });
 }
 function undoable(project: ProjectRow, row: AdoptionRow) {
-  return !row.undone_by && project.revision === row.revision && hash(project.snapshot.currentLayout) === hash(row.after_layout) && hash(project.snapshot.fixedFacts) === row.fixed_facts_hash && hash(styleOf(project.snapshot.visualStyle)) === hash(styleOf(row.after_style));
+  return !row.undone_by && project.revision === row.revision && hash(project.snapshot.currentLayout) === hash(row.after_layout) && hash(project.snapshot.fixedFacts) === row.fixed_facts_hash && hash(styleOf(project.snapshot.visualStyle)) === hash(styleOf(row.after_style))
+    && hash(project.snapshot.surfaceDesign ?? null) === hash(row.after_surface ?? null);
 }
 const adoptionView = (project: ProjectRow, row: AdoptionRow): AdoptionSummary => ({ operationId: row.operation_id, candidateId: row.candidate_id, candidateRevision: row.candidate_revision, revision: row.revision, undoable: undoable(project, row), undoneBy: row.undone_by });
 async function latestUndoable(client: PoolClient, project: ProjectRow): Promise<CandidateList['undoableAdoption']> {
@@ -288,8 +308,8 @@ async function adoptionResult(principal: Principal, projectId: string, operation
     return { project: await projectView(client, project), adoption: adoptionView(project, row), undoableAdoption: await latestUndoable(client, project) };
   });
 }
-async function saveLayout(client: PoolClient, project: ProjectRow, layout: SpatialState['currentLayout'], operationId: string, style: VisualStyle | null) {
-  const state = spatialStateSchema.parse({ ...project.snapshot, currentLayout: layout, visualStyle: style ?? undefined }), revision = project.revision + 1;
+async function saveLayout(client: PoolClient, project: ProjectRow, layout: SpatialState['currentLayout'], operationId: string, style: VisualStyle | null, surface: SurfaceDesign | null) {
+  const state = spatialStateSchema.parse({ ...project.snapshot, currentLayout: layout, visualStyle: style ?? undefined, surfaceDesign: surface ?? undefined }), revision = project.revision + 1;
   await client.query('UPDATE projects SET snapshot=$1,revision=$2,updated_at=now() WHERE id=$3', [state, revision, project.id]);
   await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,$2,$3,$4)', [project.id, revision, state, operationId]);
   return revision;
@@ -306,13 +326,13 @@ export async function adoptCandidate(principal: Principal, projectId: string, ca
     if (!presentation) throw new DomainError('USER_SELECTION_REQUIRED', '用户选择不属于此候选。', 403);
     if (presentation.candidate_revision !== candidate.revision || presentation.base_revision !== project.revision || presentation.content_hash !== contentHash(candidate)) throw new DomainError('STALE_SELECTION', '用户选择的版本已变化，请重新展示并选择。', 409);
     await checked(client, candidate, presentation.check_id);
-    const report = candidateReport(candidate);
+    const report = candidateReport(candidate, await loadCatalog(client, candidate));
     if (!report.adoptable) throw new DomainError('CANDIDATE_NOT_ADOPTABLE', '采用前复核未通过，当前方案保持不变。', 400, report);
-    const kind = changeKind(candidate), before = project.snapshot.currentLayout, after = kind === 'style' ? before : { ...before, id: randomUUID(), revision: 1, objects: candidate.objects };
-    const style = visualStyle(candidate), revision = await saveLayout(client, project, after, request.operationId, style);
+    const kind = changeKind(candidate), before = project.snapshot.currentLayout, after = !hasLayoutChange(candidate.base_state, candidate.objects) ? before : { ...before, id: randomUUID(), revision: 1, objects: candidate.objects };
+    const style = visualStyle(candidate), surface = surfaceDesign(candidate), revision = await saveLayout(client, project, after, request.operationId, style, surface);
     // The ledger row is inserted by mutate after this callback; deferred FK keeps all writes atomic.
     await client.query('SET CONSTRAINTS candidate_adoptions_actor_id_operation_id_fkey DEFERRED');
-    await client.query('INSERT INTO candidate_adoptions(operation_id,actor_id,project_id,candidate_id,candidate_revision,selection_id,revision,before_layout,after_layout,fixed_facts_hash,before_style,after_style,change_kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)', [request.operationId, principal.userId, project.id, candidate.id, candidate.revision, selection.id, revision, before, after, hash(project.snapshot.fixedFacts), project.snapshot.visualStyle ?? null, style, kind]);
+    await client.query('INSERT INTO candidate_adoptions(operation_id,actor_id,project_id,candidate_id,candidate_revision,selection_id,revision,before_layout,after_layout,fixed_facts_hash,before_style,after_style,before_surface,after_surface,change_kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)', [request.operationId, principal.userId, project.id, candidate.id, candidate.revision, selection.id, revision, before, after, hash(project.snapshot.fixedFacts), project.snapshot.visualStyle ?? null, style, project.snapshot.surfaceDesign ?? null, surface, kind]);
     await client.query("UPDATE candidates SET status='adopted',updated_at=now() WHERE id=$1", [candidate.id]);
     await client.query('UPDATE candidate_selections SET adopted_operation_id=$1 WHERE id=$2', [request.operationId, selection.id]);
     if (candidate.planner_context && lockedTaskIds.includes(candidate.planner_context.taskId ?? '')) {
@@ -340,12 +360,12 @@ export async function undoAdoption(principal: Principal, projectId: string, adop
     const row = (await client.query<AdoptionRow>('SELECT * FROM candidate_adoptions WHERE operation_id=$1 AND project_id=$2 FOR UPDATE', [adoptionId, project.id])).rows[0];
     if (!row) throw notFound();
     if (project.revision !== request.expectedRevision || !undoable(project, row)) throw new DomainError('UNDO_ADOPTION_CONFLICT', '采用后已有项目修改或该采用已撤销，不能整体覆盖。', 409);
-    const state = spatialStateSchema.parse({ ...project.snapshot, currentLayout: row.before_layout, visualStyle: row.before_style ?? undefined });
+    const state = spatialStateSchema.parse({ ...project.snapshot, currentLayout: row.before_layout, visualStyle: row.before_style ?? undefined, surfaceDesign: row.before_surface ?? undefined });
     const report = inspectLayout(state, state.currentLayout.objects);
     if (!report.adoptable) throw new DomainError('UNDO_ADOPTION_REJECTED', '原布局未通过当前空间检查，未执行撤销。', 400, report);
     validateStyle(state, state.currentLayout.objects, styleOf(row.before_style));
-    const layout = row.change_kind === 'style' ? state.currentLayout : { ...state.currentLayout, id: randomUUID(), revision: 1 };
-    const revision = await saveLayout(client, project, layout, request.operationId, row.before_style);
+    const layout = hash(row.before_layout) === hash(row.after_layout) ? state.currentLayout : { ...state.currentLayout, id: randomUUID(), revision: 1 };
+    const revision = await saveLayout(client, project, layout, request.operationId, row.before_style, row.before_surface);
     await client.query('UPDATE candidate_adoptions SET undone_by=$1 WHERE operation_id=$2', [request.operationId, adoptionId]);
     return { operationId: request.operationId, adoptionId, revision };
   });

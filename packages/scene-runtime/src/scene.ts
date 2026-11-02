@@ -7,6 +7,7 @@ import { resolveCatalog } from '../../catalog/src/catalog';
 import { prototypeFurniture } from '../../catalog/src/prototype-visual';
 import { resolveLighting, resolveMaterial } from '../../styles/src/catalog';
 import { defaultVisualStyle } from '../../contracts/src/styles';
+import { createFinishMeshes } from './finish-surfaces';
 
 export type CameraState = { position: number[]; target: number[] };
 export type { SceneView };
@@ -134,6 +135,8 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
     group.position.set(object.position.x, entry.level.elevation + object.position.y, object.position.z); group.rotation.y = object.yaw;
     root.add(group); objects.set(object.id, group);
   }
+  // Stone finishes (D04): one group per tiled finish, built from the shared layout engine.
+  for (const group of createFinishMeshes(data, shown.map(level => level.id))) { root.add(group); objects.set(group.userData.id, group); }
   root.updateMatrixWorld(true);
   return { root, objects, data, levels: shown.map(level => level.id), view };
 }

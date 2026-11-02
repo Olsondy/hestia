@@ -7,10 +7,15 @@ import { resolveCatalog } from '../../catalog/src/catalog';
 import { prototypeFurniture } from '../../catalog/src/prototype-visual';
 import { resolveLighting, resolveMaterial } from '../../styles/src/catalog';
 import { defaultVisualStyle } from '../../contracts/src/styles';
+import { ambienceProp } from './props';
+import { addArchitecturalDetail } from './architecture';
+import { RenderStage, type LightingState } from './stage';
+import { detectQuality, type QualityTier } from './quality';
+import { cameraPresets, type CameraPreset } from './cameras';
 import { createFinishMeshes } from './finish-surfaces';
 
 export type CameraState = { position: number[]; target: number[] };
-export type { SceneView };
+export type { SceneView, LightingState, QualityTier, CameraPreset };
 const wallColor = '#f4efe6', slabEdgeColor = '#d9d0c3', stairColor = '#cfc4b4';
 const buildingView: SceneView = { mode: 'building' };
 
@@ -129,16 +134,20 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
       const { asset, material } = resolveCatalog(override ? { ...object.catalog, materialId: override.materialId, materialVersion: override.materialVersion } : object.catalog, object.size);
       group.add(prototypeFurniture(asset.source.itemId, material, object.size));
     } else {
-      const mesh = box(object.size.width, object.size.height, object.size.depth, override ? resolveMaterial(override.materialId, override.materialVersion).swatch : object.color);
-      mesh.position.y = object.size.height / 2; group.add(mesh);
+      const color = override ? resolveMaterial(override.materialId, override.materialVersion).swatch : object.color;
+      // Named ambience props (e.g. imported furniture keys) get a parametric model; unnamed volumes stay boxes.
+      const prop = ambienceProp(object.name, object.size, color);
+      if (prop) group.add(prop);
+      else { const mesh = box(object.size.width, object.size.height, object.size.depth, color); mesh.position.y = object.size.height / 2; group.add(mesh); }
     }
     group.position.set(object.position.x, entry.level.elevation + object.position.y, object.position.z); group.rotation.y = object.yaw;
     root.add(group); objects.set(object.id, group);
   }
   // Stone finishes (D04): one group per tiled finish, built from the shared layout engine.
   for (const group of createFinishMeshes(data, shown.map(level => level.id))) { root.add(group); objects.set(group.userData.id, group); }
+  const { lamps } = addArchitecturalDetail({ root, objects, data }, levels, shown.map(level => level.id));
   root.updateMatrixWorld(true);
-  return { root, objects, data, levels: shown.map(level => level.id), view };
+  return { root, objects, data, levels: shown.map(level => level.id), view, lamps };
 }
 
 export function disposeModel(root: T.Object3D) {
@@ -150,6 +159,7 @@ export function disposeModel(root: T.Object3D) {
     }
   });
   for (const material of materials) {
+    if (material.userData.shared) continue; // Shared detail/prop palettes outlive a single model.
     if (material instanceof T.MeshStandardMaterial) { if (material.map) textures.add(material.map); if (material.bumpMap) textures.add(material.bumpMap); }
     material.dispose();
   }
@@ -170,16 +180,12 @@ export class SpatialScene {
   private selection?: T.BoxHelper;
   private selectedId: string | null = null;
   private view: SceneView = buildingView;
-  private hemisphere = new T.HemisphereLight();
-  private directional = new T.DirectionalLight();
-  constructor(private host: HTMLElement, private onSelect: (id: string | null) => void = () => {}) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = T.PCFSoftShadowMap;
-    this.renderer.toneMapping = T.ACESFilmicToneMapping;
+  private stage: RenderStage;
+  /** `quality` defaults to a device guess (phones `medium`); background stills pass `ultra`. */
+  constructor(private host: HTMLElement, private onSelect: (id: string | null) => void = () => {}, options: { quality?: QualityTier } = {}) {
+    this.renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
     this.scene.background = new T.Color('#f3ece2');
-    this.scene.add(this.hemisphere, this.directional);
+    this.stage = new RenderStage(this.renderer, this.scene, this.camera, options.quality ?? detectQuality());
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.maxPolarAngle = Math.PI * .49;
     this.controls.addEventListener('change', this.draw);
@@ -197,9 +203,7 @@ export class SpatialScene {
     this.view = requested;
     if (this.model) { this.scene.remove(this.model.root); disposeModel(this.model.root); }
     this.model = next; this.scene.add(next.root);
-    this.hemisphere.color.set(light.hemisphere.sky); this.hemisphere.groundColor.set(light.hemisphere.ground); this.hemisphere.intensity = light.hemisphere.intensity;
-    this.directional.color.set(light.directional.color); this.directional.intensity = light.directional.intensity; this.directional.position.fromArray(light.directional.position);
-    this.renderer.toneMappingExposure = light.exposure;
+    this.stage.setModel(next.root, next.lamps, light);
     if (!preserveCamera) this.fit();
     this.setSelection(this.selectedId);
     this.draw();
@@ -210,6 +214,31 @@ export class SpatialScene {
     this.load(this.model.data, preserveCamera, view);
   }
   getView(): SceneView { return structuredClone(this.view); }
+  /** Day/night and interior lamps; night switches lamps on unless told otherwise. */
+  setLighting(state: Partial<LightingState>) { this.stage.setLighting(state); this.draw(); }
+  getLighting(): LightingState { return { ...this.stage.state }; }
+  /** Daytime backdrop colour as displayed (compensated for tone mapping). */
+  setBackdrop(color: string) { this.stage.setBackdrop(color); this.draw(); }
+  setQuality(tier: QualityTier) { this.stage.setQuality(tier); this.resize(); this.draw(); }
+  getQuality(): QualityTier { return this.stage.getQuality(); }
+  /** Preset aerial and eye-level shots for the loaded snapshot (shared with background stills). */
+  cameraPresets(): CameraPreset[] { if (!this.model) throw new Error('No scene loaded'); return cameraPresets(this.model.data); }
+  applyCameraPreset(id: string) {
+    const preset = this.cameraPresets().find(item => item.id === id);
+    if (!preset) throw new Error(`Unknown camera preset: ${id}`);
+    if (JSON.stringify(preset.view) !== JSON.stringify(this.view)) this.setView(preset.view, true);
+    if (preset.kind === 'aerial') { this.camera.fov = 38; this.camera.updateProjectionMatrix(); this.frame(new T.Vector3(...preset.direction)); }
+    else {
+      // Keep the horizontal field of view across aspects, within a sane vertical range.
+      const half = T.MathUtils.degToRad(preset.horizontalFov / 2);
+      this.camera.fov = T.MathUtils.clamp(T.MathUtils.radToDeg(2 * Math.atan(Math.tan(half) / this.camera.aspect)), 45, 80);
+      this.camera.updateProjectionMatrix();
+      this.camera.position.fromArray(preset.position); this.controls.target.fromArray(preset.target); this.controls.update();
+    }
+    this.draw();
+  }
+  /** Renders one frame through the quality tier's pipeline (post-processing included). */
+  render() { this.draw(); }
   updateObject(id: string, patch: { x?: number; y?: number; z?: number; yaw?: number }) {
     if (!this.model) throw new Error('No scene loaded');
     const data = structuredClone(this.model.data);
@@ -221,7 +250,7 @@ export class SpatialScene {
     if (patch.yaw !== undefined) object.yaw = patch.yaw;
     sceneSnapshotSchema.parse(data);
     node.position.set(object.position.x, elevation + object.position.y, object.position.z); node.rotation.y = object.yaw;
-    node.updateMatrixWorld(true); this.model.data = data; this.selection?.update(); this.draw();
+    node.updateMatrixWorld(true); this.model.data = data; this.selection?.update(); this.stage.invalidate(); this.draw();
   }
   setSelection(id: string | null) {
     this.selectedId = id;
@@ -248,7 +277,7 @@ export class SpatialScene {
     const point = new T.Box3().setFromObject(object).getCenter(new T.Vector3()).project(this.camera);
     return { x: (point.x + 1) * this.host.clientWidth / 2, y: (1 - point.y) * this.host.clientHeight / 2 };
   }
-  private fit() {
+  private fit(direction = new T.Vector3(7, 11, 10)) {
     const bounds = new T.Box3().setFromObject(this.model!.root);
     if (bounds.isEmpty()) bounds.set(new T.Vector3(-2, 0, -2), new T.Vector3(2, 1, 2));
     const center = bounds.getCenter(new T.Vector3()), size = bounds.getSize(new T.Vector3());
@@ -257,15 +286,39 @@ export class SpatialScene {
     const horizontal = Math.atan(Math.tan(vertical) * this.camera.aspect);
     const distance = radius / Math.sin(Math.min(vertical, horizontal)) * 1.15;
     this.controls.target.copy(center);
-    this.camera.position.copy(center).add(new T.Vector3(7, 11, 10).normalize().multiplyScalar(distance));
+    this.camera.position.copy(center).add(direction.clone().normalize().multiplyScalar(distance));
     this.controls.update();
+  }
+  /** Tight framing for aerial presets: the closest distance at which every bounding-box corner stays in view. */
+  private frame(direction: T.Vector3) {
+    this.fit(direction);
+    const bounds = new T.Box3().setFromObject(this.model!.root), center = this.controls.target.clone(), dir = direction.clone().normalize();
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new T.Vector3(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z));
+    const fits = (distance: number) => {
+      this.camera.position.copy(center).addScaledVector(dir, distance); this.camera.lookAt(center); this.camera.updateMatrixWorld(true);
+      return corners.every(corner => { const p = corner.clone().project(this.camera); return Math.abs(p.x) < .92 && Math.abs(p.y) < .9 && p.z < 1; });
+    };
+    const start = this.camera.position.distanceTo(center);
+    for (let pass = 0; pass < 3; pass++) {
+      let low = 0, high = start;
+      for (let i = 0; i < 30; i++) { const mid = (low + high) / 2; if (fits(mid)) high = mid; else low = mid; }
+      fits(high);
+      // Re-centre on the projected extent so the margin is even, then search the distance again.
+      const ndc = corners.map(corner => corner.clone().project(this.camera));
+      const mid = new T.Vector3((Math.min(...ndc.map(p => p.x)) + Math.max(...ndc.map(p => p.x))) / 2, (Math.min(...ndc.map(p => p.y)) + Math.max(...ndc.map(p => p.y))) / 2, center.clone().project(this.camera).z);
+      center.copy(mid.unproject(this.camera));
+    }
+    let low = 0, high = start;
+    for (let i = 0; i < 30; i++) { const mid = (low + high) / 2; if (fits(mid)) high = mid; else low = mid; }
+    this.controls.target.copy(center); this.camera.position.copy(center).addScaledVector(dir, high); this.controls.update();
   }
   private resize = () => {
     if (this.disposed || !this.host.clientWidth || !this.host.clientHeight) return;
     this.renderer.setSize(this.host.clientWidth, this.host.clientHeight);
+    this.stage.setSize(this.host.clientWidth, this.host.clientHeight);
     this.camera.aspect = this.host.clientWidth / this.host.clientHeight; this.camera.updateProjectionMatrix(); this.draw();
   };
-  private draw = () => { if (!this.disposed) this.renderer.render(this.scene, this.camera); };
+  private draw = () => { if (!this.disposed) this.stage.render(); };
   private onDown = (event: PointerEvent) => { this.down = { x: event.clientX, y: event.clientY }; };
   private onUp = (event: PointerEvent) => {
     if (!this.down || Math.hypot(event.clientX - this.down.x, event.clientY - this.down.y) > 5) return;
@@ -283,6 +336,6 @@ export class SpatialScene {
     this.renderer.domElement.removeEventListener('pointerup', this.onUp);
     if (this.model) disposeModel(this.model.root);
     if (this.selection) { this.selection.geometry.dispose(); this.selection.material.dispose(); }
-    this.renderer.dispose(); this.renderer.domElement.remove();
+    this.stage.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

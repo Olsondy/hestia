@@ -44,10 +44,17 @@ test('duplicate IDs, overlapping openings and non-finite coordinates are rejecte
   assert.equal(sceneSnapshotSchema.safeParse(invalid).success, false);
 });
 
-/** World-space mesh bounds and colours: changes whenever the rendered single-storey geometry changes. */
+/** Structural meshes only: V01 presentation detail (skirting, frames, ceilings, rails) is tagged `userData.detail`. */
+function structural(root: T.Object3D, visit: (mesh: T.Mesh) => void) {
+  const walk = (node: T.Object3D) => { if (node.userData.detail) return; if (node instanceof T.Mesh) visit(node); node.children.forEach(walk); };
+  walk(root);
+}
+function structuralBounds(root: T.Object3D) { const box = new T.Box3(); structural(root, mesh => box.union(new T.Box3().setFromObject(mesh))); return box; }
+
+/** World-space structural mesh bounds and colours: changes whenever the single-storey structural geometry changes. */
 function geometryDigest(root: T.Object3D) {
   const parts: string[] = [];
-  root.traverse(o => { if (o instanceof T.Mesh) { const b = new T.Box3().setFromObject(o);
+  structural(root, o => { { const b = new T.Box3().setFromObject(o);
     parts.push([b.min.toArray(), b.max.toArray()].flat().map(v => v.toFixed(5)).join(',') + ':' + (o.material as T.MeshStandardMaterial).color?.getHexString()); } });
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
@@ -66,17 +73,17 @@ test('storeys stack at their elevations and the stairwell is a real hole', () =>
   const solid = down(4, 2), well = down(1.5, 2);
   assert.equal(solid.object.userData.id, 'r2'); assert.ok(Math.abs(solid.point.y - 3) < 1e-6);
   assert.equal(well.object.userData.id, 'r1'); assert.ok(Math.abs(well.point.y) < 1e-6);
-  const stair = new T.Box3().setFromObject(model.objects.get('s1')!);
+  const stair = structuralBounds(model.objects.get('s1')!);
   assert.ok(Math.abs(stair.max.y - 3) < 1e-6 && Math.abs(stair.min.y) < 1e-6, 'stair reaches the upper floor');
   assert.ok(Math.abs(model.objects.get('bed')!.position.y - 3) < 1e-6, 'object y is relative to its storey floor');
-  assert.ok(Math.abs(new T.Box3().setFromObject(model.objects.get('w2')!).max.y - 5.8) < 1e-6);
+  assert.ok(Math.abs(structuralBounds(model.objects.get('w2')!).max.y - 5.8) < 1e-6);
   disposeModel(model.root);
 });
 
 test('single storey and cutaway views show only the chosen storeys', () => {
   const upper = createSceneModel(twoStorey(), { mode: 'level', levelId: 'l2' });
   assert.deepEqual([...upper.objects.keys()].sort(), ['bed', 'r2', 'w2', 'well']);
-  assert.ok(Math.abs(new T.Box3().setFromObject(upper.objects.get('r2')!).max.y - 3) < 1e-6, 'storey keeps its elevation');
+  assert.ok(Math.abs(structuralBounds(upper.objects.get('r2')!).max.y - 3) < 1e-6, 'storey keeps its elevation');
   const lower = createSceneModel(twoStorey(), { mode: 'section', levelId: 'l1' });
   assert.deepEqual([...lower.objects.keys()].sort(), ['r1', 's1', 'w1']);
   const whole = createSceneModel(twoStorey(), { mode: 'section', levelId: 'l2' });

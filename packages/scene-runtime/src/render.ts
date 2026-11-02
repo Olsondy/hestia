@@ -5,21 +5,35 @@ import { fileURLToPath } from 'node:url';
 import { writeFile } from 'node:fs/promises';
 import { sceneSnapshotSchema, type SceneSnapshot } from './snapshot';
 import { sceneViewSchema, type SceneView } from '../../contracts/src/building';
+import { z } from 'zod';
+import { qualityTiers, type QualityTier } from './quality';
 
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
-export async function sceneDocument(snapshot: SceneSnapshot, inspection = false, sceneView: SceneView = { mode: 'building' }) {
+/** Still options: quality tier (background stills use `ultra`), day/night lighting and an optional camera preset ID. */
+export const renderOptionsSchema = z.object({
+  quality: z.enum(qualityTiers as [QualityTier, ...QualityTier[]]).default('ultra'),
+  lighting: z.enum(['day', 'night']).default('day'),
+  preset: z.string().regex(/^[\w-]{1,160}$/).optional(),
+}).strict();
+export type RenderOptions = z.input<typeof renderOptionsSchema>;
+export async function sceneDocument(snapshot: SceneSnapshot, inspection = false, sceneView: SceneView = { mode: 'building' }, renderOptions: RenderOptions = {}) {
   const safe = JSON.stringify(sceneSnapshotSchema.parse(snapshot)).replace(/</g, '\\u003c');
   const safeView = JSON.stringify(sceneViewSchema.parse(sceneView)).replace(/</g, '\\u003c');
+  const options = renderOptionsSchema.parse(renderOptions), safeOptions = JSON.stringify(options).replace(/</g, '\\u003c');
   const compiled = await build({
     stdin: { contents: `import { SpatialScene } from './scene.ts';
-      const view = new SpatialScene(document.getElementById('space'), id => { document.getElementById('selection').textContent = id || ''; });
+      ${inspection ? `import * as THREE from 'three';` : ''}
+      const options = ${safeOptions};
+      const view = new SpatialScene(document.getElementById('space'), id => { document.getElementById('selection').textContent = id || ''; }, { quality: options.quality });
       const snapshot = ${safe};
       view.renderer.domElement.addEventListener('webglcontextlost', () => { document.documentElement.dataset.sceneError = 'WebGL context lost'; });
       view.load(snapshot, false, ${safeView}); document.getElementById('label').textContent = snapshot.label;
+      if (options.lighting !== 'day') view.setLighting({ mode: options.lighting });
+      if (options.preset) view.applyCameraPreset(options.preset);
       ${inspection ? `// Inspection adapter is included only in the local validation harness, never production output.
-        window.sceneInspection = { view };` : ''}
+        window.sceneInspection = { view, THREE };` : ''}
       requestAnimationFrame(() => {
-        view.renderer.render(view.scene, view.camera);
+        view.render();
         const gl = view.renderer.getContext();
         if (gl.isContextLost()) { document.documentElement.dataset.sceneError = 'WebGL context lost'; return; }
         const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
@@ -38,8 +52,8 @@ export async function sceneDocument(snapshot: SceneSnapshot, inspection = false,
 }
 
 /** Bounded local/headless renderer. Accepts data, not user-provided HTML or scripts. */
-export async function renderSnapshotToPng(snapshot: SceneSnapshot, outputPath: string, existingBrowser?: Browser, sceneView?: SceneView) {
-  const html = await sceneDocument(snapshot, false, sceneView);
+export async function renderSnapshotToPng(snapshot: SceneSnapshot, outputPath: string, existingBrowser?: Browser, sceneView?: SceneView, options?: RenderOptions) {
+  const html = await sceneDocument(snapshot, false, sceneView, options);
   // Explicit software ANGLE keeps headless jobs independent of desktop GPU availability.
   const browser = existingBrowser ?? await chromium.launch({ headless: true, args: ['--use-angle=swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });

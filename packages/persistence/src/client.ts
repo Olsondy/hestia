@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { sql } from 'drizzle-orm';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
 
@@ -20,6 +21,13 @@ export async function advisoryXactLock(tx: Database, key: string) {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
 }
 /**
+ * Drizzle wraps driver errors in DrizzleQueryError (message carries the SQL and bound values). Services and
+ * callers match on the Postgres error itself (`code`, `constraint`), so the original error is rethrown.
+ */
+export function driverError(error: unknown): unknown {
+  return error instanceof DrizzleQueryError && error.cause ? error.cause : error;
+}
+/**
  * One transaction, two views of the same connection: `client` for parameterised SQL (locks, jsonb_set, …)
  * and `tx` for Drizzle queries. Both see the same uncommitted state.
  */
@@ -32,6 +40,6 @@ export async function transaction<T>(work: (client: pg.PoolClient, tx: Database)
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
-    throw error;
+    throw driverError(error);
   } finally { client.release(); }
 }

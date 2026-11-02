@@ -5,6 +5,10 @@ import type { PoolClient } from 'pg';
 import { transaction } from '../../persistence/src/client';
 import { issueRegistrationGrant } from '../../credits/src/service';
 import { ensurePersonalWorkspace } from '../../workspaces/src/service';
+import { DomainError } from '../../contracts/src/project';
+
+/** Deployment switch (ADR-0007): enterprise-facing deployments close open registration; the code stays shared. */
+export const registrationOpen = (env: NodeJS.ProcessEnv = process.env) => env.HESTIA_REGISTRATION?.trim().toLowerCase() !== 'closed';
 
 export const registrationSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
@@ -28,6 +32,7 @@ export async function createRegistrationInTransaction(client: PoolClient, input:
 }
 
 export async function register(input: unknown) {
+  if (!registrationOpen()) throw new DomainError('REGISTRATION_CLOSED', '当前未开放注册。', 403);
   const parsed = registrationSchema.parse(input);
   // Hash outside the transaction to avoid holding DB locks for scrypt work.
   const passwordHash = await hashPassword(parsed.password);

@@ -27,7 +27,7 @@ pnpm preview
 
 ## 开发入口
 
-使用 Node.js 22+ 与 `package.json` 指定的 pnpm；依赖以 `pnpm-lock.yaml` 为准。`pnpm dev` 启动 `apps/web` 的 Next.js 开发入口（127.0.0.1:3000），与 4173 端口原型独立。本地数据库、邀请及验证命令见 [开发与验证](docs/development.md)。PostgreSQL 17.7 Compose 用于本地联调，不代表生产部署已确定。
+使用 Node.js 22+ 与 `package.json` 指定的 pnpm；依赖以 `pnpm-lock.yaml` 为准。`pnpm dev` 启动 `apps/web` 的 Next.js 开发入口（127.0.0.1:3000），与 4173 端口原型独立。本地数据库、邀请及验证命令见 [开发与验证](docs/development.md)；石材 H5 离线演示见 [演示说明](docs/demo/stone-h5-demo.md)。PostgreSQL 17.7 Compose 用于本地联调，不代表生产部署已确定。
 
 ```text
 example/prototypes/projects/src/   原型页面、场景、存储、布局与动画

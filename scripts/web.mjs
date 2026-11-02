@@ -7,7 +7,8 @@ if (!['dev', 'build', 'start'].includes(action)) throw new Error('Expected dev, 
 if (action !== 'start') await import('./prepare-pdf-worker.mjs');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const args = [fileURLToPath(new URL('../node_modules/next/dist/bin/next', import.meta.url)), action, 'apps/web'];
-if (action !== 'build') args.push('--hostname', '127.0.0.1');
+// Loopback by default; HESTIA_WEB_HOST (e.g. 0.0.0.0) lets phones on the same LAN reach a demo.
+if (action !== 'build') args.push('--hostname', process.env.HESTIA_WEB_HOST || '127.0.0.1');
 const child = spawn(process.execPath, args, { cwd: root, env: process.env, stdio: 'inherit' });
 child.on('exit', code => { process.exitCode = code ?? 1; });
 child.on('error', () => { process.exitCode = 1; });

@@ -15,6 +15,22 @@ const request = (path: string, body?: unknown, cookie?: string, origin = authOri
   body: body ? JSON.stringify(body) : undefined,
 });
 
+test('an enterprise-facing deployment closes open registration without creating an account', async () => {
+  const { POST: registerRoute } = await import('../../../apps/web/app/api/register/route');
+  const email = `closed-${randomUUID().slice(0, 8)}@example.test`;
+  const previous = process.env.HESTIA_REGISTRATION;
+  process.env.HESTIA_REGISTRATION = 'closed';
+  try {
+    const response = await registerRoute(new Request(`${authOrigin}/api/register`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: authOrigin }, body: JSON.stringify({ email, name: '关闭注册', password: 'closed-registration-1' }) }));
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error.code, 'REGISTRATION_CLOSED');
+    assert.equal((await pool.query('SELECT 1 FROM hestia_auth_user WHERE email=$1', [email])).rowCount, 0);
+  } finally {
+    if (previous === undefined) delete process.env.HESTIA_REGISTRATION; else process.env.HESTIA_REGISTRATION = previous;
+  }
+});
+
 test('invitation and Better Auth integration against PostgreSQL', async t => {
   try {
     await t.test('public email/password registration is closed', async () => {
@@ -96,3 +112,4 @@ test('invitation and Better Auth integration against PostgreSQL', async t => {
     await pool.end();
   }
 });
+

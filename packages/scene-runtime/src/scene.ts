@@ -295,9 +295,19 @@ export class SpatialScene {
       this.camera.position.copy(center).addScaledVector(dir, distance); this.camera.lookAt(center); this.camera.updateMatrixWorld(true);
       return corners.every(corner => { const p = corner.clone().project(this.camera); return Math.abs(p.x) < .92 && Math.abs(p.y) < .9 && p.z < 1; });
     };
-    let low = 0, high = this.camera.position.distanceTo(center);
+    const start = this.camera.position.distanceTo(center);
+    for (let pass = 0; pass < 3; pass++) {
+      let low = 0, high = start;
+      for (let i = 0; i < 30; i++) { const mid = (low + high) / 2; if (fits(mid)) high = mid; else low = mid; }
+      fits(high);
+      // Re-centre on the projected extent so the margin is even, then search the distance again.
+      const ndc = corners.map(corner => corner.clone().project(this.camera));
+      const mid = new T.Vector3((Math.min(...ndc.map(p => p.x)) + Math.max(...ndc.map(p => p.x))) / 2, (Math.min(...ndc.map(p => p.y)) + Math.max(...ndc.map(p => p.y))) / 2, center.clone().project(this.camera).z);
+      center.copy(mid.unproject(this.camera));
+    }
+    let low = 0, high = start;
     for (let i = 0; i < 30; i++) { const mid = (low + high) / 2; if (fits(mid)) high = mid; else low = mid; }
-    this.camera.position.copy(center).addScaledVector(dir, high); this.controls.update();
+    this.controls.target.copy(center); this.camera.position.copy(center).addScaledVector(dir, high); this.controls.update();
   }
   private resize = () => {
     if (this.disposed || !this.host.clientWidth || !this.host.clientHeight) return;

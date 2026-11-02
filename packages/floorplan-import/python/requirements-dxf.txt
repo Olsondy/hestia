@@ -1,0 +1,6 @@
+# DXF converter (cadvec_dxf.py). Installed into .venv/dxf by `pnpm setup:dxf`; Python 3.10 or newer.
+ezdxf==1.4.3
+numpy==2.2.6
+fonttools==4.68.0
+pyparsing==3.3.3
+typing_extensions==4.16.0

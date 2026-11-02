@@ -25,7 +25,7 @@ export const undoStyleSchema = z.object({ operationId: z.string().uuid(), expect
 export type StyleChange =
   | { kind: 'material'; objectId: string; before: MaterialOverride | null; after: MaterialOverride | null }
   | { kind: 'lighting'; before: VisualStyle['lighting']; after: VisualStyle['lighting'] };
-export type ChangeKind = 'none' | 'layout' | 'style' | 'mixed';
+export type ChangeKind = 'none' | 'layout' | 'style' | 'surface' | 'mixed';
 export type DisplayLightPreset = {
   id: string; version: number; name: string; description: string;
   hemisphere: { sky: string; ground: string; intensity: number };

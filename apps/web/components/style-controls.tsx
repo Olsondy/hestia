@@ -9,7 +9,7 @@ import { SceneViewport } from './scene-viewport';
 import './style-controls.css';
 
 const useStyleCatalog = () => useQuery({ queryKey: ['style-catalog'], queryFn: () => api<StyleCatalog>('/api/styles/catalog') });
-export const changeKindLabel = (kind: string) => ({ none: '尚无变化', layout: '布局方案', style: '视觉风格', mixed: '布局与风格' })[kind] || '候选';
+export const changeKindLabel = (kind: string) => ({ none: '尚无变化', layout: '布局方案', style: '视觉风格', surface: '铺贴方案', mixed: '组合变化' })[kind] || '候选';
 
 function applyPreview(style: VisualStyle, command: StyleCommand | null): VisualStyle {
   if (!command) return style;

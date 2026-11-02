@@ -2,12 +2,23 @@ import polygonClipping, { type MultiPolygon, type Polygon, type Pair } from 'pol
 import { sceneSnapshotSchema, type SceneSnapshot } from '../../contracts/src/scene';
 import { openingClearanceSchema, type OpeningClearance } from '../../contracts/src/project';
 import { furniturePoseSchema, type FurniturePose } from '../../contracts/src/commands';
+import { effectiveLevels, levelOf } from '../../contracts/src/building';
 
 // Explicit geometric tolerance, not a construction/measurement accuracy claim.
 export const TOLERANCE = { insetM: .001, verticalM: .001, areaM2: 1e-8, arcOuterErrorM: .0005 } as const;
 type Point = { x: number; z: number };
 type Object3D = SceneSnapshot['objects'][number];
-export type GeometryInput = Pick<SceneSnapshot, 'rooms' | 'walls' | 'objects'>;
+export type GeometryInput = Pick<SceneSnapshot, 'rooms' | 'walls' | 'objects'> & Pick<Partial<SceneSnapshot>, 'levels'>;
+/** Placement is a plan check on one storey: keep the target object's level only and drop level references. */
+function storeyInput(input: GeometryInput, objectId: string, clearances: OpeningClearance[]) {
+  if (!input.levels?.length) return { input: { rooms: input.rooms, walls: input.walls, objects: input.objects }, clearances };
+  const levels = effectiveLevels(input), target = input.objects.find(o => o.id === objectId);
+  const level = target ? levelOf(target, levels) : levels[0]?.id, on = <T extends { levelId?: string }>(item: T) => levelOf(item, levels) === level;
+  const strip = <T extends { levelId?: string }>({ levelId: _levelId, ...item }: T) => item;
+  const walls = input.walls.filter(on).map(strip), openings = new Set(walls.flatMap(w => w.openings.map(o => o.id)));
+  return { input: { rooms: input.rooms.filter(on).map(strip), walls, objects: input.objects.filter(on).map(strip) },
+    clearances: clearances.filter(c => openings.has(c.openingId)) };
+}
 export type PlacementIssue = { code: string; objectId: string; relatedObjectId?: string; message: string };
 export type PlacementReport = { valid: boolean; issues: PlacementIssue[]; checks: { code: string; status: 'passed' | 'failed' | 'not-applicable' | 'not-checked' }[] };
 
@@ -68,6 +79,7 @@ export function validatePlacement(input: GeometryInput, objectId: string, pose: 
   const issues: PlacementIssue[] = [];
   const checks: PlacementReport['checks'] = [];
   const issue = (code: string, message: string, relatedObjectId?: string) => issues.push({ code, objectId, ...(relatedObjectId ? { relatedObjectId } : {}), message });
+  ({ input, clearances } = storeyInput(input, objectId, clearances));
   const parse = sceneSnapshotSchema.safeParse({ version: 1, unit: 'm', plane: 'xz', label: 'Geometry input', synthetic: false, ...input });
   const parsedPose = furniturePoseSchema.safeParse(pose);
   const parsedClearances = openingClearanceSchema.array().max(1000).safeParse(clearances);

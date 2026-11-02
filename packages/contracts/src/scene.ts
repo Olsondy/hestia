@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { catalogReferenceSchema } from './catalog';
 import { visualStyleSchema } from './styles';
 import { checkBuilding, levelSchema, slabOpeningSchema, stairSchema, type BuildingIssue } from './building';
+import { checkFinishes, finishSchema, surfaceDesignSchema, type SurfaceDesign } from './finishes';
 
 const coordinate = z.number().finite().min(-1000).max(1000);
 const length = z.number().finite().positive().max(1000);
@@ -26,6 +27,9 @@ export const sceneSnapshotSchema = z.object({
   walls: z.array(wall).max(1000),
   stairs: z.array(stairSchema).max(50).optional(),
   slabOpenings: z.array(slabOpeningSchema).max(200).optional(),
+  /** Optional finish surfaces (fixed facts) and their stone surface design. Absent for projects without finishes. */
+  finishes: z.array(finishSchema).max(500).optional(),
+  surfaceDesign: surfaceDesignSchema.optional(),
   objects: z.array(z.object({ id, levelId, kind: z.enum(['furniture', 'fixed']),
     position: z.object({ x: coordinate, y: coordinate, z: coordinate }).strict(),
     size: z.object({ width: length, height: length, depth: length }).strict(),
@@ -36,7 +40,7 @@ export const sceneSnapshotSchema = z.object({
 }).strict().superRefine((value, ctx) => {
   const ids = new Set<string>();
   const all = [...value.levels ?? [], ...value.rooms, ...value.walls, ...value.objects, ...value.walls.flatMap(w => w.openings),
-    ...value.stairs ?? [], ...value.slabOpenings ?? []];
+    ...value.stairs ?? [], ...value.slabOpenings ?? [], ...value.finishes ?? []];
   for (const entry of all) {
     if (ids.has(entry.id)) ctx.addIssue({ code: 'custom', message: `Duplicate scene ID: ${entry.id}` });
     ids.add(entry.id);
@@ -57,7 +61,16 @@ export const sceneSnapshotSchema = z.object({
     }
   }
   addBuildingIssues(ctx, checkBuilding(value));
+  addBuildingIssues(ctx, checkFinishes(value));
+  addDesignIssues(ctx, value.finishes, value.surfaceDesign);
 });
+
+/** A surface design may only lay stone on declared finishes. */
+export function addDesignIssues(ctx: z.RefinementCtx, finishes: { id: string }[] | undefined, design: SurfaceDesign | undefined) {
+  for (const tiling of design?.tilings ?? []) if (!finishes?.some(finish => finish.id === tiling.finishId))
+    ctx.addIssue({ code: 'custom', message: `TILING_UNKNOWN_FINISH ${tiling.finishId}: Surface design references an unknown finish.`,
+      params: { code: 'TILING_UNKNOWN_FINISH', objectId: tiling.finishId } });
+}
 
 /** Structured building issues surface as custom Zod issues carrying `params.code` and `params.objectId`. */
 export function addBuildingIssues(ctx: z.RefinementCtx, issues: BuildingIssue[]) {

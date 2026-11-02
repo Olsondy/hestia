@@ -28,7 +28,7 @@ export const workspaces = pgTable("workspaces", {
 export const workspaceTypes = pgTable("workspace_types", {
 	kind: text().primaryKey().notNull(),
 	maxMembers: integer("max_members"),
-	usagePolicy: text("usage_policy").notNull(),
+	usagePolicy: text("usage_policy").$type<'member_credits' | 'unmetered'>().notNull(),
 	provisioning: text().notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	customerEntry: boolean("customer_entry").default(false).notNull(),
@@ -62,7 +62,7 @@ export const workspaceCustomers = pgTable("workspace_customers", {
 export const workspaceMembers = pgTable("workspace_members", {
 	workspaceId: uuid("workspace_id").notNull(),
 	userId: text("user_id").notNull(),
-	role: text().notNull(),
+	role: text().$type<'admin' | 'member'>().notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => [

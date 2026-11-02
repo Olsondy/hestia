@@ -12,6 +12,7 @@ import { addArchitecturalDetail } from './architecture';
 import { RenderStage, type LightingState } from './stage';
 import { detectQuality, type QualityTier } from './quality';
 import { cameraPresets, type CameraPreset } from './cameras';
+import { createFinishMeshes } from './finish-surfaces';
 
 export type CameraState = { position: number[]; target: number[] };
 export type { SceneView, LightingState, QualityTier, CameraPreset };
@@ -142,6 +143,8 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
     group.position.set(object.position.x, entry.level.elevation + object.position.y, object.position.z); group.rotation.y = object.yaw;
     root.add(group); objects.set(object.id, group);
   }
+  // Stone finishes (D04): one group per tiled finish, built from the shared layout engine.
+  for (const group of createFinishMeshes(data, shown.map(level => level.id))) { root.add(group); objects.set(group.userData.id, group); }
   const { lamps } = addArchitecturalDetail({ root, objects, data }, levels, shown.map(level => level.id));
   root.updateMatrixWorld(true);
   return { root, objects, data, levels: shown.map(level => level.id), view, lamps };

@@ -2,7 +2,7 @@ import { pgTable, text, timestamp, boolean, index, uniqueIndex } from 'drizzle-o
 
 const time = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 export const user = pgTable('hestia_auth_user', {
-  id: text('id').primaryKey(), name: text('name').notNull(), email: text('email').notNull().unique(),
+  id: text('id').primaryKey(), name: text('name').notNull(), email: text('email').unique(), phoneNumber: text('phone_number'),
   emailVerified: boolean('email_verified').notNull().default(false), image: text('image'),
   createdAt: time('created_at').notNull().defaultNow(), updatedAt: time('updated_at').notNull().defaultNow(),
 });

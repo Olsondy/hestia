@@ -18,4 +18,5 @@
 *.pdf binary
 # The offline bundle contains unmodified third-party shader strings.
 dist/index.html -whitespace linguist-generated=true
+example/prototypes/** linguist-documentation
 example/prototypes/projects/index.html -whitespace linguist-generated=true

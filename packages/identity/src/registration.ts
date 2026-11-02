@@ -3,7 +3,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { eq } from 'drizzle-orm';
-import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
+import { advisoryXactLock, driverError, orm, transaction } from '../../persistence/src/client';
 import { hestiaAuthAccount, hestiaAuthUser } from '../../persistence/src/schema';
 import { issueRegistrationGrant } from '../../credits/src/service';
 import { ensurePersonalWorkspace } from '../../workspaces/src/service';
@@ -43,8 +43,7 @@ export async function register(input: unknown) {
   } catch (error) {
     // A concurrently accepted legacy invitation can win the user-email uniqueness race.
     // The losing registration transaction is entirely rolled back, and must not grant credits.
-    // Drizzle wraps driver errors in `cause`; errors raised by raw queries (e.g. COMMIT) arrive unwrapped.
-    const pgError = ((error as { cause?: unknown }).cause ?? error) as { code?: string; constraint?: string };
+    const pgError = driverError(error) as { code?: string; constraint?: string };
     if (pgError.code !== '23505' || pgError.constraint !== 'hestia_auth_user_email_key') throw error;
   }
   // Neutral response for existing identities prevents account enumeration. Login validates password.

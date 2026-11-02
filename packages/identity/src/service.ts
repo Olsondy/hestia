@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import { transaction } from '../../persistence/src/client';
+import { driverError, transaction } from '../../persistence/src/client';
 import { hestiaAuthAccount, hestiaAuthUser, hestiaInvitation } from '../../persistence/src/schema';
 import { issueRegistrationGrant } from '../../credits/src/service';
 import { ensurePersonalWorkspace } from '../../workspaces/src/service';
@@ -50,8 +50,7 @@ export async function acceptInvitation(token: string, name: string, password: st
       // Matches Better Auth credential-account contract; hash uses its official scrypt implementation.
       await tx.insert(hestiaAuthAccount).values({ id: randomUUID(), accountId: userId, providerId: 'credential', userId, password: passwordHash });
     } catch (error) {
-      // Drizzle wraps the driver error in `cause`.
-      if ((error as { cause?: { code?: string } }).cause?.code === '23505') throw new InvitationError('ACCOUNT_EXISTS');
+      if ((driverError(error) as { code?: string }).code === '23505') throw new InvitationError('ACCOUNT_EXISTS');
       throw error;
     }
     // New accounts created through a still-valid legacy invitation are new users too.

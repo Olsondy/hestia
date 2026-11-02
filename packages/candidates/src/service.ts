@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { and, desc, DrizzleQueryError, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { advisoryXactLock, orm, transaction, type Database } from '../../persistence/src/client';
 import { candidateAdoptions, candidateChecks, candidatePresentations, candidateRevisions, candidateSelections, candidates, designTasks, operations, projectRevisions, projects, resources, taskEvents } from '../../persistence/src/schema';
 import { toScene, type Principal } from '../../projects/src/service';
@@ -31,11 +31,9 @@ type AdoptionRow = Omit<typeof candidateAdoptions.$inferSelect, 'beforeStyle' | 
   beforeLayout: Layout; afterLayout: Layout };
 const notFound = () => new DomainError('NOT_FOUND', '项目、候选或操作不存在。', 404);
 const conflict = (message = '当前方案已有变化，请基于最新空间重新建立候选。') => new DomainError('REVISION_CONFLICT', message, 409);
-/** Rethrow the driver error Drizzle wraps, so callers keep seeing Postgres codes (e.g. 23505). */
-const pgErrors = <T>(work: Promise<T>) => work.catch((error: unknown) => { throw error instanceof DrizzleQueryError && error.cause ? error.cause : error; });
-const readonly = async <T>(read: (client: PoolClient, tx: Database) => Promise<T>) => pgErrors(transaction(async (client, tx) => {
+const readonly = async <T>(read: (client: PoolClient, tx: Database) => Promise<T>) => transaction(async (client, tx) => {
   await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`); return read(client, tx);
-}));
+});
 async function projectRow(tx: Database, principal: Principal, projectId: string, lock = false): Promise<ProjectRow> {
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   const query = tx.select({ id: projects.id, name: projects.name, revision: projects.revision, snapshot: projects.snapshot, updatedAt: projects.updatedAt })
@@ -118,7 +116,7 @@ async function mutate<T, R extends { operationId: string }>(principal: Principal
   const id = idSchema.parse(projectId), requestHash = hash({ kind, projectId: id, ...request });
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   const actorId = principal.userId;
-  return pgErrors(transaction(async (client, tx) => {
+  return transaction(async (client, tx) => {
     await advisoryXactLock(tx, `${actorId}:${request.operationId}`);
     // Match the runner's task -> project lock order. Only these captured rows may be completed
     // after adoption; a newer concurrently-created task must never be locked from below project.
@@ -135,7 +133,7 @@ async function mutate<T, R extends { operationId: string }>(principal: Principal
     const result = await work(client, tx, project, lockedTaskIds);
     await tx.insert(operations).values({ actorId, id: request.operationId, projectId: id, requestHash, result });
     return result;
-  }));
+  });
 }
 export async function createCandidate(principal: Principal, projectId: string, input: unknown): Promise<CandidateView> {
   const request = createCandidateSchema.parse(input);
@@ -153,7 +151,7 @@ export async function createCandidate(principal: Principal, projectId: string, i
 }
 /** Internal Worker transaction entry. Caller must hold and recheck the task fence. */
 export async function savePlannedCandidateInTransaction(client: PoolClient, principal: Principal, projectId: string, request: PlannedRequest) {
-  return pgErrors(savePlanned(client, orm(client), principal, projectId, request));
+  return savePlanned(client, orm(client), principal, projectId, request);
 }
 type PlannedRequest = { operationId: string; expectedRevision: number; baseHash: string; objects: Layout['objects']; context: PlannerContext; report: LayoutPlan; plannerRequestHash: string };
 async function savePlanned(client: PoolClient, tx: Database, principal: Principal, projectId: string, request: PlannedRequest) {

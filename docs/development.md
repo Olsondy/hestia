@@ -20,10 +20,17 @@
 | `pnpm setup:local` | 创建本地 `.env`；已有配置保留，不配置模型密钥 |
 | `pnpm db:up` | 启动本地 PostgreSQL 17.7 Compose 服务 |
 | `pnpm db:migrate` | 对配置的本地数据库运行迁移 |
+| `pnpm db:generate` | 按 `packages/persistence/src/schema/` 的改动生成 Drizzle 迁移 |
+| `pnpm db:check` | 检查 Drizzle 迁移目录一致性，以及 schema 改动是否都已生成迁移（已含在 `pnpm check` 中） |
+| `pnpm db:studio` | 用 Drizzle Studio 查看本地数据库 |
 | `pnpm invite <email> [hours]` | 创建指定邮箱邀请，默认 24 小时、最长 720 小时；仅显示链接，不自动发邮件 |
 | `pnpm test:db` | 使用真实本地数据库验证持久化与隔离 |
 
 先安装依赖，再运行 `pnpm setup:local`、`pnpm db:up`、`pnpm db:migrate`，最后启动 Web。Docker 服务须可用；本地 Compose 只用于联调，不代表部署厂商或生产拓扑已确定。环境文件、数据库内容和私有文件不提交。数据库仅绑定 `127.0.0.1:54329`；邀请由管理员通过现有渠道交给指定收件人，不把生成链接视为邮件服务已接通。
+
+## 数据库结构与迁移
+
+表结构的来源是 `packages/persistence/src/schema/`（按领域拆分）。改结构的流程：编辑 schema → `pnpm db:generate` → 检查生成的 SQL → `pnpm db:migrate` → `pnpm test:db`，然后把 `packages/persistence/drizzle/` 下新增的 SQL 和 `meta/` 一起提交。`pnpm db:migrate` 先执行冻结的旧迁移链 `packages/persistence/migrations/`（0001–0029），再执行 Drizzle 迁移；Drizzle 的 `0000_baseline` 是空操作。决定与已知限制见 [ADR-0009](decisions/0009-drizzle-schema-and-migrations.md)。
 
 ## 当前完成度
 

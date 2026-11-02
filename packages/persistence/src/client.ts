@@ -1,5 +1,6 @@
 import pg from 'pg';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import * as schema from './schema';
 
 const globalDb = globalThis as unknown as { hestiaPool?: pg.Pool };
 export const pool = globalDb.hestiaPool ?? new pg.Pool({
@@ -8,13 +9,20 @@ export const pool = globalDb.hestiaPool ?? new pg.Pool({
 });
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required. Run pnpm setup:local.');
 globalDb.hestiaPool = pool;
-export const db = drizzle(pool);
+export type Database = NodePgDatabase<typeof schema>;
+/** Drizzle over the pool, or over a connection already inside a `transaction()` so both share its state. */
+export const orm = (connection: pg.Pool | pg.PoolClient): Database => drizzle(connection, { schema });
+export const db: Database = orm(pool);
 export const query = pool.query.bind(pool);
-export async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+/**
+ * One transaction, two views of the same connection: `client` for parameterised SQL (locks, jsonb_set, …)
+ * and `tx` for Drizzle queries. Both see the same uncommitted state.
+ */
+export async function transaction<T>(work: (client: pg.PoolClient, tx: Database) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const result = await work(client);
+    const result = await work(client, orm(client));
     await client.query('COMMIT');
     return result;
   } catch (error) {

@@ -14,6 +14,7 @@
 - 许可：MIT License，Copyright (c) 2026 ZWD11。
 - 改编内容：`packages/floorplan-import/fixtures/demo-villa.housespec.json` 由上游 `reference/example-gen-villa.py` 生成的 HouseSpec 三层别墅示例改编：家具尺寸按上游 `reference/catalog-sizes.json` 默认值显式写入，挂机空调与吊灯离地高度显式写入，名称改为中性演示名称，并加入 `demo` 来源与演示标注。仅包含数据，未复制上游代码、HTML 模板或图片。
 - 用途：多楼层空间、楼梯与楼板开洞的演示与测试数据；属于示意尺寸的演示数据，不是真实住宅或实测图纸。
+- DXF 转换器（D05）：`packages/floorplan-import/python/cadvec_dxf.py` 改编自上游 `scripts/cadvec.py`，`python/dev/make_test_dxf.py` 改编自上游 `scripts/dev/make_test_dxf.py`（来源提交 `58cef1d99c4662ac95d50913dd424547c6559670`，文件头记录上游 sha256 与改动）。只保留 DXF 路线，移除 PDF、字形识别与图片输出，以 numpy 代替 OpenCV。完整许可文本见同目录 `LICENSE-house-plan-designer.txt`。`fixtures/dxf/` 下的 DXF 由改编后的生成脚本根据合成 HouseSpec 生成，均为演示数据。
 - MIT 条款要求在副本中保留以下声明：
 
   > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:

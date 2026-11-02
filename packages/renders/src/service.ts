@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { PgBoss } from 'pg-boss';
+import type { PoolClient } from 'pg';
 import { createRenderSchema, type RenderView, type RenderSource } from '../../contracts/src/renders';
-import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
+import { DomainError, idSchema, spatialStateSchema, type SpatialState } from '../../contracts/src/project';
 import type { SceneSnapshot } from '../../contracts/src/scene';
 import { toScene, type Principal } from '../../projects/src/service';
 import { projectAccess } from '../../workspaces/src/access';
@@ -75,6 +76,42 @@ export async function createRender(principal: Principal, projectId: string, inpu
     return renderId;
   });
   return getRender(principal, id, renderId);
+}
+/**
+ * Internal: queue a render of a customer tiling scheme inside the caller's transaction. The caller has already
+ * authorised the request; the frozen snapshot is the project state with the scheme's surface design.
+ */
+export async function enqueueSchemeRender(client: PoolClient, input: { projectId: string; actorId: string; projectRevision: number;
+  state: SpatialState; scheme: { schemeId: string; revision: number }; label: string }, queue?: PgBoss) {
+  const versions = await renderVersions(), state = input.state;
+  const source: RenderSource = { kind: 'scheme', ...input.scheme, projectRevision: input.projectRevision, fixedFactsId: state.fixedFacts.id, fixedFactsRevision: state.fixedFacts.revision };
+  const label = `${input.label}　|　${artifactLabel(source, state.scale, state.synthetic).split('　|　')[1]}`, scene = toScene(state, label);
+  const snapshotHash = hash({ scene, source, scale: state.scale, synthetic: state.synthetic }), renderId = randomUUID(), requestId = randomUUID();
+  await client.query(`INSERT INTO project_renders(id,actor_id,project_id,request_id,request_hash,source,snapshot,snapshot_hash,
+    asset_version,renderer_version,scale,synthetic,concept,label,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'queued')`,
+    [renderId, input.actorId, input.projectId, requestId, hash({ kind: 'scheme-render', ...input.scheme, snapshotHash }), source, scene, snapshotHash,
+      versions.assetVersion, versions.rendererVersion, state.scale, state.synthetic, !['calibrated', 'synthetic'].includes(state.scale), label]);
+  await enqueueRender(client, renderId, queue);
+  return renderId;
+}
+/** Internal status of renders the caller is already authorised to see (by project). */
+export async function renderStatuses(projectId: string, renderIds: string[], client: Pick<PoolClient, 'query'> = pool) {
+  if (!renderIds.length) return new Map<string, RenderView>();
+  const rows = (await client.query<RenderRow>(`${joined} WHERE r.project_id=$1 AND r.id=ANY($2::uuid[])`, [projectId, renderIds])).rows;
+  return new Map(rows.map(row => [row.id, view(row)]));
+}
+/** Internal image bytes for an authorised caller; digest checked as in readRender. */
+export async function readRenderImage(projectId: string, renderId: string, store: PrivateFileStore = privateStore()) {
+  const result = (await renderStatuses(projectId, [renderId])).get(renderId);
+  if (!result) throw notFound();
+  if (result.status !== 'completed') throw new DomainError('OUTPUT_NOT_READY', '效果图尚未完成。', 409);
+  const resource = (await pool.query("SELECT object_key FROM resources WHERE id=$1 AND project_id=$2 AND state='ready'", [result.resourceId, projectId])).rows[0];
+  if (!resource) throw new DomainError('OUTPUT_UNAVAILABLE', '效果图暂时不可用。', 503);
+  try {
+    const bytes = await store.read(resource.object_key);
+    if (bytesHash(bytes) !== result.imageHash) throw new Error('Image digest mismatch');
+    return bytes;
+  } catch { throw new DomainError('OUTPUT_UNAVAILABLE', '效果图暂时不可用，请稍后重试。', 503); }
 }
 export async function getRender(principal: Principal, projectId: string, renderId: string) {
   const row = (await pool.query<RenderRow>(`${joined} WHERE r.id=$1 AND r.project_id=$2 AND ${projectAccess('r.project_id', '$3')}`,

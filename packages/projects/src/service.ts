@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { pool, transaction } from '../../persistence/src/client';
@@ -22,8 +23,12 @@ function initialState(template: 'empty' | 'courtyard' | 'angled' | 'demo-villa')
       // Demo villa (演示数据): furniture is ambient staging that customers cannot move, so it is kept as fixed facts.
       ? (villa => ({ ...villa, objects: villa.objects.map(object => ({ ...object, kind: 'fixed' as const })) }))(demoVillaScene())
       : structuredClone(template === 'courtyard' ? courtyard : angled);
+  return stateFromScene(scene);
+}
+/** Initial project state from a scene. `scale` defaults to synthetic for synthetic scenes and missing otherwise. */
+export function stateFromScene(scene: SceneSnapshot, scale?: SpatialState['scale']): SpatialState {
   const factsId = randomUUID();
-  return spatialStateSchema.parse({ version: 1, synthetic: scene.synthetic, scale: scene.synthetic ? 'synthetic' : 'missing',
+  return spatialStateSchema.parse({ version: 1, synthetic: scene.synthetic, scale: scale ?? (scene.synthetic ? 'synthetic' : 'missing'),
     ...(scene.surfaceDesign ? { surfaceDesign: scene.surfaceDesign } : {}),
     fixedFacts: { id: factsId, revision: 1, rooms: scene.rooms, walls: scene.walls, ...buildingFacts(scene), ...(scene.finishes ? { finishes: scene.finishes } : {}),
       objects: scene.objects.filter(o => o.kind === 'fixed'),
@@ -58,6 +63,14 @@ export async function getProject(principal: Principal, projectId: string): Promi
     lockedObjectIds: state.currentLayout.lockedObjectIds,
     resources: files as ProjectView['resources'],
   };
+}
+export { initialState };
+/** Inserts a project and its first revision inside the caller's transaction (caller authorises the workspace). */
+export async function insertProjectInTransaction(client: PoolClient, input: { workspaceId: string; createdBy: string; name: string; state: SpatialState; operationId: string }) {
+  const projectId = randomUUID();
+  await client.query('INSERT INTO projects(id,workspace_id,created_by,name,revision,snapshot) VALUES($1,$2,$3,$4,1,$5)', [projectId, input.workspaceId, input.createdBy, input.name, input.state]);
+  await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,1,$2,$3)', [projectId, input.state, input.operationId]);
+  return projectId;
 }
 export async function createProject(principal: Principal, input: unknown): Promise<ProjectView> {
   const value = createProjectSchema.parse(input), actorId = identity(principal);

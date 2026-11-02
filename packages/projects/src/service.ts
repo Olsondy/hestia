@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pool, transaction } from '../../persistence/src/client';
 import { courtyard, angled } from '../../scene-runtime/src/fixtures';
 import { sceneSnapshotSchema, type SceneSnapshot } from '../../scene-runtime/src/snapshot';
-import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema, DomainError, buildingFacts,
+import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema, DomainError, buildingFacts, finishFacts,
   type SpatialState, type ProjectView, type ProjectSummary } from '../../contracts/src/project';
 
 import { actingWorkspace } from '../../workspaces/src/service';
@@ -28,7 +28,7 @@ function initialState(template: 'empty' | 'courtyard' | 'angled'): SpatialState 
 export function toScene(state: SpatialState, label: string): SceneSnapshot {
   return sceneSnapshotSchema.parse({ version: 1, unit: 'm', plane: 'xz', label, synthetic: state.synthetic,
     ...(state.visualStyle ? { visualStyle: state.visualStyle } : {}),
-    rooms: state.fixedFacts.rooms, walls: state.fixedFacts.walls, ...buildingFacts(state.fixedFacts),
+    rooms: state.fixedFacts.rooms, walls: state.fixedFacts.walls, ...buildingFacts(state.fixedFacts), ...finishFacts(state),
     objects: [...state.fixedFacts.objects, ...state.currentLayout.objects],
   });
 }

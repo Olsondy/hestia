@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { addBuildingIssues, sceneSnapshotSchema, type SceneSnapshot } from './scene';
+import { addBuildingIssues, addDesignIssues, sceneSnapshotSchema, type SceneSnapshot } from './scene';
+import { checkFinishes } from './finishes';
 import { checkBuilding } from './building';
 import { visualStyleSchema } from './styles';
 
@@ -22,11 +23,14 @@ export type OpeningClearance = z.infer<typeof openingClearanceSchema>;
 export const spatialStateSchema = z.object({
   version: z.literal(1), synthetic: z.boolean(),
   visualStyle: visualStyleSchema.optional(),
+  /** Stone surface design on the fixed-fact finishes. Absent means no stone laid. */
+  surfaceDesign: sceneSnapshotSchema.shape.surfaceDesign,
   scale: z.enum(['missing', 'estimated', 'calibrated', 'synthetic']),
   fixedFacts: z.object({
     id: idSchema, revision: z.number().int().positive(),
     levels: sceneSnapshotSchema.shape.levels, rooms: sceneSnapshotSchema.shape.rooms, walls: sceneSnapshotSchema.shape.walls,
     stairs: sceneSnapshotSchema.shape.stairs, slabOpenings: sceneSnapshotSchema.shape.slabOpenings,
+    finishes: sceneSnapshotSchema.shape.finishes,
     objects: sceneSnapshotSchema.shape.objects,
     openingClearances: z.array(openingClearanceSchema).max(1000).default([]),
   }).strict(),
@@ -50,11 +54,17 @@ export const spatialStateSchema = z.object({
   if (new Set(s.fixedFacts.openingClearances.map(o => o.openingId)).size !== s.fixedFacts.openingClearances.length || s.fixedFacts.openingClearances.some(o => !openingIds.has(o.openingId)))
     ctx.addIssue({ code: 'custom', message: 'Clearances must uniquely reference existing floor-level openings' });
   addBuildingIssues(ctx, checkBuilding({ ...s.fixedFacts, objects: [...s.fixedFacts.objects, ...s.currentLayout.objects] }));
+  addBuildingIssues(ctx, checkFinishes(s.fixedFacts));
+  addDesignIssues(ctx, s.fixedFacts.finishes, s.surfaceDesign);
 });
 /** Optional multi-storey facts carried from fixed facts into a scene; absent for single-storey projects. */
 export function buildingFacts(facts: SpatialState['fixedFacts']) {
   return { ...(facts.levels ? { levels: facts.levels } : {}), ...(facts.stairs ? { stairs: facts.stairs } : {}),
     ...(facts.slabOpenings ? { slabOpenings: facts.slabOpenings } : {}) };
+}
+/** Optional finish surfaces and surface design carried into a scene; absent for projects without finishes. */
+export function finishFacts(state: Pick<SpatialState, 'fixedFacts' | 'surfaceDesign'>) {
+  return { ...(state.fixedFacts.finishes ? { finishes: state.fixedFacts.finishes } : {}), ...(state.surfaceDesign ? { surfaceDesign: state.surfaceDesign } : {}) };
 }
 export type SpatialState = z.infer<typeof spatialStateSchema>;
 export const candidateReferenceSchema = z.object({

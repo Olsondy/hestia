@@ -59,13 +59,14 @@ export async function renderSnapshotToPng(snapshot: SceneSnapshot, outputPath: s
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
   try {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-    // The ultra tier (4K shadow map, 2x supersampling, GTAO, physical materials) takes ~40 s for the demo villa on
-    // software WebGL; limits stay well inside the 120 s render lease.
-    await page.setContent(html, { waitUntil: 'load', timeout: 90000 });
-    await page.waitForFunction(() => document.documentElement.dataset.sceneReady === 'true' || !!document.documentElement.dataset.sceneError, undefined, { timeout: 90000 });
+    // The ultra tier (4K shadow map, 2x supersampling, GTAO, physical materials) takes ~50 s for the demo villa aerial
+    // and ~100 s for an eye-level interior on software WebGL, longer on a busy host. The limits (150 + 150 + 45 s)
+    // stay inside the 360 s render lease (packages/renders/src/queue.ts).
+    await page.setContent(html, { waitUntil: 'load', timeout: 150000 });
+    await page.waitForFunction(() => document.documentElement.dataset.sceneReady === 'true' || !!document.documentElement.dataset.sceneError, undefined, { timeout: 150000 });
     const before = await page.evaluate(() => document.documentElement.dataset.sceneError);
     if (before) throw new Error(before);
-    const bytes = await page.locator('canvas').screenshot();
+    const bytes = await page.locator('canvas').screenshot({ timeout: 45000 });
     const after = await page.evaluate(() => document.documentElement.dataset.sceneError);
     if (after) throw new Error(after);
     if (errors.length) throw new Error(errors.join('\n'));

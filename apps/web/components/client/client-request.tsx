@@ -342,7 +342,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
         {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${s.name} 铺贴效果图（示意）`}/>
           : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data}/>}
         {ui.view === '3d' && scene.error ? <ErrorLine error={scene.error}/> : null}
-        <figcaption><span>方案 {s.name} · 修订 {s.revision}</span><span>{ui.view === 'image' ? '效果图' : '实时 3D · 以效果图为准'} · 示意素材</span></figcaption>
+        <figcaption><span>方案 {s.name} · 修订 {s.revision}{rendering(s) && s.revision > 1 ? ' · 新修订出图中' : ''}</span><span>{ui.view === 'image' ? '效果图' : '实时 3D · 以效果图为准'} · 示意素材</span></figcaption>
       </figure>
       <div className="rail" role="group" aria-label="切换铺贴方案">{r.schemes.map(x => { const t = main && tilingOf(x, main.id), st = stoneOf(x, t); return <button key={x.id} className="rail-item" aria-pressed={x.id === s.id}
         onClick={() => setUi(u => ({ ...u, scheme: x.id }))}><span className="rail-name">{x.ordinal}<b>{x.name}</b></span>
@@ -363,10 +363,26 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
     </section>
   </Shell>;
 }
+// The image URL of a scheme always serves its current revision, and is unavailable while a new revision renders.
+// Keep the last finished image per scheme so a re-render shows the previous revision (blurred by the caller) instead of a blank plate.
+const lastImages = new Map<string, { revision: number; url: string }>();
 function SchemeImage({ scheme, alt }: { scheme: FinishSchemeView; alt: string }) {
-  const href = scheme.render?.imageHref;
-  const failed = scheme.render?.status === 'failed';
-  return <div className="plate-img">{href ? <img src={href} alt={alt}/> : <div className="placeholder" role="status">
+  const href = scheme.render?.imageHref, failed = scheme.render?.status === 'failed';
+  const [url, setUrl] = useState(() => lastImages.get(scheme.id)?.url ?? null);
+  useEffect(() => {
+    const cached = lastImages.get(scheme.id);
+    if (!href) { setUrl(cached?.url ?? null); return; }
+    if (cached?.revision === scheme.revision) { setUrl(cached.url); return; }
+    let live = true;
+    fetch(href, { credentials: 'same-origin', cache: 'no-store' }).then(r => r.ok ? r.blob() : Promise.reject()).then(blob => {
+      const next = URL.createObjectURL(blob), old = lastImages.get(scheme.id);
+      lastImages.set(scheme.id, { revision: scheme.revision, url: next });
+      if (old) setTimeout(() => URL.revokeObjectURL(old.url), 5000);
+      if (live) setUrl(next);
+    }).catch(() => { if (live) setUrl(cached?.url ?? null); });
+    return () => { live = false; };
+  }, [href, scheme.id, scheme.revision]);
+  return <div className="plate-img">{url ? <img src={url} alt={alt}/> : <div className="placeholder" role="status">
     {failed ? <span>这张效果图暂时没有生成，企业会处理。可以先看 3D。</span> : <><span>正在出图…每张约 1–2 分钟</span><div className="bar-progress"><i style={{ animationDuration: '50s' }}/></div></>}</div>}</div>;
 }
 

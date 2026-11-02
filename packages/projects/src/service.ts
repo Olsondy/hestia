@@ -6,6 +6,7 @@ import { sceneSnapshotSchema, type SceneSnapshot } from '../../scene-runtime/src
 import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema, DomainError, buildingFacts, finishFacts,
   type SpatialState, type ProjectView, type ProjectSummary } from '../../contracts/src/project';
 
+import { demoVillaScene } from '../../finishes/src/demo-villa-scene';
 import { actingWorkspace } from '../../workspaces/src/service';
 import { projectAccess, type Principal } from '../../workspaces/src/access';
 export type { Principal } from '../../workspaces/src/access';
@@ -14,13 +15,18 @@ function identity(principal: Principal) {
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   return principal.userId;
 }
-function initialState(template: 'empty' | 'courtyard' | 'angled'): SpatialState {
+function initialState(template: 'empty' | 'courtyard' | 'angled' | 'demo-villa'): SpatialState {
   const scene: SceneSnapshot = template === 'empty'
     ? { version: 1, unit: 'm', plane: 'xz', label: '空白空间', synthetic: false, rooms: [], walls: [], objects: [] }
-    : structuredClone(template === 'courtyard' ? courtyard : angled);
+    : template === 'demo-villa'
+      // Demo villa (演示数据): furniture is ambient staging that customers cannot move, so it is kept as fixed facts.
+      ? (villa => ({ ...villa, objects: villa.objects.map(object => ({ ...object, kind: 'fixed' as const })) }))(demoVillaScene())
+      : structuredClone(template === 'courtyard' ? courtyard : angled);
   const factsId = randomUUID();
   return spatialStateSchema.parse({ version: 1, synthetic: scene.synthetic, scale: scene.synthetic ? 'synthetic' : 'missing',
-    fixedFacts: { id: factsId, revision: 1, rooms: scene.rooms, walls: scene.walls, objects: scene.objects.filter(o => o.kind === 'fixed'),
+    ...(scene.surfaceDesign ? { surfaceDesign: scene.surfaceDesign } : {}),
+    fixedFacts: { id: factsId, revision: 1, rooms: scene.rooms, walls: scene.walls, ...buildingFacts(scene), ...(scene.finishes ? { finishes: scene.finishes } : {}),
+      objects: scene.objects.filter(o => o.kind === 'fixed'),
       openingClearances: scene.synthetic ? scene.walls.flatMap(w => w.openings.filter(o => o.sill === 0).map(o => ({ openingId: o.id, kind: 'swing' as const, hinge: 'start' as const, side: 1 as const, angle: Math.PI / 2 }))) : [] },
     currentLayout: { id: randomUUID(), revision: 1, fixedFactsId: factsId, fixedFactsRevision: 1, objects: scene.objects.filter(o => o.kind === 'furniture') },
   });

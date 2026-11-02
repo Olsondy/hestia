@@ -22,7 +22,7 @@ function movable(state: SpatialState, objectId: string) {
 function ensurePlacement(state: SpatialState, objectId: string, pose: FurniturePose) {
   if (state.scale !== 'calibrated' && state.scale !== 'synthetic') throw new DomainError('SCALE_UNCONFIRMED', '尺寸未确认，暂不能判断精确摆放是否可行。', 400,
     { issues: [{ code: 'SCALE_UNCONFIRMED', objectId, message: '请先确认可靠尺寸。' }] });
-  const report = validatePlacement({ rooms: state.fixedFacts.rooms, walls: state.fixedFacts.walls,
+  const report = validatePlacement({ levels: state.fixedFacts.levels, rooms: state.fixedFacts.rooms, walls: state.fixedFacts.walls,
     objects: [...state.fixedFacts.objects, ...state.currentLayout.objects] }, objectId, pose, state.fixedFacts.openingClearances);
   if (!report.valid) throw new DomainError('PLACEMENT_REJECTED', '这次摆放未通过空间校验。', 400, report);
 }

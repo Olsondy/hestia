@@ -7,7 +7,7 @@ import { visualStyleSchema } from './styles';
 export const idSchema = z.string().uuid();
 export const createProjectSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  template: z.enum(['empty', 'courtyard', 'angled']), operationId: idSchema,
+  template: z.enum(['empty', 'courtyard', 'angled', 'demo-villa']), operationId: idSchema,
 }).strict();
 export const renameProjectSchema = z.object({
   name: z.string().trim().min(1).max(120), expectedRevision: z.number().int().positive(), operationId: idSchema,
@@ -58,7 +58,7 @@ export const spatialStateSchema = z.object({
   addDesignIssues(ctx, s.fixedFacts.finishes, s.surfaceDesign);
 });
 /** Optional multi-storey facts carried from fixed facts into a scene; absent for single-storey projects. */
-export function buildingFacts(facts: SpatialState['fixedFacts']) {
+export function buildingFacts(facts: Pick<SpatialState["fixedFacts"], "levels" | "stairs" | "slabOpenings">) {
   return { ...(facts.levels ? { levels: facts.levels } : {}), ...(facts.stairs ? { stairs: facts.stairs } : {}),
     ...(facts.slabOpenings ? { slabOpenings: facts.slabOpenings } : {}) };
 }

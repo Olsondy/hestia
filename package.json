@@ -37,6 +37,8 @@
     "worker:import": "node --env-file=.env --import tsx scripts/import-worker.ts",
     "worker:import:setup": "node --env-file=.env --import tsx scripts/import-worker.ts --setup",
     "setup:dxf": "node scripts/setup-dxf.mjs",
+    "demo:seed": "node --env-file=.env --import tsx scripts/demo-seed.ts",
+    "validate:client-h5": "node --env-file=.env --import tsx scripts/validation/client-h5.ts",
     "validate:catalog": "node --env-file=.env --import tsx scripts/validation/catalog-ui.ts",
     "validate:renders": "node --env-file=.env --import tsx scripts/validation/render-ui.ts",
     "validate:styles": "node --env-file=.env --import tsx scripts/validation/style-ui.ts",

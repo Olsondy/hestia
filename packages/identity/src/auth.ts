@@ -40,7 +40,7 @@ export const auth = betterAuth({
   // (the official phone-number plugin stores plaintext codes and cannot echo a mock code or bind an entry).
   plugins: [{ id: 'hestia-registration', endpoints: {
     hestiaRegistration: createAuthEndpoint('/register', { method: 'POST', body: registrationSchema },
-      async context => context.json(await register(context.body), { status: 201 })),
+      async context => context.json(await guarded(() => register(context.body)), { status: 201 })),
     hestiaPhoneSendCode: createAuthEndpoint('/phone/send-code', { method: 'POST', body: anyBody },
       async context => context.json(await guarded(() => sendPhoneCode(context.body, context.headers ?? new Headers())))),
     hestiaPhoneSignIn: createAuthEndpoint('/phone/sign-in', { method: 'POST', body: anyBody }, async context => {

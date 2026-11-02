@@ -435,3 +435,5 @@ input,textarea{caret-color:var(--accent)}
 label.btn{cursor:pointer}
 /* Stills carry a provenance strip on top; when a frame is shorter than the still, crop from the top so the strip is not cut mid-line. */
 .plate-img img,.proj-thumb img{object-position:center bottom}
+/* The main plate shows the rendered viewport (1280×900); the still's provenance strip above it is cropped, and the plate caption carries 效果图 · 示意素材. */
+.plate>.plate-img{aspect-ratio:1280/880}

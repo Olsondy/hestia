@@ -8,7 +8,10 @@ import type { SceneSnapshot } from '../../contracts/src/scene';
 import { createFinishRequestSchema, createMemberRequestSchema, publishFinishRequestSchema, type ClientCatalogView, type DemoVillaPlanView, type FinishRequestStatus, type FinishRequestView,
   type RequestFinishView, type RequestPreferences,
   type FinishSchemeView, type LeadView } from '../../contracts/src/finish-requests';
-import { pool, transaction } from '../../persistence/src/client';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
+import { finishRequestEvents, finishRequests, finishSchemeRevisions, finishSchemes, floorplanImports, hestiaAuthUser, operations, projectRenders, projectRevisions,
+  projects, workspaceMembers, workspaces } from '../../persistence/src/schema';
 import { actorOf, type Principal } from '../../workspaces/src/access';
 import { customerEntry, ensureCustomer } from '../../workspaces/src/customers';
 import { initialState, insertProjectInTransaction, stateFromScene } from '../../projects/src/service';
@@ -29,6 +32,16 @@ export type RequestRow = {
 export type SchemeRow = { id: string; request_id: string; ordinal: number; name: string; summary: string; revision: number;
   surface_design: FinishSchemeView['surfaceDesign']; report: { adoptable: boolean; issues: FinishSchemeView['issues'] }; render_id: string | null };
 export type RequestDeps = { renderQueue?: PgBoss; importQueue?: PgBoss; store?: PrivateFileStore };
+/** Drizzle selections in the `RequestRow` / `SchemeRow` (column-named) shape. */
+export const requestColumns = { id: finishRequests.id, workspace_id: finishRequests.workspaceId, customer_id: finishRequests.customerId, created_by: finishRequests.createdBy,
+  origin: finishRequests.origin, project_id: finishRequests.projectId, request_id: finishRequests.requestId, request_hash: finishRequests.requestHash, source: finishRequests.source,
+  floorplan_import_id: finishRequests.floorplanImportId, finish_ids: finishRequests.finishIds, stones: finishRequests.stones, note: finishRequests.note,
+  preferences: finishRequests.preferences, status: finishRequests.status, review_reason: finishRequests.reviewReason, published_at: finishRequests.publishedAt,
+  published_by: finishRequests.publishedBy, created_at: finishRequests.createdAt, updated_at: finishRequests.updatedAt };
+export const schemeColumns = { id: finishSchemes.id, request_id: finishSchemes.requestId, ordinal: finishSchemes.ordinal, name: finishSchemes.name, summary: finishSchemes.summary,
+  revision: finishSchemes.revision, surface_design: finishSchemes.surfaceDesign, report: finishSchemes.report, render_id: finishSchemes.renderId };
+/** Drizzle over a caller's connection; it only issues `query`. */
+const ormOf = (client: Pick<PoolClient, 'query'>) => orm(client as PoolClient);
 
 const notFound = () => new DomainError('NOT_FOUND', '方案需求不存在。', 404);
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -47,11 +60,13 @@ export async function customer(client: PoolClient, principal: Principal, slug: s
   return { userId, entry };
 }
 export async function memberOf(client: Pick<PoolClient, 'query'>, userId: string, workspaceId: string) {
-  if (!(await client.query('SELECT 1 FROM workspace_members WHERE workspace_id=$1 AND user_id=$2', [workspaceId, userId])).rowCount) throw notFound();
+  const [member] = await ormOf(client).select({ one: sql`1` }).from(workspaceMembers)
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId))).limit(1);
+  if (!member) throw notFound();
 }
 async function importStatus(client: Pick<PoolClient, 'query'>, row: RequestRow): Promise<FinishRequestStatus> {
   if (row.status !== 'converting' || !row.floorplan_import_id) return row.status;
-  const status = (await client.query<{ status: string }>('SELECT status FROM floorplan_imports WHERE id=$1', [row.floorplan_import_id])).rows[0]?.status;
+  const status = (await ormOf(client).select({ status: floorplanImports.status }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.status;
   return status === 'assisted_conversion' ? 'assisted_conversion' : status === 'pending_review' || status === 'failed' ? 'pending_review' : 'converting';
 }
 /** Name, kind and level of each requested finish, read from the project's fixed facts. */
@@ -68,13 +83,13 @@ export function requestFinishes(facts: SpatialState['fixedFacts'], ids: string[]
   });
 }
 export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience: 'customer' | 'member', slug?: string): Promise<FinishRequestView> {
-  const status = await importStatus(client, row);
-  const project = (await client.query<{ name: string; snapshot: unknown }>('SELECT name,snapshot FROM projects WHERE id=$1', [row.project_id])).rows[0];
+  const tx = ormOf(client), status = await importStatus(client, row);
+  const [project] = await tx.select({ name: projects.name, snapshot: projects.snapshot }).from(projects).where(eq(projects.id, row.project_id));
   const drawingName = row.floorplan_import_id
-    ? (await client.query<{ file_name: string }>('SELECT file_name FROM floorplan_imports WHERE id=$1', [row.floorplan_import_id])).rows[0]?.file_name ?? null : null;
+    ? (await tx.select({ fileName: floorplanImports.fileName }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.fileName ?? null : null;
   const facts = spatialStateSchema.parse(project.snapshot).fixedFacts;
   const schemes = audience === 'customer' && row.status !== 'published' ? []
-    : (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE request_id=$1 ORDER BY ordinal', [row.id])).rows;
+    : await tx.select(schemeColumns).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).orderBy(asc(finishSchemes.ordinal)) as SchemeRow[];
   const renders = await renderStatuses(row.project_id, schemes.flatMap(s => s.render_id ? [s.render_id] : []), client);
   return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, source: row.source, status, statusLabel: labels[status],
     title: project.name, origin: row.origin, drawingName, finishes: requestFinishes(facts, row.finish_ids), preferences: row.preferences ?? null,
@@ -89,14 +104,15 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(), publishedAt: row.published_at?.toISOString() ?? null };
 }
 async function confirmationOf(client: Pick<PoolClient, 'query'>, requestId: string, schemes: SchemeRow[]): Promise<FinishRequestView['confirmation']> {
-  const event = (await client.query<{ scheme_id: string; scheme_revision: number; created_at: Date }>(
-    "SELECT scheme_id,scheme_revision,created_at FROM finish_request_events WHERE request_id=$1 AND kind='confirmation' ORDER BY created_at DESC LIMIT 1", [requestId])).rows[0];
+  const [event] = await ormOf(client).select({ schemeId: finishRequestEvents.schemeId, schemeRevision: finishRequestEvents.schemeRevision, createdAt: finishRequestEvents.createdAt })
+    .from(finishRequestEvents).where(and(eq(finishRequestEvents.requestId, requestId), eq(finishRequestEvents.kind, 'confirmation')))
+    .orderBy(desc(finishRequestEvents.createdAt)).limit(1);
   if (!event) return null;
-  const scheme = schemes.find(s => s.id === event.scheme_id);
-  return { schemeId: event.scheme_id, revision: event.scheme_revision, current: !!scheme && scheme.revision === event.scheme_revision, confirmedAt: event.created_at.toISOString() };
+  const scheme = schemes.find(s => s.id === event.schemeId);
+  return { schemeId: event.schemeId!, revision: event.schemeRevision!, current: !!scheme && scheme.revision === event.schemeRevision, confirmedAt: event.createdAt.toISOString() };
 }
 export async function lockedRequest(client: PoolClient, id: string) {
-  const row = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1 FOR UPDATE', [idSchema.parse(id)])).rows[0];
+  const [row] = await orm(client).select(requestColumns).from(finishRequests).where(eq(finishRequests.id, idSchema.parse(id))).for('update') as RequestRow[];
   if (!row) throw notFound(); return row;
 }
 
@@ -115,24 +131,24 @@ async function generate(client: PoolClient, row: RequestRow, state: SpatialState
   const preferred = row.stones.map(ref => catalog.find(stone => stoneKey({ stoneId: stone.id, stoneVersion: stone.version }) === stoneKey(ref)))
     .filter((stone): stone is NonNullable<typeof stone> => !!stone);
   const schemes = generateSchemes(state.fixedFacts, row.finish_ids, preferred, catalog);
-  await client.query('DELETE FROM finish_schemes WHERE request_id=$1', [row.id]);
+  const tx = orm(client);
+  await tx.delete(finishSchemes).where(eq(finishSchemes.requestId, row.id));
   for (const [index, scheme] of schemes.entries()) {
-    const id = randomUUID();
-    await client.query('INSERT INTO finish_schemes(id,request_id,ordinal,name,summary,surface_design,report) VALUES($1,$2,$3,$4,$5,$6,$7)',
-      [id, row.id, index + 1, scheme.name, scheme.summary, scheme.design, { adoptable: scheme.adoptable, issues: scheme.issues }]);
+    const id = randomUUID(), report = { adoptable: scheme.adoptable, issues: scheme.issues };
+    await tx.insert(finishSchemes).values({ id, requestId: row.id, ordinal: index + 1, name: scheme.name, summary: scheme.summary, surfaceDesign: scheme.design, report });
     const renderId = await enqueueSchemeRender(client, { projectId: row.project_id, actorId: row.customer_id ?? row.created_by, projectRevision,
       state: spatialStateSchema.parse({ ...state, surfaceDesign: scheme.design }), scheme: { schemeId: id, revision: 1 }, label: `方案 ${scheme.name}` }, deps.renderQueue);
-    await client.query('UPDATE finish_schemes SET render_id=$1 WHERE id=$2', [renderId, id]);
-    await client.query('INSERT INTO finish_scheme_revisions(scheme_id,revision,surface_design,report,render_id) VALUES($1,1,$2,$3,$4)',
-      [id, scheme.design, { adoptable: scheme.adoptable, issues: scheme.issues }, renderId]);
+    await tx.update(finishSchemes).set({ renderId }).where(eq(finishSchemes.id, id));
+    await tx.insert(finishSchemeRevisions).values({ schemeId: id, revision: 1, surfaceDesign: scheme.design, report, renderId });
   }
   return { count: schemes.length, adoptable: schemes.length >= 2 && schemes.every(s => s.adoptable) };
 }
 async function settle(client: PoolClient, row: RequestRow, result: { count: number; adoptable: boolean }, publishedBy: string | null) {
-  const settings = (await client.query<{ settings: { reviewAllRequests?: boolean } }>('SELECT settings FROM workspaces WHERE id=$1', [row.workspace_id])).rows[0].settings;
+  const tx = orm(client), [workspace] = await tx.select({ settings: workspaces.settings }).from(workspaces).where(eq(workspaces.id, row.workspace_id));
+  const settings = workspace.settings as { reviewAllRequests?: boolean };
   const reason = !result.count ? '没有可生成的铺贴方案' : !result.adoptable ? '方案未全部通过排版校验' : settings.reviewAllRequests && !publishedBy ? '企业设置为全部审核后发布' : null;
-  if (reason && !publishedBy) await client.query("UPDATE finish_requests SET status='pending_review',review_reason=$2,updated_at=now() WHERE id=$1", [row.id, reason]);
-  else await client.query("UPDATE finish_requests SET status='published',review_reason=NULL,published_at=now(),published_by=$2,updated_at=now() WHERE id=$1", [row.id, publishedBy]);
+  if (reason && !publishedBy) await tx.update(finishRequests).set({ status: 'pending_review', reviewReason: reason, updatedAt: sql`now()` }).where(eq(finishRequests.id, row.id));
+  else await tx.update(finishRequests).set({ status: 'published', reviewReason: null, publishedAt: sql`now()`, publishedBy, updatedAt: sql`now()` }).where(eq(finishRequests.id, row.id));
 }
 
 function planOf(facts: SpatialState['fixedFacts']): DemoVillaPlanView {
@@ -157,12 +173,13 @@ export async function clientCatalog(slug: string): Promise<ClientCatalogView> {
 /** A member prepares a demo-villa request for a customer (origin member, no customer until bound) and publishes it. */
 export async function createMemberRequest(principal: Principal, workspaceId: string, input: unknown, deps: RequestDeps = {}): Promise<LeadView> {
   const value = createMemberRequestSchema.parse(input), userId = actorOf(principal), id = idSchema.parse(workspaceId), hash = sha({ workspaceId: id, ...value });
-  const requestId = await transaction(async client => {
+  const requestId = await transaction(async (client, tx) => {
     await memberOf(client, userId, id);
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`finish-request:${userId}:${value.operationId}`]);
-    const previous = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE created_by=$1 AND request_id=$2', [userId, value.operationId])).rows[0];
+    await advisoryXactLock(tx, `finish-request:${userId}:${value.operationId}`);
+    const [previous] = await tx.select({ id: finishRequests.id, requestHash: finishRequests.requestHash }).from(finishRequests)
+      .where(and(eq(finishRequests.createdBy, userId), eq(finishRequests.requestId, value.operationId)));
     if (previous) {
-      if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
+      if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return previous.id;
     }
     const catalog = await workspaceStones(client, id);
@@ -172,9 +189,9 @@ export async function createMemberRequest(principal: Principal, workspaceId: str
     for (const finishId of value.finishIds) if (!state.fixedFacts.finishes?.some(finish => finish.id === finishId))
       throw new DomainError('FINISH_NOT_FOUND', '所选部位不在示例别墅中。', 404);
     const projectId = await insertProjectInTransaction(client, { workspaceId: id, createdBy: userId, name: value.name, state, operationId: value.operationId });
-    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,created_by,origin,project_id,request_id,request_hash,source,finish_ids,stones,note,status)
-      VALUES($1,$2,NULL,$3,'member',$4,$5,$6,'demo-villa',$7,$8,$9,'pending_review') RETURNING *`, [randomUUID(), id, userId, projectId, value.operationId, hash,
-      JSON.stringify(value.finishIds), JSON.stringify(value.stones), value.note ?? null])).rows[0];
+    const [row] = await tx.insert(finishRequests).values({ id: randomUUID(), workspaceId: id, customerId: null, createdBy: userId, origin: 'member', projectId,
+      requestId: value.operationId, requestHash: hash, source: 'demo-villa', finishIds: value.finishIds, stones: value.stones, note: value.note ?? null, status: 'pending_review' })
+      .returning(requestColumns) as RequestRow[];
     const result = await generate(client, row, state, 1, deps);
     await settle(client, row, result, result.adoptable ? userId : null);
     return row.id;
@@ -183,10 +200,11 @@ export async function createMemberRequest(principal: Principal, workspaceId: str
 }
 export async function createFinishRequest(principal: Principal, slug: string, input: unknown, deps: RequestDeps = {}): Promise<FinishRequestView> {
   const value = createFinishRequestSchema.parse(input);
-  return transaction(async client => {
+  return transaction(async (client, tx) => {
     const { userId, entry } = await customer(client, principal, slug), hash = sha({ slug, ...value });
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`finish-request:${userId}:${value.operationId}`]);
-    const previous = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE created_by=$1 AND request_id=$2', [userId, value.operationId])).rows[0];
+    await advisoryXactLock(tx, `finish-request:${userId}:${value.operationId}`);
+    const [previous] = await tx.select(requestColumns).from(finishRequests)
+      .where(and(eq(finishRequests.createdBy, userId), eq(finishRequests.requestId, value.operationId))) as RequestRow[];
     if (previous) {
       if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return view(client, previous, 'customer', slug);
@@ -199,12 +217,12 @@ export async function createFinishRequest(principal: Principal, slug: string, in
     if (demo) for (const id of value.finishIds) if (!state.fixedFacts.finishes?.some(finish => finish.id === id))
       throw new DomainError('FINISH_NOT_FOUND', '所选部位不在示例别墅中。', 404);
     const projectId = await insertProjectInTransaction(client, { workspaceId: entry.id, createdBy: userId, name: demo ? '方案需求 · 示例别墅' : '方案需求 · 户型图纸', state, operationId: value.operationId });
-    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,created_by,project_id,request_id,request_hash,source,finish_ids,stones,note,status,preferences)
-      VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`, [randomUUID(), entry.id, userId, projectId, value.operationId, hash, value.source,
-      JSON.stringify(demo ? value.finishIds : []), JSON.stringify(value.stones), value.note ?? null, demo ? 'pending_review' : 'awaiting_drawing',
-      value.preferences ? JSON.stringify(value.preferences) : null])).rows[0];
+    const [row] = await tx.insert(finishRequests).values({ id: randomUUID(), workspaceId: entry.id, customerId: userId, createdBy: userId, projectId,
+      requestId: value.operationId, requestHash: hash, source: value.source, finishIds: demo ? value.finishIds : [], stones: value.stones, note: value.note ?? null,
+      status: demo ? 'pending_review' : 'awaiting_drawing', preferences: value.preferences ?? null }).returning(requestColumns) as RequestRow[];
     if (demo) await settle(client, row, await generate(client, row, state, 1, deps), null);
-    return view(client, (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [row.id])).rows[0], 'customer', slug);
+    const [saved] = await tx.select(requestColumns).from(finishRequests).where(eq(finishRequests.id, row.id)) as RequestRow[];
+    return view(client, saved, 'customer', slug);
   });
 }
 
@@ -217,8 +235,9 @@ export async function uploadRequestDrawing(principal: Principal, slug: string, r
     return row;
   });
   const imported = await createFloorplanImport(principal, row.project_id, upload.input, upload.bytes, upload.fileName, { authorized: true, store: deps.store, queue: deps.importQueue });
-  return transaction(async client => {
-    await client.query("UPDATE finish_requests SET floorplan_import_id=$2,status='converting',updated_at=now() WHERE id=$1 AND status='awaiting_drawing'", [row.id, imported.id]);
+  return transaction(async (client, tx) => {
+    await tx.update(finishRequests).set({ floorplanImportId: imported.id, status: 'converting', updatedAt: sql`now()` })
+      .where(and(eq(finishRequests.id, row.id), eq(finishRequests.status, 'awaiting_drawing')));
     return view(client, await lockedRequest(client, row.id), 'customer', slug);
   });
 }
@@ -233,18 +252,19 @@ export async function getFinishRequest(principal: Principal, slug: string, reque
   return transaction(async client => view(client, (await customerRequest(client, principal, slug, requestId)).row, 'customer', slug));
 }
 export async function listMyFinishRequests(principal: Principal, slug: string) {
-  return transaction(async client => {
+  return transaction(async (client, tx) => {
     const { userId, entry } = await customer(client, principal, slug);
-    const rows = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE customer_id=$1 AND workspace_id=$2 ORDER BY created_at DESC LIMIT 50', [userId, entry.id])).rows;
+    const rows = await tx.select(requestColumns).from(finishRequests).where(and(eq(finishRequests.customerId, userId), eq(finishRequests.workspaceId, entry.id)))
+      .orderBy(desc(finishRequests.createdAt)).limit(50) as RequestRow[];
     return Promise.all(rows.map(row => view(client, row, 'customer', slug)));
   });
 }
 /** Published scheme image for the request's customer. */
 export async function readSchemeImage(principal: Principal, slug: string, requestId: string, schemeId: string, store?: PrivateFileStore) {
-  const { row, renderId } = await transaction(async client => {
+  const { row, renderId } = await transaction(async (client, tx) => {
     const { userId, entry } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
     if (row.customer_id !== userId || row.workspace_id !== entry.id || row.status !== 'published') throw notFound();
-    const scheme = (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE id=$1 AND request_id=$2', [idSchema.parse(schemeId), row.id])).rows[0];
+    const [scheme] = await tx.select(schemeColumns).from(finishSchemes).where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id)));
     if (!scheme?.render_id) throw notFound();
     return { row, renderId: scheme.render_id };
   });
@@ -253,15 +273,18 @@ export async function readSchemeImage(principal: Principal, slug: string, reques
 
 /** Frozen scene of a scheme's current render: the same snapshot the still was rendered from, for the 3D viewer. */
 export async function renderScene(client: Pick<PoolClient, 'query'>, row: RequestRow, schemeId: string): Promise<SceneSnapshot> {
-  const scheme = (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE id=$1 AND request_id=$2', [idSchema.parse(schemeId), row.id])).rows[0];
+  const tx = ormOf(client), schemeKey = idSchema.parse(schemeId);
+  const [scheme] = await tx.select({ render_id: finishSchemes.renderId }).from(finishSchemes).where(and(eq(finishSchemes.id, schemeKey), eq(finishSchemes.requestId, row.id)));
   if (!scheme?.render_id) throw notFound();
-  const render = (await client.query<{ snapshot: SceneSnapshot }>('SELECT snapshot FROM project_renders WHERE id=$1 AND project_id=$2', [scheme.render_id, row.project_id])).rows[0];
+  const [render] = await tx.select({ snapshot: projectRenders.snapshot }).from(projectRenders)
+    .where(and(eq(projectRenders.id, scheme.render_id), eq(projectRenders.projectId, row.project_id)));
   if (!render) throw notFound();
-  return render.snapshot;
+  return render.snapshot as SceneSnapshot;
 }
 export async function readSchemeScene(principal: Principal, slug: string, requestId: string, schemeId: string) {
-  return transaction(async client => {
-    const { userId, entry } = await customer(client, principal, slug), row = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [idSchema.parse(requestId)])).rows[0];
+  return transaction(async (client, tx) => {
+    const { userId, entry } = await customer(client, principal, slug);
+    const [row] = await tx.select(requestColumns).from(finishRequests).where(eq(finishRequests.id, idSchema.parse(requestId))) as RequestRow[];
     if (!row || row.customer_id !== userId || row.workspace_id !== entry.id || row.status !== 'published') throw notFound();
     return renderScene(client, row, schemeId);
   });
@@ -270,17 +293,17 @@ export async function readSchemeScene(principal: Principal, slug: string, reques
 /** Leads (线索) of a workspace, for members. */
 export async function listLeads(principal: Principal, workspaceId: string): Promise<LeadView[]> {
   const userId = actorOf(principal), id = idSchema.parse(workspaceId);
-  return transaction(async client => {
+  return transaction(async (client, tx) => {
     await memberOf(client, userId, id);
-    const rows = (await client.query<RequestRow & { phone_number: string | null; name: string | null }>(`SELECT r.*,u.phone_number,u.name FROM finish_requests r
-      LEFT JOIN hestia_auth_user u ON u.id=r.customer_id WHERE r.workspace_id=$1 ORDER BY r.created_at DESC LIMIT 200`, [id])).rows;
+    const rows = await tx.select({ ...requestColumns, phone_number: hestiaAuthUser.phoneNumber, name: hestiaAuthUser.name }).from(finishRequests)
+      .leftJoin(hestiaAuthUser, eq(hestiaAuthUser.id, finishRequests.customerId)).where(eq(finishRequests.workspaceId, id))
+      .orderBy(desc(finishRequests.createdAt)).limit(200) as (RequestRow & { phone_number: string | null; name: string | null })[];
     return Promise.all(rows.map(async row => ({ ...await view(client, row, 'member'), reviewReason: row.review_reason,
       origin: row.origin, customer: row.customer_id ? { userId: row.customer_id, phone: row.phone_number, name: row.name } : null,
       sharing: await sharingOf(client, row.id),
-      events: (await client.query<{ id: string; kind: 'confirmation' | 'message'; scheme_id: string | null; scheme_revision: number | null; message: string | null;
-        contact_requested: boolean; preferred_time: string | null; created_at: Date }>('SELECT * FROM finish_request_events WHERE request_id=$1 ORDER BY created_at', [row.id])).rows
-        .map(event => ({ id: event.id, kind: event.kind, schemeId: event.scheme_id, schemeRevision: event.scheme_revision, message: event.message,
-          contactRequested: event.contact_requested, preferredTime: event.preferred_time, createdAt: event.created_at.toISOString() })) })));
+      events: (await tx.select().from(finishRequestEvents).where(eq(finishRequestEvents.requestId, row.id)).orderBy(asc(finishRequestEvents.createdAt)))
+        .map(event => ({ id: event.id, kind: event.kind as 'confirmation' | 'message', schemeId: event.schemeId, schemeRevision: event.schemeRevision, message: event.message,
+          contactRequested: event.contactRequested, preferredTime: event.preferredTime, createdAt: event.createdAt.toISOString() })) })));
   });
 }
 
@@ -290,30 +313,32 @@ export async function listLeads(principal: Principal, workspaceId: string): Prom
  */
 export async function publishFinishRequest(principal: Principal, workspaceId: string, requestId: string, input: unknown, deps: RequestDeps = {}): Promise<LeadView> {
   const userId = actorOf(principal), value = publishFinishRequestSchema.parse(input), hash = sha({ kind: 'publish-request', requestId, ...value });
-  const id = await transaction(async client => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${value.operationId}`]);
+  const id = await transaction(async (client, tx) => {
+    await advisoryXactLock(tx, `${userId}:${value.operationId}`);
     const row = await lockedRequest(client, requestId);
     if (row.workspace_id !== idSchema.parse(workspaceId)) throw notFound();
     await memberOf(client, userId, row.workspace_id);
-    const previous = (await client.query('SELECT request_hash FROM operations WHERE actor_id=$1 AND id=$2', [userId, value.operationId])).rows[0];
-    if (previous) { if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409); return row.id; }
+    const [previous] = await tx.select({ requestHash: operations.requestHash }).from(operations).where(and(eq(operations.actorId, userId), eq(operations.id, value.operationId)));
+    if (previous) { if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409); return row.id; }
     if (row.status === 'published') throw new DomainError('ALREADY_PUBLISHED', '方案已发布。', 409);
     if (row.source === 'drawing' && (await importStatus(client, row)) !== 'pending_review') throw new DomainError('DRAWING_NOT_READY', '图纸尚未转换完成，请先完成转换或辅助导入户型。', 409);
-    if (row.source === 'drawing' && !(await client.query('SELECT 1 FROM finish_schemes WHERE request_id=$1', [row.id])).rowCount) {
+    const hasSchemes = async () => (await tx.select({ one: sql`1` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).limit(1)).length > 0;
+    if (row.source === 'drawing' && !(await hasSchemes())) {
       const candidate = await getFloorplanCandidate({ userId }, row.project_id, row.floorplan_import_id!);
       if (!candidate.valid || !candidate.scene) throw new DomainError('DRAWING_INVALID', '图纸候选未通过校验，请先修正或辅助导入户型。', 409);
       const scene = candidate.scene as SceneSnapshot, finishes = derivedFinishes(scene);
       const state = stateFromScene({ ...scene, finishes }, candidate.scale.status === 'calibrated' ? 'calibrated' : 'estimated');
-      const revision = (await client.query<{ revision: number }>('UPDATE projects SET snapshot=$2,revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision', [row.project_id, state])).rows[0].revision;
-      await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,$2,$3,$4)', [row.project_id, revision, state, value.operationId]);
-      await client.query('UPDATE finish_requests SET finish_ids=$2 WHERE id=$1', [row.id, JSON.stringify(finishes.map(finish => finish.id))]);
+      const [{ revision }] = await tx.update(projects).set({ snapshot: state, revision: sql`${projects.revision}+1`, updatedAt: sql`now()` })
+        .where(eq(projects.id, row.project_id)).returning({ revision: projects.revision });
+      await tx.insert(projectRevisions).values({ projectId: row.project_id, revision, snapshot: state, operationId: value.operationId });
+      await tx.update(finishRequests).set({ finishIds: finishes.map(finish => finish.id) }).where(eq(finishRequests.id, row.id));
       row.finish_ids = finishes.map(finish => finish.id);
       await generate(client, row, state, revision, deps);
     }
-    await client.query("DELETE FROM finish_schemes WHERE request_id=$1 AND NOT (report->>'adoptable')::boolean", [row.id]);
-    if (!(await client.query('SELECT 1 FROM finish_schemes WHERE request_id=$1', [row.id])).rowCount) throw new DomainError('NO_ADOPTABLE_SCHEME', '没有通过校验的方案可以发布。', 409);
+    await tx.delete(finishSchemes).where(and(eq(finishSchemes.requestId, row.id), sql`NOT (${finishSchemes.report}->>'adoptable')::boolean`));
+    if (!(await hasSchemes())) throw new DomainError('NO_ADOPTABLE_SCHEME', '没有通过校验的方案可以发布。', 409);
     await settle(client, row, { count: 1, adoptable: true }, userId);
-    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [userId, value.operationId, row.project_id, hash, { requestId: row.id }]);
+    await tx.insert(operations).values({ actorId: userId, id: value.operationId, projectId: row.project_id, requestHash: hash, result: { requestId: row.id } });
     return row.id;
   });
   return (await listLeads(principal, workspaceId)).find(lead => lead.id === id)!;

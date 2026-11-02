@@ -10,11 +10,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { pool, transaction } from '../packages/persistence/src/client';
+import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
+import { db, pool, transaction } from '../packages/persistence/src/client';
+import { finishRequests, floorplanImports, hestiaAuthSession, hestiaAuthUser, operations, phoneOtpChallenges, projectRenders, projectRevisions,
+  projects, requestShares, resources, workspaceCustomers, workspaces } from '../packages/persistence/src/schema';
 import { acceptInvitation, createInvitation } from '../packages/identity/src/service';
 import { createWorkspace } from '../packages/workspaces/src/service';
 import { addStones } from '../packages/finishes/src/catalog';
-import { demoStones } from '../packages/finishes/src/demo-homes';
+import { demoStones } from '../packages/finishes/src/demo-stones';
 import { initializeRenderQueue, renderQueue } from '../packages/renders/src/queue';
 import { runRender } from '../packages/renders/src/runner';
 import { createMemberRequest, listLeads } from '../packages/finish-requests/src/service';
@@ -45,33 +48,35 @@ const e164 = (phone: string) => `+86${phone}`;
 const log = (line: string) => process.stdout.write(`${line}\n`);
 
 async function reset() {
-  const workspace = (await pool.query('SELECT id FROM workspaces WHERE slug=$1', [DEMO.slug])).rows[0]?.id as string | undefined;
+  const workspace = (await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.slug, DEMO.slug)))[0]?.id;
   const phones = Object.values(DEMO.phones).map(e164);
   if (workspace) {
-    const projects = (await pool.query('SELECT id FROM projects WHERE workspace_id=$1', [workspace])).rows.map(row => row.id as string);
-    await transaction(async client => {
-      await client.query('DELETE FROM finish_requests WHERE workspace_id=$1', [workspace]);
-      for (const table of ['operations', 'floorplan_imports', 'project_renders', 'resources', 'project_revisions'])
-        await client.query(`DELETE FROM ${table} WHERE project_id=ANY($1::uuid[])`, [projects]);
-      await client.query('DELETE FROM projects WHERE id=ANY($1::uuid[])', [projects]);
-      await client.query('DELETE FROM workspace_customers WHERE workspace_id=$1', [workspace]);
+    const ids = (await db.select({ id: projects.id }).from(projects).where(eq(projects.workspaceId, workspace))).map(row => row.id);
+    await transaction(async (_client, tx) => {
+      await tx.delete(finishRequests).where(eq(finishRequests.workspaceId, workspace));
+      for (const table of [operations, floorplanImports, projectRenders, resources, projectRevisions])
+        await tx.delete(table).where(inArray(table.projectId, ids));
+      await tx.delete(projects).where(inArray(projects.id, ids));
+      await tx.delete(workspaceCustomers).where(eq(workspaceCustomers.workspaceId, workspace));
     });
-    for (const id of projects) await rm(path.join(storage, 'projects', id), { recursive: true, force: true });
+    for (const id of ids) await rm(path.join(storage, 'projects', id), { recursive: true, force: true });
   }
   // Demo customers start signed out with fresh verification-code limits.
-  await pool.query('DELETE FROM hestia_auth_session WHERE user_id IN (SELECT id FROM hestia_auth_user WHERE phone_number=ANY($1))', [phones]);
-  await pool.query('DELETE FROM phone_otp_challenges WHERE phone_number=ANY($1)', [phones]);
+  await db.delete(hestiaAuthSession).where(inArray(hestiaAuthSession.userId,
+    db.select({ id: hestiaAuthUser.id }).from(hestiaAuthUser).where(inArray(hestiaAuthUser.phoneNumber, phones))));
+  await db.delete(phoneOtpChallenges).where(inArray(phoneOtpChallenges.phoneNumber, phones));
   await rm(stateFile, { force: true });
   log('已重置：演示企业下的方案需求、绑定、客户关系与演示手机号的登录状态。');
 }
 
 async function member() {
-  const existing = (await pool.query('SELECT id FROM hestia_auth_user WHERE email=$1', [DEMO.member.email])).rows[0]?.id as string | undefined;
+  const userId = async () => (await db.select({ id: hestiaAuthUser.id }).from(hestiaAuthUser).where(eq(hestiaAuthUser.email, DEMO.member.email)))[0]?.id;
+  const existing = await userId();
   if (existing) return existing;
   // The member never signs in during the client demo; the password is random and not shown.
   const invitation = await createInvitation(DEMO.member.email);
   await acceptInvitation(invitation.token, DEMO.member.name, randomBytes(18).toString('base64url'));
-  return (await pool.query('SELECT id FROM hestia_auth_user WHERE email=$1', [DEMO.member.email])).rows[0].id as string;
+  return (await userId())!;
 }
 
 /** A saved share is reused while its link previews, nobody is bound and (for code shares) the code is unused and valid. */
@@ -81,7 +86,8 @@ async function usable(saved: SavedShare | undefined) {
     const preview = await sharePreview(saved.token);
     if (preview.bound || preview.request.id !== saved.requestId) return false;
     if (!saved.code) return true;
-    const row = (await pool.query('SELECT code_used_at IS NULL AND code_expires_at > now() + interval \'2 hours\' AND code_attempts < 3 AS ok FROM request_shares WHERE id=$1', [saved.shareId])).rows[0];
+    const [row] = await db.select({ ok: sql<boolean | null>`${requestShares.codeUsedAt} IS NULL AND ${requestShares.codeExpiresAt} > now() + interval '2 hours' AND ${requestShares.codeAttempts} < 3` })
+      .from(requestShares).where(eq(requestShares.id, saved.shareId));
     return !!row?.ok;
   } catch { return false; }
 }
@@ -114,16 +120,17 @@ async function main() {
   await writeFile(stateFile, JSON.stringify(saved, null, 2), { mode: 0o600 });
 
   if (!args.has('--no-render')) {
-    const pending = (await pool.query(`SELECT r.id FROM project_renders r JOIN projects p ON p.id=r.project_id
-      WHERE p.workspace_id=$1 AND r.status IN ('queued','retry_wait') ORDER BY r.created_at`, [workspace.id])).rows.map(row => row.id as string);
+    const pending = (await db.select({ id: projectRenders.id }).from(projectRenders).innerJoin(projects, eq(projects.id, projectRenders.projectId))
+      .where(and(eq(projects.workspaceId, workspace.id), inArray(projectRenders.status, ['queued', 'retry_wait']))).orderBy(asc(projectRenders.createdAt))).map(row => row.id);
     for (const [index, id] of pending.entries()) {
       const started = Date.now();
       await runRender(id);
-      const status = (await pool.query('SELECT status FROM project_renders WHERE id=$1', [id])).rows[0]?.status;
+      const status = (await db.select({ status: projectRenders.status }).from(projectRenders).where(eq(projectRenders.id, id)))[0]?.status;
       log(`预生成效果图 ${index + 1}/${pending.length}：${status === 'completed' ? '完成' : status}（${Math.round((Date.now() - started) / 1000)} 秒）`);
     }
   }
-  const failed = Number((await pool.query(`SELECT count(*) FROM project_renders r JOIN projects p ON p.id=r.project_id WHERE p.workspace_id=$1 AND r.status='failed'`, [workspace.id])).rows[0].count);
+  const [{ failed }] = await db.select({ failed: count() }).from(projectRenders).innerJoin(projects, eq(projects.id, projectRenders.projectId))
+    .where(and(eq(projects.workspaceId, workspace.id), eq(projectRenders.status, 'failed')));
 
   const base = (process.env.BETTER_AUTH_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
   log('');

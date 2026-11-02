@@ -1,29 +1,22 @@
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { PoolClient } from 'pg';
 import type { PgBoss } from 'pg-boss';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { DomainError, idSchema } from '../../contracts/src/project';
 import {
   createFloorplanImportSchema, floorplanFormats, importHouseSpecSchema, MAX_FLOORPLAN_BYTES,
   type FloorplanCandidateView, type FloorplanFormat, type FloorplanImportView, type FloorplanIssue,
 } from '../../contracts/src/floorplan-imports';
-import { actorOf, projectAccess, type Principal } from '../../workspaces/src/access';
-import { pool, transaction } from '../../persistence/src/client';
+import { actorOf, canAccessProject, type Principal } from '../../workspaces/src/access';
+import { db, orm, pool, transaction, type Database } from '../../persistence/src/client';
+import { floorplanCandidates, floorplanImportOperations, floorplanImports, projects, resources } from '../../persistence/src/schema';
 import { privateStore, type PrivateFileStore } from '../../files/src/storage';
 import { buildFloorplanCandidate } from '../../floorplan-import/src/dxf';
 import { enqueueImport } from './queue';
 
-export type ImportRow = {
-  id: string; project_id: string; actor_id: string; request_id: string; request_hash: string; resource_id: string;
-  file_name: string; file_format: FloorplanFormat; byte_size: number; sha256: string; mode: 'automatic' | 'assisted';
-  status: FloorplanImportView['status']; generation: number; attempts: number; lease_until: Date | null; revision: number;
-  error: { code: string; message: string } | null; created_at: Date; updated_at: Date;
-};
-export type CandidateRow = {
-  id: string; import_id: string; import_revision: number; source: FloorplanCandidateView['source']; review_status: 'pending_review';
-  house_spec: unknown; candidate: { scale: { status: string; evidenceId?: string }; levels: unknown[]; floors: { walls: { openings: unknown[] }[]; rooms: { labels: { name: string }[] }[] }[] } | null;
-  scene: unknown; issues: FloorplanIssue[]; conversion: { dimensionConflicts?: unknown[] } | null; created_at: Date;
-};
+export type ImportRow = typeof floorplanImports.$inferSelect;
+export type CandidateRow = typeof floorplanCandidates.$inferSelect;
+type CandidateShape = { scale: { status: string; evidenceId?: string }; levels: unknown[]; floors: { walls: { openings: unknown[] }[]; rooms: { labels: { name: string }[] }[] }[] };
 const notFound = () => new DomainError('NOT_FOUND', '项目或图纸不存在。', 404);
 const sha256 = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 export const labels = {
@@ -55,29 +48,31 @@ export function detectFloorplanFormat(fileName: string, bytes: Uint8Array): Floo
 }
 
 function candidateView(row: CandidateRow): FloorplanCandidateView {
-  const c = row.candidate;
-  return { id: row.id, importRevision: row.import_revision, source: row.source, reviewStatus: row.review_status,
-    valid: !!row.scene && !row.issues.some(i => i.severity === 'blocking'),
+  const c = row.candidate as CandidateShape | null, issues = row.issues as FloorplanIssue[];
+  return { id: row.id, importRevision: row.importRevision, source: row.source, reviewStatus: row.reviewStatus,
+    valid: !!row.scene && !issues.some(i => i.severity === 'blocking'),
     scale: c?.scale ?? { status: 'missing' },
     summary: c ? { levels: c.levels.length, walls: c.floors.reduce((n, f) => n + f.walls.length, 0),
       openings: c.floors.reduce((n, f) => n + f.walls.reduce((m, w) => m + w.openings.length, 0), 0),
       rooms: c.floors.reduce((n, f) => n + f.rooms.length, 0),
       roomNames: c.floors.flatMap(f => f.rooms.flatMap(r => r.labels.map(l => l.name))) } : null,
-    dimensionConflicts: row.conversion?.dimensionConflicts ?? [], issues: row.issues, createdAt: row.created_at.toISOString() };
+    dimensionConflicts: (row.conversion as { dimensionConflicts?: unknown[] } | null)?.dimensionConflicts ?? [], issues, createdAt: row.createdAt.toISOString() };
 }
 export function importView(row: ImportRow, candidate?: CandidateRow | null): FloorplanImportView {
-  return { id: row.id, projectId: row.project_id, status: row.status, mode: row.mode, label: labels[row.mode],
-    file: { name: row.file_name, format: row.file_format, mediaType: floorplanFormats[row.file_format].mediaType, bytes: row.byte_size,
-      sha256: row.sha256, resourceId: row.resource_id },
-    revision: row.revision, attempts: row.attempts, error: row.error, candidate: candidate ? candidateView(candidate) : null,
-    createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() };
+  return { id: row.id, projectId: row.projectId, status: row.status, mode: row.mode, label: labels[row.mode],
+    file: { name: row.fileName, format: row.fileFormat, mediaType: floorplanFormats[row.fileFormat].mediaType, bytes: row.byteSize,
+      sha256: row.sha256, resourceId: row.resourceId },
+    revision: row.revision, attempts: row.attempts, error: row.error as FloorplanImportView['error'], candidate: candidate ? candidateView(candidate) : null,
+    createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
 }
-async function latestCandidate(client: Pick<PoolClient, 'query'>, importId: string) {
-  return (await client.query<CandidateRow>('SELECT * FROM floorplan_candidates WHERE import_id=$1 ORDER BY import_revision DESC LIMIT 1', [importId])).rows[0] ?? null;
+async function latestCandidate(tx: Database, importId: string) {
+  const [row] = await tx.select().from(floorplanCandidates).where(eq(floorplanCandidates.importId, importId))
+    .orderBy(desc(floorplanCandidates.importRevision)).limit(1);
+  return row ?? null;
 }
-async function lockedImport(client: PoolClient, actor: string, projectId: string, importId: string) {
-  const row = (await client.query<ImportRow>(`SELECT i.* FROM floorplan_imports i WHERE i.id=$1 AND i.project_id=$2
-    AND ${projectAccess('i.project_id', '$3')} FOR UPDATE`, [importId, projectId, actor])).rows[0];
+async function lockedImport(tx: Database, actor: string, projectId: string, importId: string) {
+  const [row] = await tx.select().from(floorplanImports).where(and(eq(floorplanImports.id, importId), eq(floorplanImports.projectId, projectId),
+    canAccessProject(floorplanImports.projectId, actor))).for('update');
   if (!row) throw notFound(); return row;
 }
 
@@ -95,45 +90,46 @@ export async function createFloorplanImport(principal: Principal, projectId: str
   if (bytes.byteLength > MAX_FLOORPLAN_BYTES) throw new DomainError('FILE_TOO_LARGE', `图纸文件不能超过 ${MAX_FLOORPLAN_BYTES / 1024 / 1024} MB。`, 413);
   const format = detectFloorplanFormat(name, bytes), digest = sha256(bytes);
   const automatic = floorplanFormats[format].automatic, requestHash = sha256(JSON.stringify({ projectId: id, name, digest }));
-  const lease = await pool.connect(), lock = `floorplan-import:${actor}:${value.operationId}`;
+  const lease = await pool.connect(), leaseDb = orm(lease), lock = `floorplan-import:${actor}:${value.operationId}`;
   let resourceId = '', key = '', complete = false;
-  const tx = async <T>(work: (client: PoolClient) => Promise<T>) => {
+  const tx = async <T>(work: () => Promise<T>) => {
     await lease.query('BEGIN');
-    try { const result = await work(lease); await lease.query('COMMIT'); return result; }
+    try { const result = await work(); await lease.query('COMMIT'); return result; }
     catch (error) { await lease.query('ROLLBACK'); throw error; }
   };
-  const previous = async (client: PoolClient) => {
-    const row = (await client.query<ImportRow>('SELECT * FROM floorplan_imports WHERE actor_id=$1 AND request_id=$2', [actor, value.operationId])).rows[0];
-    if (row && (row.project_id !== id || row.request_hash !== requestHash)) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同的文件或项目。', 409);
+  const previous = async () => {
+    const [row] = await leaseDb.select().from(floorplanImports)
+      .where(and(eq(floorplanImports.actorId, actor), eq(floorplanImports.requestId, value.operationId)));
+    if (row && (row.projectId !== id || row.requestHash !== requestHash)) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同的文件或项目。', 409);
     return row;
   };
-  const access = async (client: PoolClient) => {
-    const check = deps.authorized ? 'SELECT 1 FROM projects p WHERE p.id=$1 FOR SHARE' : `SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`;
-    if (!(await client.query(check, deps.authorized ? [id] : [id, actor])).rowCount) throw notFound();
+  const access = async () => {
+    const [project] = await leaseDb.select({ one: sql`1` }).from(projects)
+      .where(and(eq(projects.id, id), deps.authorized ? undefined : canAccessProject(projects.id, actor))).for('share');
+    if (!project) throw notFound();
   };
   try {
-    await lease.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [lock]);
-    const existing = await tx(async client => {
-      await access(client);
-      const row = await previous(client);
+    await leaseDb.execute(sql`SELECT pg_advisory_lock(hashtextextended(${lock},0))`);
+    const existing = await tx(async () => {
+      await access();
+      const row = await previous();
       if (row) return row;
       resourceId = randomUUID(); key = `projects/${id}/resources/${resourceId}.src`;
-      await client.query("INSERT INTO resources(id,project_id,object_key,media_type,state) VALUES($1,$2,$3,$4,'pending')",
-        [resourceId, id, key, floorplanFormats[format].mediaType]);
+      await leaseDb.insert(resources).values({ id: resourceId, projectId: id, objectKey: key, mediaType: floorplanFormats[format].mediaType, state: 'pending' });
       return null;
     });
-    if (existing) { complete = true; return importView(existing, await latestCandidate(pool, existing.id)); }
+    if (existing) { complete = true; return importView(existing, await latestCandidate(db, existing.id)); }
     await store.put(key, bytes);
-    const row = await tx(async client => {
-      await access(client);
-      if (await previous(client)) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作已在处理中。', 409);
+    const row = await tx(async () => {
+      await access();
+      if (await previous()) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作已在处理中。', 409);
       const importId = randomUUID();
-      const inserted = (await client.query<ImportRow>(`INSERT INTO floorplan_imports(id,project_id,actor_id,request_id,request_hash,resource_id,
-        file_name,file_format,byte_size,sha256,mode,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [importId, id, actor, value.operationId, requestHash, resourceId, name, format, bytes.byteLength, digest,
-        automatic ? 'automatic' : 'assisted', automatic ? 'queued' : 'assisted_conversion'])).rows[0];
-      await client.query("UPDATE resources SET state='ready' WHERE id=$1 AND project_id=$2 AND state='pending'", [resourceId, id]);
-      if (automatic) await enqueueImport(client, importId, deps.queue);
+      const [inserted] = await leaseDb.insert(floorplanImports).values({ id: importId, projectId: id, actorId: actor, requestId: value.operationId,
+        requestHash, resourceId, fileName: name, fileFormat: format, byteSize: bytes.byteLength, sha256: digest,
+        mode: automatic ? 'automatic' : 'assisted', status: automatic ? 'queued' : 'assisted_conversion' }).returning();
+      await leaseDb.update(resources).set({ state: 'ready' })
+        .where(and(eq(resources.id, resourceId), eq(resources.projectId, id), eq(resources.state, 'pending')));
+      if (automatic) await enqueueImport(lease, importId, deps.queue);
       return inserted;
     });
     complete = true;
@@ -141,32 +137,36 @@ export async function createFloorplanImport(principal: Principal, projectId: str
   } catch (error) {
     if (resourceId && !complete) {
       // A lost COMMIT acknowledgement may still have published the resource; delete bytes only when it is not ready.
-      const failed = await lease.query("UPDATE resources SET state='failed' WHERE id=$1 AND project_id=$2 AND state<>'ready' RETURNING id", [resourceId, id]).catch(() => null);
-      if (failed?.rowCount) await store.remove(key).catch(() => {});
+      const failed = await leaseDb.update(resources).set({ state: 'failed' })
+        .where(and(eq(resources.id, resourceId), eq(resources.projectId, id), ne(resources.state, 'ready'))).returning({ id: resources.id }).catch(() => null);
+      if (failed?.length) await store.remove(key).catch(() => {});
     }
     if (error instanceof DomainError) throw error;
     throw new DomainError('FILE_SAVE_FAILED', '图纸未能保存，请重试。', 503);
-  } finally { await lease.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [lock]).finally(() => lease.release()); }
+  } finally { await leaseDb.execute(sql`SELECT pg_advisory_unlock(hashtextextended(${lock},0))`).finally(() => lease.release()); }
 }
 
 export async function getFloorplanImport(principal: Principal, projectId: string, importId: string) {
-  const row = (await pool.query<ImportRow>(`SELECT i.* FROM floorplan_imports i WHERE i.id=$1 AND i.project_id=$2 AND ${projectAccess('i.project_id', '$3')}`,
-    [idSchema.parse(importId), idSchema.parse(projectId), actorOf(principal)])).rows[0];
+  const target = idSchema.parse(importId), id = idSchema.parse(projectId);
+  const [row] = await db.select().from(floorplanImports)
+    .where(and(eq(floorplanImports.id, target), eq(floorplanImports.projectId, id), canAccessProject(floorplanImports.projectId, actorOf(principal))));
   if (!row) throw notFound();
-  return importView(row, await latestCandidate(pool, row.id));
+  return importView(row, await latestCandidate(db, row.id));
 }
 export async function listFloorplanImports(principal: Principal, projectId: string) {
   const id = idSchema.parse(projectId), actor = actorOf(principal);
-  if (!(await pool.query(`SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, actor])).rowCount) throw notFound();
-  const rows = (await pool.query<ImportRow>('SELECT * FROM floorplan_imports WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20', [id])).rows;
-  return Promise.all(rows.map(async row => importView(row, await latestCandidate(pool, row.id))));
+  const [project] = await db.select({ one: sql`1` }).from(projects).where(and(eq(projects.id, id), canAccessProject(projects.id, actor)));
+  if (!project) throw notFound();
+  const rows = await db.select().from(floorplanImports).where(eq(floorplanImports.projectId, id)).orderBy(desc(floorplanImports.createdAt)).limit(20);
+  return Promise.all(rows.map(async row => importView(row, await latestCandidate(db, row.id))));
 }
 /** Full latest candidate for review: HouseSpec, import candidate, preview scene and issues. */
 export async function getFloorplanCandidate(principal: Principal, projectId: string, importId: string) {
   const view = await getFloorplanImport(principal, projectId, importId);
-  const row = await latestCandidate(pool, view.id);
+  const row = await latestCandidate(db, view.id);
   if (!row) throw new DomainError('CANDIDATE_NOT_READY', '该图纸还没有空间候选。', 409);
-  return { ...candidateView(row), houseSpec: row.house_spec, candidate: row.candidate, scene: row.scene, conversion: row.conversion };
+  return { ...candidateView(row), houseSpec: row.houseSpec, candidate: row.candidate as CandidateShape | null, scene: row.scene,
+    conversion: row.conversion as { dimensionConflicts?: unknown[] } | null };
 }
 
 /**
@@ -177,12 +177,14 @@ export async function importHouseSpec(principal: Principal, projectId: string, i
   const actor = actorOf(principal), id = idSchema.parse(projectId), target = idSchema.parse(importId);
   const value = importHouseSpecSchema.parse(input);
   const requestHash = sha256(JSON.stringify({ kind: 'housespec', projectId: id, importId: target, ...value }));
-  return transaction(async client => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`floorplan-housespec:${actor}:${value.operationId}`]);
-    const row = await lockedImport(client, actor, id, target);
-    const prior = (await client.query('SELECT request_hash,result FROM floorplan_import_operations WHERE actor_id=$1 AND id=$2', [actor, value.operationId])).rows[0];
+  return transaction(async (_client, tx) => {
+    // hashtextextended (not advisoryXactLock's hashtext) keeps the existing lock key space.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`floorplan-housespec:${actor}:${value.operationId}`},0))`);
+    const row = await lockedImport(tx, actor, id, target);
+    const [prior] = await tx.select({ requestHash: floorplanImportOperations.requestHash, result: floorplanImportOperations.result })
+      .from(floorplanImportOperations).where(and(eq(floorplanImportOperations.actorId, actor), eq(floorplanImportOperations.id, value.operationId)));
     if (prior) {
-      if (prior.request_hash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于另一请求。', 409);
+      if (prior.requestHash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于另一请求。', 409);
       return prior.result as FloorplanImportView;
     }
     if (!['assisted_conversion', 'failed', 'pending_review'].includes(row.status))
@@ -191,14 +193,12 @@ export async function importHouseSpec(principal: Principal, projectId: string, i
     const result = buildFloorplanCandidate(value.houseSpec, importSourceId(row.id), { status: 'estimated', evidenceId: `member-housespec-${row.id}` },
       `${value.name ?? '导入户型'} · 成员导入 · 待审核`);
     const revision = row.revision + 1;
-    await client.query(`INSERT INTO floorplan_candidates(id,import_id,project_id,import_revision,source,created_by,review_status,house_spec,candidate,scene,issues)
-      VALUES($1,$2,$3,$4,'member-housespec',$5,'pending_review',$6,$7,$8,$9)`,
-    [randomUUID(), row.id, id, revision, actor, value.houseSpec, result.candidate, result.scene, JSON.stringify(result.issues)]);
-    const updated = (await client.query<ImportRow>(`UPDATE floorplan_imports SET status='pending_review',revision=$2,error=NULL,lease_until=NULL,updated_at=now()
-      WHERE id=$1 RETURNING *`, [row.id, revision])).rows[0];
-    const view = importView(updated, await latestCandidate(client, row.id));
-    await client.query('INSERT INTO floorplan_import_operations(actor_id,id,import_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
-      [actor, value.operationId, row.id, requestHash, view]);
+    await tx.insert(floorplanCandidates).values({ id: randomUUID(), importId: row.id, projectId: id, importRevision: revision, source: 'member-housespec',
+      createdBy: actor, reviewStatus: 'pending_review', houseSpec: value.houseSpec, candidate: result.candidate, scene: result.scene, issues: result.issues });
+    const [updated] = await tx.update(floorplanImports).set({ status: 'pending_review', revision, error: null, leaseUntil: null, updatedAt: sql`now()` })
+      .where(eq(floorplanImports.id, row.id)).returning();
+    const view = importView(updated, await latestCandidate(tx, row.id));
+    await tx.insert(floorplanImportOperations).values({ actorId: actor, id: value.operationId, importId: row.id, requestHash, result: view });
     return view;
   });
 }
@@ -206,10 +206,11 @@ export async function importHouseSpec(principal: Principal, projectId: string, i
 /** Original uploaded bytes, for project members only; the digest is checked before returning. */
 export async function readFloorplanSource(principal: Principal, projectId: string, importId: string, store: PrivateFileStore = privateStore()) {
   const view = await getFloorplanImport(principal, projectId, importId);
-  const resource = (await pool.query("SELECT object_key FROM resources WHERE id=$1 AND project_id=$2 AND state='ready'", [view.file.resourceId, view.projectId])).rows[0];
+  const [resource] = await db.select({ objectKey: resources.objectKey }).from(resources)
+    .where(and(eq(resources.id, view.file.resourceId), eq(resources.projectId, view.projectId), eq(resources.state, 'ready')));
   if (!resource) throw new DomainError('RESOURCE_UNAVAILABLE', '图纸文件暂时不可用。', 503);
   try {
-    const bytes = await store.read(resource.object_key);
+    const bytes = await store.read(resource.objectKey);
     if (sha256(bytes) !== view.file.sha256) throw new Error('digest mismatch');
     return { bytes, mediaType: view.file.mediaType, fileName: view.file.name };
   } catch { throw new DomainError('RESOURCE_UNAVAILABLE', '图纸文件暂时不可读取，请稍后重试。', 503); }

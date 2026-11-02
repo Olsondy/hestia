@@ -4,7 +4,7 @@ import type { PgBoss } from 'pg-boss';
 import { DomainError, idSchema, spatialStateSchema, type SpatialState } from '../../contracts/src/project';
 import type { Finish } from '../../contracts/src/finishes';
 import type { SceneSnapshot } from '../../contracts/src/scene';
-import { createFinishRequestSchema, publishFinishRequestSchema, type ClientCatalogView, type FinishRequestStatus, type FinishRequestView,
+import { createFinishRequestSchema, createMemberRequestSchema, publishFinishRequestSchema, type ClientCatalogView, type FinishRequestStatus, type FinishRequestView,
   type FinishSchemeView, type LeadView } from '../../contracts/src/finish-requests';
 import { pool, transaction } from '../../persistence/src/client';
 import { actorOf, type Principal } from '../../workspaces/src/access';
@@ -16,9 +16,10 @@ import { createFloorplanImport, getFloorplanCandidate } from '../../drawing-impo
 import type { PrivateFileStore } from '../../files/src/storage';
 import { enqueueSchemeRender, readRenderImage, renderStatuses } from '../../renders/src/service';
 import { generateSchemes } from './generate';
+import { sharingOf } from './sharing-view';
 
 export type RequestRow = {
-  id: string; workspace_id: string; customer_id: string; project_id: string; request_id: string; request_hash: string;
+  id: string; workspace_id: string; customer_id: string | null; created_by: string; origin: 'customer' | 'member'; project_id: string; request_id: string; request_hash: string;
   source: 'demo-villa' | 'drawing'; floorplan_import_id: string | null; finish_ids: string[]; stones: { stoneId: string; stoneVersion: number }[];
   note: string | null; status: 'awaiting_drawing' | 'converting' | 'pending_review' | 'published'; review_reason: string | null;
   published_at: Date | null; published_by: string | null; created_at: Date; updated_at: Date;
@@ -43,7 +44,7 @@ export async function customer(client: PoolClient, principal: Principal, slug: s
   await ensureCustomer(client, entry.id, userId);
   return { userId, entry };
 }
-async function memberOf(client: Pick<PoolClient, 'query'>, userId: string, workspaceId: string) {
+export async function memberOf(client: Pick<PoolClient, 'query'>, userId: string, workspaceId: string) {
   if (!(await client.query('SELECT 1 FROM workspace_members WHERE workspace_id=$1 AND user_id=$2', [workspaceId, userId])).rowCount) throw notFound();
 }
 async function importStatus(client: Pick<PoolClient, 'query'>, row: RequestRow): Promise<FinishRequestStatus> {
@@ -99,7 +100,7 @@ async function generate(client: PoolClient, row: RequestRow, state: SpatialState
     const id = randomUUID();
     await client.query('INSERT INTO finish_schemes(id,request_id,ordinal,name,summary,surface_design,report) VALUES($1,$2,$3,$4,$5,$6,$7)',
       [id, row.id, index + 1, scheme.name, scheme.summary, scheme.design, { adoptable: scheme.adoptable, issues: scheme.issues }]);
-    const renderId = await enqueueSchemeRender(client, { projectId: row.project_id, actorId: row.customer_id, projectRevision,
+    const renderId = await enqueueSchemeRender(client, { projectId: row.project_id, actorId: row.customer_id ?? row.created_by, projectRevision,
       state: spatialStateSchema.parse({ ...state, surfaceDesign: scheme.design }), scheme: { schemeId: id, revision: 1 }, label: `方案 ${scheme.name}` }, deps.renderQueue);
     await client.query('UPDATE finish_schemes SET render_id=$1 WHERE id=$2', [renderId, id]);
     await client.query('INSERT INTO finish_scheme_revisions(scheme_id,revision,surface_design,report,render_id) VALUES($1,1,$2,$3,$4)',
@@ -122,12 +123,39 @@ export async function clientCatalog(slug: string): Promise<ClientCatalogView> {
   });
 }
 
+/** A member prepares a demo-villa request for a customer (origin member, no customer until bound) and publishes it. */
+export async function createMemberRequest(principal: Principal, workspaceId: string, input: unknown, deps: RequestDeps = {}): Promise<LeadView> {
+  const value = createMemberRequestSchema.parse(input), userId = actorOf(principal), id = idSchema.parse(workspaceId), hash = sha({ workspaceId: id, ...value });
+  const requestId = await transaction(async client => {
+    await memberOf(client, userId, id);
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`finish-request:${userId}:${value.operationId}`]);
+    const previous = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE created_by=$1 AND request_id=$2', [userId, value.operationId])).rows[0];
+    if (previous) {
+      if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
+      return previous.id;
+    }
+    const catalog = await workspaceStones(client, id);
+    for (const ref of value.stones) if (!catalog.some(stone => stoneKey({ stoneId: stone.id, stoneVersion: stone.version }) === stoneKey(ref)))
+      throw new DomainError('STONE_NOT_FOUND', '所选石材不在该企业的石材库中。', 404);
+    const state = spatialStateSchema.parse({ ...initialState('demo-villa'), surfaceDesign: undefined });
+    for (const finishId of value.finishIds) if (!state.fixedFacts.finishes?.some(finish => finish.id === finishId))
+      throw new DomainError('FINISH_NOT_FOUND', '所选部位不在示例别墅中。', 404);
+    const projectId = await insertProjectInTransaction(client, { workspaceId: id, createdBy: userId, name: value.name, state, operationId: value.operationId });
+    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,created_by,origin,project_id,request_id,request_hash,source,finish_ids,stones,note,status)
+      VALUES($1,$2,NULL,$3,'member',$4,$5,$6,'demo-villa',$7,$8,$9,'pending_review') RETURNING *`, [randomUUID(), id, userId, projectId, value.operationId, hash,
+      JSON.stringify(value.finishIds), JSON.stringify(value.stones), value.note ?? null])).rows[0];
+    const result = await generate(client, row, state, 1, deps);
+    await settle(client, row, result, result.adoptable ? userId : null);
+    return row.id;
+  });
+  return (await listLeads(principal, id)).find(lead => lead.id === requestId)!;
+}
 export async function createFinishRequest(principal: Principal, slug: string, input: unknown, deps: RequestDeps = {}): Promise<FinishRequestView> {
   const value = createFinishRequestSchema.parse(input);
   return transaction(async client => {
     const { userId, entry } = await customer(client, principal, slug), hash = sha({ slug, ...value });
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`finish-request:${userId}:${value.operationId}`]);
-    const previous = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE customer_id=$1 AND request_id=$2', [userId, value.operationId])).rows[0];
+    const previous = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE created_by=$1 AND request_id=$2', [userId, value.operationId])).rows[0];
     if (previous) {
       if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return view(client, previous, 'customer', slug);
@@ -140,8 +168,8 @@ export async function createFinishRequest(principal: Principal, slug: string, in
     if (demo) for (const id of value.finishIds) if (!state.fixedFacts.finishes?.some(finish => finish.id === id))
       throw new DomainError('FINISH_NOT_FOUND', '所选部位不在示例别墅中。', 404);
     const projectId = await insertProjectInTransaction(client, { workspaceId: entry.id, createdBy: userId, name: demo ? '方案需求 · 示例别墅' : '方案需求 · 户型图纸', state, operationId: value.operationId });
-    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,project_id,request_id,request_hash,source,finish_ids,stones,note,status)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [randomUUID(), entry.id, userId, projectId, value.operationId, hash, value.source,
+    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,created_by,project_id,request_id,request_hash,source,finish_ids,stones,note,status)
+      VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [randomUUID(), entry.id, userId, projectId, value.operationId, hash, value.source,
       JSON.stringify(demo ? value.finishIds : []), JSON.stringify(value.stones), value.note ?? null, demo ? 'pending_review' : 'awaiting_drawing'])).rows[0];
     if (demo) await settle(client, row, await generate(client, row, state, 1, deps), null);
     return view(client, (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [row.id])).rows[0], 'customer', slug);
@@ -199,7 +227,8 @@ export async function listLeads(principal: Principal, workspaceId: string): Prom
     const rows = (await client.query<RequestRow & { phone_number: string | null; name: string | null }>(`SELECT r.*,u.phone_number,u.name FROM finish_requests r
       LEFT JOIN hestia_auth_user u ON u.id=r.customer_id WHERE r.workspace_id=$1 ORDER BY r.created_at DESC LIMIT 200`, [id])).rows;
     return Promise.all(rows.map(async row => ({ ...await view(client, row, 'member'), reviewReason: row.review_reason,
-      customer: { userId: row.customer_id, phone: row.phone_number, name: row.name },
+      origin: row.origin, customer: row.customer_id ? { userId: row.customer_id, phone: row.phone_number, name: row.name } : null,
+      sharing: await sharingOf(client, row.id),
       events: (await client.query<{ id: string; kind: 'confirmation' | 'message'; scheme_id: string | null; scheme_revision: number | null; message: string | null;
         contact_requested: boolean; preferred_time: string | null; created_at: Date }>('SELECT * FROM finish_request_events WHERE request_id=$1 ORDER BY created_at', [row.id])).rows
         .map(event => ({ id: event.id, kind: event.kind, schemeId: event.scheme_id, schemeRevision: event.scheme_revision, message: event.message,

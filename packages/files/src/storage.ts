@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 
 /** Production object storage can implement the same interface; no vendor is configured here. */
 export interface PrivateFileStore { put(key: string, bytes: Uint8Array): Promise<void>; read(key: string): Promise<Buffer>; remove(key: string): Promise<void>; }
-const keyPattern = /^projects\/[0-9a-f-]{36}\/resources\/[0-9a-f-]{36}\.png$/;
+// `.src` holds an uploaded drawing in its original bytes; its media type is recorded on the resource row.
+const keyPattern = /^projects\/[0-9a-f-]{36}\/resources\/[0-9a-f-]{36}\.(png|src)$/;
 export class LocalPrivateFileStore implements PrivateFileStore {
   readonly root: string;
   constructor(root: string) {

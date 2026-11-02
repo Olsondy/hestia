@@ -1,9 +1,9 @@
 // 演示 fixture：企业、石材目录、示例别墅、分享链接。全部为中性演示数据，尺寸为示意。
 
 export const workspace = {
-  id: 'demo-stone',
-  name: '演示石材企业',
-  tagline: '别墅 · 酒店 · 展厅石材硬装',
+  id: 'demo-home',
+  name: '演示家装企业',
+  tagline: '石材铺贴 · 全屋软装 · 一站式家装',
 };
 
 // 石材目录（示意素材）：贴图由 stone.js 程序生成，不是企业真实素材。
@@ -91,13 +91,27 @@ export const facetById = Object.fromEntries(facets.map(f => [f.id, f]));
 export const kindName = {floor: '地面', wall: '背景墙', stair: '楼梯踏面'};
 export const defaultFacets = ['f1-living', 'f1-dining', 'f1-foyer', 'f1-wall', 's12', 'f2-lounge', 'f2-wall', 's23', 'f3-tea'];
 
-// 规则生成 2–3 个铺贴方案：每个方案至少改变石材、规格或铺法之一。
+// 软装风格（示意）：按房间给出家具组合与配色。家具为简化体块，不代表真实品牌款式。
+export const softStyles = [
+  {id: 'modern', name: '现代简约', line: '布艺 L 型沙发、岩板圆几、灰调地毯、线性吊灯',
+    palette: {fabric: '#d8d3cb', frame: '#2f2c2a', wood: '#b49c86', rug: '#c7c0b6', accent: '#7f8f84', lamp: '#2f2c2a'},
+    rooms: {客厅: 'L 型布艺沙发 · 岩板圆几 · 灰调地毯', 起居厅: '模块沙发 · 边几 · 落地灯', 茶室: '低矮茶台 · 布艺坐垫', 主卧: '软包床 · 极简床头柜'}},
+  {id: 'chinese', name: '新中式', line: '实木圈椅、长条茶几、屏风、暖色地毯',
+    palette: {fabric: '#e4d9c6', frame: '#4f3324', wood: '#6f4630', rug: '#b39a79', accent: '#7b2f2a', lamp: '#6f4630'},
+    rooms: {客厅: '实木框架沙发 · 圈椅 · 长条茶几 · 屏风', 起居厅: '罗汉床 · 小方几', 茶室: '实木茶台 · 官帽椅', 主卧: '实木架子床 · 床头案'}},
+  {id: 'luxury', name: '轻奢', line: '弧形丝绒沙发、大理石金属茶几、浅色长毛地毯',
+    palette: {fabric: '#ece2d3', frame: '#b08d57', wood: '#3b3230', rug: '#ddd1bf', accent: '#33454f', lamp: '#b08d57'},
+    rooms: {客厅: '弧形丝绒沙发 · 大理石金属茶几 · 长毛地毯', 起居厅: '单人丝绒椅 · 金属边几', 茶室: '石材茶台 · 皮质坐墩', 主卧: '软包高床头 · 金属床头柜'}},
+];
+export const softById = Object.fromEntries(softStyles.map(s => [s.id, s]));
+
+// 规则生成 2–3 个整体方案：硬装（每个方案至少改变石材、规格或铺法之一）+ 默认软装风格，客户可在三套软装风格中切换。
 const themes = [
-  {key: 'A', title: '留白', floorSpec: '750x1500', layout: 'straight', border: true, wallSpec: '1200x2400', wallLayout: 'straight',
+  {key: 'A', title: '留白', soft: 'modern', floorSpec: '750x1500', layout: 'straight', border: true, wallSpec: '1200x2400', wallLayout: 'straight',
     line: '大板直铺，深色波打线收边'},
-  {key: 'B', title: '暖调', floorSpec: '800x800', layout: 'diagonal', border: true, wallSpec: '600x1200', wallLayout: 'running',
+  {key: 'B', title: '暖调', soft: 'luxury', floorSpec: '800x800', layout: 'diagonal', border: true, wallSpec: '600x1200', wallLayout: 'running',
     line: '斜铺放大空间纵深，工字背景墙'},
-  {key: 'C', title: '肌理', floorSpec: '200x800', layout: 'herringbone', border: false, wallSpec: '600x1200', wallLayout: 'straight',
+  {key: 'C', title: '肌理', soft: 'chinese', floorSpec: '200x800', layout: 'herringbone', border: false, wallSpec: '600x1200', wallLayout: 'straight',
     line: '条板人字铺，不设波打线'},
 ];
 const borderFor = stone => (['heijin', 'feiwang', 'huimu'].includes(stone) ? 'yashi' : 'heijin');
@@ -114,7 +128,7 @@ export function makeSchemes(facetIds, picked = []) {
       if (f.kind === 'wall') finishes[id] = {stone: wallFor(stone, t.key), spec: t.wallSpec, layout: t.wallLayout};
       if (f.kind === 'stair') finishes[id] = {stone};
     }
-    return {id: t.key, title: t.title, line: t.line, finishes};
+    return {id: t.key, title: t.title, line: t.line, finishes, soft: t.soft};
   });
 }
 

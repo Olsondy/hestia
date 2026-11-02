@@ -1,6 +1,6 @@
 # D09 离线演示数据与验收
 
-日期：2026-11-03。范围：工单 #40。本机 PostgreSQL 14（独立库 `hestia_d09`）、Next.js dev（127.0.0.1:3101）、出图 Worker；短信为模拟发送，未配置任何模型。演示说明见 [stone-h5-demo.md](../demo/stone-h5-demo.md)。
+日期：2026-11-03。范围：工单 #40。本机 PostgreSQL 14（独立库 `hestia_d09`）、Next.js dev（127.0.0.1:3101）、出图 Worker；短信为模拟发送，未配置任何模型。演示说明见 [home-h5-demo.md](../demo/home-h5-demo.md)。
 
 ## 实现要点
 

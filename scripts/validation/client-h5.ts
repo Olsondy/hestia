@@ -86,7 +86,7 @@ try {
   // Another phone on the targeted link, then the code share.
   const other = await phone(browser);
   await step('另一手机号打开已绑定的定向分享 → 只能预览', async () => {
-    await other.goto(`${base}/c/demo-stone/login?next=${encodeURIComponent(`/s/${seed.targeted.token}/bind`)}`);
+    await other.goto(`${base}/c/demo-home/login?next=${encodeURIComponent(`/s/${seed.targeted.token}/bind`)}`);
     await login(other, phones.withCode);
     await other.getByText('其他客户').waitFor({ timeout: 30000 }); await shot(other, '06-already-bound');
   });
@@ -101,7 +101,7 @@ try {
   // Self-service request with the demo villa.
   const self = await phone(browser);
   await step('客户自助：登录 → 示例别墅 → 饰面 → 石材 → 提交 → 出图', async () => {
-    await self.goto(`${base}/c/demo-stone`); await self.getByRole('button', { name: /提交方案需求/ }).click();
+    await self.goto(`${base}/c/demo-home`); await self.getByRole('button', { name: /提交方案需求/ }).click();
     await self.waitForURL(/login/); await login(self, phones.selfService);
     await self.waitForURL(/\/new$/); await self.getByRole('radio', { name: /示例别墅/ }).click();
     await self.getByRole('button', { name: /下一步：选择饰面/ }).click(); await shot(self, '08-finishes');
@@ -113,7 +113,7 @@ try {
     await self.reload(); await self.getByText('排版出图').waitFor({ timeout: 30000 }); await shot(self, '09-generating');
   });
   await step('我的项目：自己提交的与企业分享的分组', async () => {
-    await other.goto(`${base}/c/demo-stone/projects`); await other.getByText('企业分享给我的').waitFor();
+    await other.goto(`${base}/c/demo-home/projects`); await other.getByText('企业分享给我的').waitFor();
     await other.locator('.proj').first().waitFor(); await shot(other, '10-projects');
   });
   await step('伪造链接 → 已失效', async () => {

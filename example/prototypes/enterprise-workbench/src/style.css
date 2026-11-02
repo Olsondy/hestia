@@ -278,3 +278,18 @@ dialog.modal::backdrop{background:#25211c66}
 @media (max-width:1280px){.top{gap:22px;padding:0 28px}.story{padding:36px 26px 28px 28px}.work{padding:28px 30px 40px}.detail-body{padding:26px 30px 40px}.stone-grid{grid-template-columns:repeat(4,1fr)}.catalog{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:1100px){.spread{grid-template-columns:236px minmax(0,1fr)}.story{padding:30px 20px 24px 24px}.work{padding:24px 24px 36px}.lead-table .col-src{display:none}.lead-table .thumb{width:72px;height:50px}.lead-table th:first-child{width:90px!important}.facts div{grid-template-columns:56px 1fr}.phone-full{font-size:16px}.cols{grid-template-columns:1fr}.today-figures{grid-template-columns:repeat(2,1fr)}.figure:nth-child(2){border-right:0}.todo-cols{grid-template-columns:1fr}.review-grid{grid-template-columns:repeat(2,1fr)}.nav a{padding:10px 9px}.brand small{display:none}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Agent 与软装 */
+.palette{display:flex;gap:3px}.palette i{width:16px;height:16px;display:block;border:1px solid #0000000d}
+.soft-swatch{display:grid;grid-template-columns:repeat(2,1fr);width:120px;height:150px}.soft-swatch i{display:block}
+.agent .chat{max-height:calc(100dvh - 116px);overflow:auto;padding-bottom:96px}
+.msgs{display:grid;gap:10px;margin-top:22px}
+.msg{font-size:13px;line-height:1.75;padding:10px 12px;max-width:92%}
+.msg.me{justify-self:end;background:var(--accent);color:#fff8f1}
+.msg.ai{justify-self:start;background:var(--surface);border:1px solid var(--line)}
+.msg p{margin-top:6px}.msg p:first-child{margin-top:0}
+.agent-steps li{display:flex;gap:8px;align-items:baseline;color:var(--muted);padding:2px 0}
+.agent-steps li:before{content:'';width:7px;height:7px;border:1px solid var(--line-strong);border-radius:50%;flex-shrink:0;transform:translateY(-1px)}
+.agent-steps li.done{color:var(--ink)}.agent-steps li.done:before{background:var(--accent);border-color:var(--accent)}
+.agent-steps li.now{color:var(--ink)}.agent-steps li.now:before{border-color:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 4px var(--accent-soft)}}

@@ -1,7 +1,7 @@
 // H5 客户端交互原型：纯前端、演示 fixture、不接服务端。仅供审阅交互与视觉，不作为生产代码基础。
 import {icon, layoutGlyph} from './icons.js';
 import {workspace, stones, stoneById, layouts, layoutName, floorSpecs, wallSpecs, specLabel, villa, facets, facetById, kindName,
-  defaultFacets, makeSchemes, checkFinish, shares, sharedProject, demoPhone, maskPhone} from './data.js';
+  defaultFacets, makeSchemes, checkFinish, shares, sharedProject, demoPhone, maskPhone, softStyles, softById} from './data.js';
 import {swatchURL} from './stone.js';
 import {renderImage, mountViewer} from './render3d.js';
 
@@ -86,19 +86,19 @@ function homeView() {
   return {html: shell(`
     <section class="cover">
       <figure class="cover-plate"><img data-render="f1" data-scheme='${esc(JSON.stringify(scheme))}' alt="示例别墅一层客厅铺贴效果图（示意）"><figcaption><span>示例别墅 · 一层客厅</span><span>效果图 · 示意素材</span></figcaption></figure>
-      <h1 class="display">为你的空间，<em>先铺一遍石材。</em></h1>
-      <p class="lede">提交户型与石材偏好，得到 2–3 个铺贴方案的效果图。${workspace.name}审核后发布，你可以在给定选项内调整，再确认。</p>
+      <h1 class="display">为你的家，<em>先做一遍硬装与软装。</em></h1>
+      <p class="lede">提交户型与石材偏好，得到 2–3 个硬装 + 软装的整体方案效果图。${workspace.name}审核后发布，你可以在给定选项内调整，再确认。</p>
       <div class="cover-actions">
         <button class="design-row" data-act="start">提交方案需求<span>${icon('arrow', 22)}</span></button>
         <a class="text-link" href="#/projects">查看我的项目 ${icon('chevron', 14)}</a>
       </div>
     </section>
     <section class="section">
-      <h2 class="h2">从图纸到铺贴方案</h2>
+      <h2 class="h2">从图纸到整体方案</h2>
       <ol class="flow">
         <li><b>示例别墅或上传图纸</b><span>DXF 自动转换；其他格式由企业协助转换。</span></li>
         <li><b>勾选要铺石材的饰面</b><span>各层地面、背景墙、楼梯踏面。</span></li>
-        <li><b>挑选石材，得到 2–3 个方案</b><span>换石材、规格、铺法后重新出图，满意再确认。</span></li>
+        <li><b>挑选石材，得到 2–3 个整体方案</b><span>换石材、铺法或软装风格后重新出图，满意再确认。</span></li>
       </ol>
     </section>
     <section class="section">
@@ -338,6 +338,7 @@ function resultView(p, {preview = false} = {}) {
   const rows = [['石材', fin => fin ? `<span class="sw" style="background-image:url(${swatchURL(fin.stone, 48)})"></span>${stoneById[fin.stone].name}` : '—'],
     ['规格', fin => fin?.spec ? specLabel(fin.spec) : '—'], ['铺法', fin => fin?.layout ? layoutName[fin.layout] : '—'],
     ['波打线', fin => !fin?.layout ? '—' : fin.border ? stoneById[fin.borderStone].name : '无']];
+  const softRow = `<tr><th scope="row">软装</th>${p.schemes.map(x => `<td class="${x.id === s.id ? 'on' : ''}">${softById[x.soft]?.name || '—'}</td>`).join('')}</tr>`;
   const hints = p.facets.filter(id => facetById[id].floor === p.floor).flatMap(id => checkFinish(id, s.finishes[id]));
   const base = preview ? `/share/${p.token}` : `/project/${p.id}`;
   const dock = preview
@@ -350,7 +351,7 @@ function resultView(p, {preview = false} = {}) {
     <section class="result">
       <div class="result-head">
         <h1 class="title small">${title2(...splitName(p.name))}</h1>
-        <p class="meta">${chip(p.status)}<span>${p.schemes.length} 个铺贴方案 · ${p.facets.length} 处饰面</span></p>
+        <p class="meta">${chip(p.status)}<span>${p.schemes.length} 个整体方案 · ${p.facets.length} 处饰面</span></p>
         ${confirmed ? `<p class="confirmed-line">${icon('check', 16)} 你已确认 方案 ${p.confirmed.scheme} · 修订 ${p.confirmed.revision}</p>` : ''}
       </div>
       ${floors.length > 1 ? `<div class="seg" role="tablist" aria-label="楼层">${floors.map(f => `<button role="tab" aria-selected="${f.id === p.floor}" data-act="floor" data-v="${f.id}">${f.name}</button>`).join('')}</div>` : ''}
@@ -361,15 +362,17 @@ function resultView(p, {preview = false} = {}) {
           : `<div class="viewer" id="viewer"></div><div class="viewer-modes" role="group" aria-label="3D 范围"><button data-act="vmode" data-v="all" aria-pressed="${(p.vmode || 'all') === 'all'}">整栋</button><button data-act="vmode" data-v="floor" aria-pressed="${p.vmode === 'floor'}">${fl.name}</button></div>`}
         <figcaption><span>方案 ${s.id} · 修订 ${p.revisions[s.id]}</span><span>${view === 'image' ? '效果图' : '简化体块 · 拖动旋转'} · 示意素材</span></figcaption>
       </figure>
-      <div class="rail" role="group" aria-label="切换铺贴方案">${p.schemes.map(x => { const fin = x.finishes[mf]; return `<button class="rail-item" data-act="scheme" data-v="${x.id}" aria-pressed="${x.id === s.id}"><span class="rail-name">${x.id}<b>${x.title}</b></span><small>${fin ? `${stoneById[fin.stone].name}<br>${fin.spec ? specLabel(fin.spec) : '整板'}<br>${layoutName[fin.layout] || ''}` : ''}</small></button>`; }).join('')}</div>
+      <div class="rail" role="group" aria-label="切换铺贴方案">${p.schemes.map(x => { const fin = x.finishes[mf]; return `<button class="rail-item" data-act="scheme" data-v="${x.id}" aria-pressed="${x.id === s.id}"><span class="rail-name">${x.id}<b>${x.title}</b></span><small>${fin ? `${stoneById[fin.stone].name} · ${fin.spec ? specLabel(fin.spec) : '整板'}<br>${layoutName[fin.layout] || ''}<br>软装 ${softById[x.soft]?.name || ''}` : ''}</small></button>`; }).join('')}</div>
       <p class="scheme-line">${esc(s.line)}</p>
       <section class="compare">
-        <h2 class="h3">${facetById[mf].name}：三个方案的差异</h2>
+        <h2 class="h3">三个方案的差异 <small>${facetById[mf].name}</small></h2>
         <table><thead><tr><th scope="col"><span class="sr-only">项目</span></th>${p.schemes.map(x => `<th scope="col" class="${x.id === s.id ? 'on' : ''}">方案 ${x.id}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(([label, fn]) => { const vals = p.schemes.map(x => fn(x.finishes[mf])); const same = vals.every(v => v === vals[0]); return `<tr><th scope="row">${label}${same ? '<small>相同</small>' : ''}</th>${vals.map((v, i) => `<td class="${p.schemes[i].id === s.id ? 'on' : ''}${same ? ' same' : ''}">${v}</td>`).join('')}</tr>`; }).join('')}</tbody></table>
+        <tbody>${softRow}${rows.map(([label, fn]) => { const vals = p.schemes.map(x => fn(x.finishes[mf])); const same = vals.every(v => v === vals[0]); return `<tr><th scope="row">${label}${same ? '<small>相同</small>' : ''}</th>${vals.map((v, i) => `<td class="${p.schemes[i].id === s.id ? 'on' : ''}${same ? ' same' : ''}">${v}</td>`).join('')}</tr>`; }).join('')}</tbody></table>
       </section>
       <section class="scheme-facets">
-        <h2 class="h3">方案 ${s.id} · ${fl.name}饰面</h2>
+        <h2 class="h3">方案 ${s.id} · 软装 <small>${softById[s.soft]?.name}</small></h2>
+        <p class="small muted">${esc(softById[s.soft]?.line || '')}</p>
+        <h2 class="h3">方案 ${s.id} · ${fl.name}硬装</h2>
         <ul>${p.facets.filter(id => facetById[id].floor === p.floor).map(id => { const fin = s.finishes[id]; return `<li><span class="sw big" style="background-image:url(${swatchURL(fin.stone, 64)})"></span><div><b>${facetById[id].name}</b><small>${finishLine(id, fin)}</small></div></li>`; }).join('')}</ul>
         ${hints.length ? `<div class="checks">${hints.map(h => `<p class="alert ${h.level === 'conflict' ? 'danger' : 'hint'}">${icon(h.level === 'conflict' ? 'alert' : 'info', 16)}<span><b>${h.level === 'conflict' ? '冲突' : '提示'}</b>${h.text}</span></p>`).join('')}</div>` : ''}
       </section>
@@ -382,14 +385,16 @@ const splitName = name => { const i = name.indexOf(' · '); return i > 0 ? [name
 // ---------- 页面：选项式调整 ----------
 function adjustView(p) {
   const s = schemeOf(p);
-  if (!p.work || p.work.scheme !== s.id) p.work = {scheme: s.id, finishes: clone(s.finishes), history: [], rendering: false, justRendered: false};
+  if (!p.work || p.work.scheme !== s.id) p.work = {scheme: s.id, finishes: clone(s.finishes), soft: s.soft, history: [], rendering: false, justRendered: false};
+  if (!p.work.soft) p.work.soft = s.soft;
   const w = p.work;
   const floors = floorsOf(p);
   const fl = villa.floors.find(f => f.id === p.floor);
   const floorFacets = p.facets.filter(id => facetById[id].floor === p.floor);
   if (!floorFacets.includes(p.adj)) p.adj = mainFacet(p, p.floor);
   const fid = p.adj, f = facetById[fid], fin = w.finishes[fid];
-  const pending = p.facets.filter(id => JSON.stringify(w.finishes[id]) !== JSON.stringify(s.finishes[id]));
+  const softChanged = w.soft !== s.soft;
+  const pending = [...p.facets.filter(id => JSON.stringify(w.finishes[id]) !== JSON.stringify(s.finishes[id])), ...(softChanged ? ['soft'] : [])];
   const checks = [...new Set([fid, ...pending])].flatMap(id => checkFinish(id, w.finishes[id]).map(c => ({...c, id})));
   const conflict = checks.some(c => c.level === 'conflict');
   const specs = f.kind === 'wall' ? wallSpecs : floorSpecs;
@@ -404,13 +409,16 @@ function adjustView(p) {
         <h1 class="title small">调整<em>方案 ${s.id} · ${s.title}</em></h1>
         <button class="btn ghost small" data-act="undo" ${w.history.length && !w.rendering ? '' : 'disabled'}>${icon('undo', 16)} 撤回${w.history.length ? ` ${w.history.length}` : ''}</button>
       </div>
-      <p class="lede small">只能在给定选项内调整：换石材、规格、铺法和波打线。每次出图生成新的修订，原方案保留。</p>
+      <p class="lede small">只能在给定选项内调整：软装风格，以及各饰面的石材、规格、铺法和波打线。每次出图生成新的修订，原方案保留。</p>
       <figure class="plate compact ${w.rendering ? 'is-rendering' : ''}">
         <div class="plate-img"><img data-render="${p.floor}" data-pid="${p.id}" alt="当前修订效果图（示意）"></div>
         ${w.rendering ? `<div class="rendering" role="status"><b>重新出图中</b><span>按你的调整重新排版、渲染 · 约 20 秒（原型加速）</span><div class="bar-progress"><i style="animation-duration:2.6s"></i></div></div>` : ''}
         <figcaption><span>方案 ${s.id} · 修订 ${p.revisions[s.id]}${pending.length && !w.rendering ? ' · 有未出图的修改' : ''}</span><span>示意素材</span></figcaption>
       </figure>
       ${w.justRendered && !pending.length ? `<p class="alert ok" role="status">${icon('check', 16)}<span>已生成修订 ${p.revisions[s.id]}。可以确认，或继续调整。</span></p>` : ''}
+      <fieldset class="opt" ${w.rendering ? 'disabled' : ''}><legend class="h3">软装风格 <small>全屋家具与配色</small></legend>
+        <div class="soft-row">${softStyles.map(st => `<button class="soft" data-act="soft" data-v="${st.id}" aria-pressed="${w.soft === st.id}"><span class="soft-pal">${Object.values(st.palette).slice(0, 4).map(c => `<i style="background:${c}"></i>`).join('')}</span><b>${st.name}</b><small>${esc(st.line)}</small></button>`).join('')}</div></fieldset>
+      <h2 class="h3" style="margin-top:26px">硬装 <small>按饰面调整</small></h2>
       ${floors.length > 1 ? `<div class="seg" role="tablist" aria-label="楼层">${floors.map(x => `<button role="tab" aria-selected="${x.id === p.floor}" data-act="floor" data-v="${x.id}">${x.name}</button>`).join('')}</div>` : ''}
       <div class="facet-tabs" role="tablist" aria-label="${fl.name}饰面">${floorFacets.map(id => `<button role="tab" aria-selected="${id === fid}" data-act="adjfacet" data-v="${id}">${facetById[id].name.replace(/（.*）/, '')}${pending.includes(id) ? '<i class="dot" aria-label="已修改"></i>' : ''}</button>`).join('')}</div>
       <fieldset class="opt" ${w.rendering ? 'disabled' : ''}><legend class="h3">石材 <span class="tag">示意素材</span></legend>
@@ -427,7 +435,7 @@ function adjustView(p) {
     </section>`, {back: `/project/${p.id}`, dock}), after(root) {
     if (w.rendering) later(() => {
       const sc = schemeOf(p);
-      sc.finishes = clone(w.finishes); p.revisions[sc.id]++; w.rendering = false; w.justRendered = true; save(); render();
+      sc.finishes = clone(w.finishes); sc.soft = w.soft; p.revisions[sc.id]++; w.rendering = false; w.justRendered = true; save(); render();
     }, 2600);
   }};
 }
@@ -452,7 +460,8 @@ function confirmView(p) {
       <h1 class="title">确认<em>方案 ${s.id} · 修订 ${p.revisions[s.id]}</em></h1>
       <p class="lede">确认后，${workspace.name}会收到这一版铺贴方案。之后如果再调整，需要重新确认。</p>
       <figure class="plate compact"><div class="plate-img"><img data-render="${p.floor}" data-pid="${p.id}" alt="确认的方案效果图（示意）"></div><figcaption><span>方案 ${s.id} · ${s.title}</span><span>示意素材</span></figcaption></figure>
-      <details class="spec-list" open><summary class="h3">饰面清单 · ${p.facets.length} 处</summary>
+      <details class="spec-list" open><summary class="h3">方案清单 · 软装 + ${p.facets.length} 处硬装</summary>
+        <h3>软装</h3><ul><li><b>${softById[s.soft]?.name}</b><span>${esc(softById[s.soft]?.line || '')}</span></li></ul>
         ${floorsOf(p).map(fl => `<h3>${fl.name}</h3><ul>${p.facets.filter(id => facetById[id].floor === fl.id).map(id => `<li><b>${facetById[id].name}</b><span>${finishLine(id, s.finishes[id])}</span></li>`).join('')}</ul>`).join('')}
       </details>
       <label class="field"><span>给企业留言（选填）</span><textarea id="msg" rows="3" maxlength="300" placeholder="例如：二层想再看看深色石材；希望周末看样品。">${esc(c.message)}</textarea></label>
@@ -662,6 +671,8 @@ const R = {
   'result-3d': ['客户自助', '方案结果 · 3D 查看', () => { seed(); const p = sampleProject('published'); p.view = '3d'; go(`/project/${p.id}`); }],
   'adjust': ['客户自助', '选项式调整', () => { seed(); const p = sampleProject('published'); p.active = 'B'; go(`/project/${p.id}/adjust`); }],
   'adjust-hint': ['客户自助', '调整 · 窄条提示', () => { seed(); const p = sampleProject('published'); p.active = 'B'; p.adj = 'f1-living'; adjustView(p); setOption(p, 'layout', 'straight'); go(`/project/${p.id}/adjust`); }],
+  'adjust-soft': ['客户自助', '调整 · 切换软装风格', () => { seed(); const p = sampleProject('published'); p.active = 'A'; adjustView(p); p.work.history.push({fid: '__soft', before: 'modern', label: '软装风格：现代简约 → 新中式'}); p.work.soft = 'chinese'; go(`/project/${p.id}/adjust`); }],
+  'adjust-soft-done': ['客户自助', '调整 · 新风格已出图', () => { seed(); const p = sampleProject('published'); p.active = 'A'; adjustView(p); schemeOf(p).soft = 'luxury'; p.work.soft = 'luxury'; p.revisions.A = 2; p.work.justRendered = true; go(`/project/${p.id}/adjust`); }],
   'adjust-conflict': ['客户自助', '调整 · 冲突', () => { seed(); const p = sampleProject('published'); p.active = 'B'; p.adj = 'f1-living'; adjustView(p); setOption(p, 'stone', 'huimu'); setOption(p, 'layout', 'herringbone'); go(`/project/${p.id}/adjust`); }],
   'adjust-rendering': ['客户自助', '调整 · 重新出图中', () => { seed(); const p = sampleProject('published'); p.active = 'B'; p.adj = 'f1-living'; adjustView(p); setOption(p, 'stone', 'yudu'); p.work.rendering = true; go(`/project/${p.id}/adjust`); }],
   'adjust-done': ['客户自助', '调整 · 新修订已出图', () => { seed(); const p = sampleProject('published'); p.active = 'B'; p.adj = 'f1-living'; adjustView(p); setOption(p, 'stone', 'yudu'); schemeOf(p).finishes = clone(p.work.finishes); p.revisions.B = 2; p.work.justRendered = true; go(`/project/${p.id}/adjust`); }],
@@ -737,7 +748,8 @@ const actions = {
   'gate-login': el => { closeSheet(); go(`/login?next=/bind/${el.dataset.v}`); },
   adjfacet: el => { currentProject().adj = el.dataset.v; },
   set: el => setOption(currentProject(), el.dataset.k, el.dataset.v),
-  undo: () => { const w = currentProject().work, h = w.history.pop(); if (h) { w.finishes[h.fid] = h.before; currentProject().adj = h.fid; w.justRendered = false; } },
+  soft: el => { const p = currentProject(), w = p.work; if (w.soft === el.dataset.v) return; w.history.push({fid: '__soft', before: w.soft, label: `软装风格：${softById[w.soft].name} → ${softById[el.dataset.v].name}`}); w.soft = el.dataset.v; w.justRendered = false; },
+  undo: () => { const w = currentProject().work, h = w.history.pop(); if (h) { if (h.fid === '__soft') w.soft = h.before; else { w.finishes[h.fid] = h.before; currentProject().adj = h.fid; } w.justRendered = false; } },
   rerender: () => { currentProject().work.rendering = true; },
   contact: () => { const c = currentProject().confirmDraft; c.contact = !c.contact; },
   ctime: el => { currentProject().confirmDraft.time = el.dataset.v; },

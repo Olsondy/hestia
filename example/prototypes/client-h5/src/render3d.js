@@ -1,6 +1,6 @@
 // 效果图（确定性离屏渲染）与简化 3D 体块查看。仅为原型演示，不代表正式出图管线。
 import * as THREE from 'three';
-import {villa, facetById} from './data.js';
+import {villa, facetById, softById} from './data.js';
 import {floorCanvas, wallCanvas, stoneCanvas} from './stone.js';
 
 let shared = null;
@@ -20,23 +20,51 @@ function box(w, h, d, mat, x, y, z, parent) {
   parent.add(m); return m;
 }
 
-function furnish(scene, W, D, kind) {
-  const fabric = plaster('#d9cfc3'), dark = new THREE.MeshStandardMaterial({color: '#3a302b', roughness: .45}), wood = plaster('#8a6a52');
+// 软装：按风格给出家具形体与配色（简化体块，仅示意）。
+function furnish(scene, W, D, kind, softId = 'modern') {
+  const st = softById[softId] || softById.modern, p = st.palette;
+  const fabric = plaster(p.fabric), frame = new THREE.MeshStandardMaterial({color: p.frame, roughness: softId === 'luxury' ? .25 : .5, metalness: softId === 'luxury' ? .75 : 0});
+  const wood = new THREE.MeshStandardMaterial({color: p.wood, roughness: .5}), accent = plaster(p.accent);
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.2), plaster(p.rug)); rug.rotation.x = -Math.PI / 2; rug.position.set(.9, .006, .1); rug.receiveShadow = true;
+  if (softId === 'luxury') { rug.geometry = new THREE.CircleGeometry(1.45, 64); }
+  scene.add(rug);
+  const lamp = new THREE.Group(), lampMat = new THREE.MeshStandardMaterial({color: p.lamp, roughness: .3, metalness: softId === 'chinese' ? 0 : .6, emissive: '#ffdcae', emissiveIntensity: .15});
+  if (softId === 'modern') box(1.6, .04, .08, lampMat, 0, 0, 0, lamp);
+  else if (softId === 'luxury') { const ring = new THREE.Mesh(new THREE.TorusGeometry(.5, .03, 12, 48), lampMat); ring.rotation.x = Math.PI / 2; lamp.add(ring); }
+  else { const shade = new THREE.Mesh(new THREE.CylinderGeometry(.3, .36, .42, 6), lampMat); lamp.add(shade); }
+  lamp.position.set(1, 2.55, .1); scene.add(lamp);
   if (kind === 'tea') {
     box(2.2, .38, .9, wood, .4, .19, -.2, scene);
-    for (const dx of [-.8, .8]) box(.5, .12, .5, fabric, .4 + dx, .06, .65, scene);
-    box(.9, .9, .35, dark, W / 2 - .5, .45, -D / 2 + .3, scene);
+    for (const dx of [-.8, .8]) box(.5, softId === 'chinese' ? .45 : .14, .5, softId === 'chinese' ? wood : fabric, .4 + dx, softId === 'chinese' ? .22 : .07, .65, scene);
+    box(.9, .9, .35, frame, W / 2 - .5, .45, -D / 2 + .3, scene);
     return;
   }
-  const chair = x => { const g = new THREE.Group(); box(.8, .36, .8, fabric, 0, .18, 0, g); box(.8, .4, .14, fabric, 0, .55, .33, g); g.position.set(x, 0, .9); g.rotation.y = Math.PI + (x > 0 ? -.35 : .35); scene.add(g); };
-  chair(1.9);
-  const table = new THREE.Mesh(new THREE.CylinderGeometry(.45, .45, .34, 48), dark);
-  table.position.set(1.2, .17, -.2); table.castShadow = true; scene.add(table);
-  box(2.4, .5, .42, dark, .2, .25, -D / 2 + .32, scene); // 电视柜
-  const pot = new THREE.Mesh(new THREE.CylinderGeometry(.22, .17, .5, 32), plaster('#cdbfae'));
-  pot.position.set(W / 2 - .5, .25, -D / 2 + .6); pot.castShadow = true; scene.add(pot);
-  const leaf = new THREE.Mesh(new THREE.SphereGeometry(.48, 24, 16), plaster('#5f6b4f'));
-  leaf.position.set(W / 2 - .5, 1.05, -D / 2 + .6); leaf.scale.set(1, 1.3, 1); leaf.castShadow = true; scene.add(leaf);
+  // 沙发：现代为 L 型布艺，新中式为木框坐垫，轻奢为弧形丝绒
+  if (softId === 'luxury') {
+    const seat = new THREE.Mesh(new THREE.TorusGeometry(1.25, .32, 16, 64, Math.PI * .9), fabric); seat.rotation.x = -Math.PI / 2; seat.rotation.z = Math.PI * 1.05; seat.position.set(.9, .3, .75); seat.castShadow = true; scene.add(seat);
+  } else {
+    const sofa = new THREE.Group();
+    box(2.6, .42, .9, fabric, 0, .21, 0, sofa); box(2.6, .45, .2, fabric, 0, .64, .36, sofa);
+    if (softId === 'modern') { box(.9, .42, 1.6, fabric, -1.3, .21, -.35, sofa); }
+    else { box(2.75, .08, 1.0, wood, 0, .04, 0, sofa); for (const x of [-1.33, 1.33]) box(.1, .62, .95, wood, x, .31, 0, sofa); }
+    sofa.position.set(.9, 0, 1.25); sofa.rotation.y = Math.PI; scene.add(sofa);
+  }
+  if (softId === 'chinese') {
+    box(1.6, .42, .6, wood, .9, .21, .05, scene); // 长条茶几
+    const chair = x => { const g = new THREE.Group(); box(.62, .45, .6, wood, 0, .22, 0, g); const back = new THREE.Mesh(new THREE.TorusGeometry(.32, .035, 8, 24, Math.PI), wood); back.position.set(0, .75, .26); g.add(back); g.position.set(x, 0, -.5); g.rotation.y = x > 1 ? -.5 : .5; scene.add(g); };
+    chair(2.3); chair(-.4);
+    box(1.8, 1.9, .05, accent, W / 2 - .7, .95, -D / 2 + .5, scene); // 屏风
+  } else {
+    const table = new THREE.Mesh(new THREE.CylinderGeometry(.5, .5, .36, 48), softId === 'luxury' ? plaster('#efece7') : frame);
+    table.position.set(.9, .18, .1); table.castShadow = true; scene.add(table);
+    if (softId === 'luxury') { const leg = new THREE.Mesh(new THREE.TorusGeometry(.42, .02, 8, 40), frame); leg.rotation.x = Math.PI / 2; leg.position.set(.9, .02, .1); scene.add(leg); }
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(.22, .17, .5, 32), plaster('#cdbfae'));
+    pot.position.set(W / 2 - .5, .25, -D / 2 + .6); pot.castShadow = true; scene.add(pot);
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(.48, 24, 16), plaster('#5f6b4f'));
+    leaf.position.set(W / 2 - .5, 1.05, -D / 2 + .6); leaf.scale.set(1, 1.3, 1); leaf.castShadow = true; scene.add(leaf);
+  }
+  box(2.4, .5, .42, frame, .2, .25, -D / 2 + .32, scene); // 电视柜 / 条案
+  box(1.1, .7, .03, accent, -W / 2 + 1.6, 1.7, -D / 2 + .02, scene); // 挂画
 }
 
 function buildRoom(floorId, scheme) {
@@ -73,7 +101,7 @@ function buildRoom(floorId, scheme) {
       box(1.14, .04, .3, treadMat, -W / 2 + .6, y - .02, z + .01, scene);
     }
   }
-  furnish(scene, W, D, sc.room);
+  furnish(scene, W, D, sc.room, scheme.soft);
   scene.add(new THREE.HemisphereLight('#fff7ec', '#a8927c', 1.1));
   const sun = new THREE.DirectionalLight('#fff1dc', 2.6);
   sun.position.set(W / 2 + 4, 6, D / 2 + 1); sun.target.position.set(-1, 0, -1);
@@ -100,7 +128,7 @@ export function webglOK() {
 
 // 渲染某方案某楼层的效果图，返回 dataURL 并缓存。
 export function renderImage(floorId, scheme, w = 960, h = 760) {
-  const key = JSON.stringify([floorId, scheme.finishes, w, h]);
+  const key = JSON.stringify([floorId, scheme.finishes, scheme.soft, w, h]);
   if (images.has(key)) return images.get(key);
   if (!webglOK()) return null;
   const r = renderer();

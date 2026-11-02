@@ -53,7 +53,8 @@
       "key": "W05",
       "number": 50,
       "blockedBy": [
-        46
+        46,
+        52
       ]
     },
     {
@@ -62,7 +63,50 @@
       "blockedBy": [
         48,
         49,
-        50
+        50,
+        56,
+        57
+      ]
+    },
+    {
+      "key": "K01",
+      "number": 52,
+      "blockedBy": []
+    },
+    {
+      "key": "K02",
+      "number": 53,
+      "blockedBy": [
+        52
+      ]
+    },
+    {
+      "key": "K03",
+      "number": 54,
+      "blockedBy": [
+        52
+      ]
+    },
+    {
+      "key": "P03",
+      "number": 55,
+      "blockedBy": []
+    },
+    {
+      "key": "W07",
+      "number": 56,
+      "blockedBy": [
+        45,
+        47,
+        54
+      ]
+    },
+    {
+      "key": "H02",
+      "number": 57,
+      "blockedBy": [
+        55,
+        53
       ]
     }
   ],

@@ -87,7 +87,7 @@ async function lockedImport(client: PoolClient, actor: string, projectId: string
  * import. Same operationId + same file returns the same import; a different file is an idempotency conflict.
  */
 export async function createFloorplanImport(principal: Principal, projectId: string, input: unknown, bytes: Uint8Array,
-  fileName: string, deps: { store?: PrivateFileStore; queue?: PgBoss } = {}) {
+  fileName: string, deps: { store?: PrivateFileStore; queue?: PgBoss; /** Caller already authorised the actor for this project (customer request flow). */ authorized?: boolean } = {}) {
   const actor = actorOf(principal), id = idSchema.parse(projectId), value = createFloorplanImportSchema.parse(input);
   const store = deps.store ?? privateStore();
   const name = cleanName(fileName);
@@ -108,7 +108,8 @@ export async function createFloorplanImport(principal: Principal, projectId: str
     return row;
   };
   const access = async (client: PoolClient) => {
-    if (!(await client.query(`SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`, [id, actor])).rowCount) throw notFound();
+    const check = deps.authorized ? 'SELECT 1 FROM projects p WHERE p.id=$1 FOR SHARE' : `SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`;
+    if (!(await client.query(check, deps.authorized ? [id] : [id, actor])).rowCount) throw notFound();
   };
   try {
     await lease.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [lock]);

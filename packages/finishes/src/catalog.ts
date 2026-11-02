@@ -29,3 +29,8 @@ export async function addStones(client: PoolClient, workspaceId: string, stones:
 export async function retireStone(client: PoolClient, workspaceId: string, ref: StoneReference) {
   await client.query("UPDATE workspace_stones SET status='retired' WHERE workspace_id=$1 AND stone_id=$2 AND version=$3", [workspaceId, ref.stoneId, ref.stoneVersion]);
 }
+/** Active stones of a workspace (customer entry and scheme generation). */
+export async function workspaceStones(client: Pick<PoolClient, 'query'>, workspaceId: string): Promise<StoneSpec[]> {
+  const rows = (await client.query<{ spec: unknown }>("SELECT spec FROM workspace_stones WHERE workspace_id=$1 AND status='active' ORDER BY stone_id,version", [workspaceId])).rows;
+  return rows.map(row => stoneSpecSchema.parse(row.spec));
+}

@@ -10,7 +10,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "node scripts/build.mjs && node scripts/build-client-h5.mjs && node scripts/build-enterprise-workbench.mjs && node scripts/build-client-h5-styles.mjs",
+    "build": "node scripts/build.mjs && node scripts/build-client-h5.mjs && node scripts/build-enterprise-workbench.mjs && node scripts/build-client-h5-styles.mjs && node scripts/build-client-h5-layouts.mjs",
     "test": "node --test scripts/check.mjs",
     "check": "pnpm build && pnpm test && pnpm typecheck && pnpm test:core",
     "preview": "node scripts/serve.mjs",

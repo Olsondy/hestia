@@ -92,12 +92,14 @@ test('a customer submits the demo villa with stones and sees three published sch
   assert.equal(catalog.body.catalog.stones.length, demoStones.length);
   const finishIds = catalog.body.catalog.demoVilla.finishes.map((finish: { id: string }) => finish.id);
   const cookie = await customer(), stones = ['demo-white-marble', 'demo-beige-marble', 'demo-grey-woodgrain'].map(stoneId => ({ stoneId, stoneVersion: 1 }));
-  const payload = { source: 'demo-villa', operationId: randomUUID(), finishIds, stones };
+  const payload = { source: 'demo-villa', operationId: randomUUID(), finishIds, stones, preferences: { tone: 'light', patterns: ['diagonal'], border: 'auto' } };
   const created = await call(requestsRoute.POST, { entry: slug }, { cookie, json: payload });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const request = created.body.request;
   assert.equal(request.status, 'published');
   assert.equal(request.schemes.length, 3);
+  assert.deepEqual(request.preferences, { tone: 'light', patterns: ['diagonal'], border: 'auto' }, 'taste is kept for the enterprise');
+  assert.equal(request.origin, 'customer'); assert.equal(request.finishes.length, finishIds.length);
   assert.ok(request.schemes.every((scheme: { adoptable: boolean; render: { status: string } }) => scheme.adoptable && scheme.render.status === 'queued'));
   assert.equal((await call(requestsRoute.POST, { entry: slug }, { cookie, json: payload })).body.request.id, request.id, 'retry returns the same request');
   // Closing the page does not matter: renders are durable jobs; reopening shows images once rendered.

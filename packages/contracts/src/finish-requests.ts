@@ -4,12 +4,19 @@ import type { Finish, SurfaceDesign, StoneSpec } from './finishes';
 import type { RenderView } from './renders';
 
 const stoneRef = z.object({ stoneId: z.string().min(1).max(120), stoneVersion: z.number().int().positive() }).strict();
+/** Customer taste recorded with the request for the enterprise to follow up; rule generation does not read it. */
+export const requestPreferencesSchema = z.object({
+  tone: z.enum(['light', 'warm', 'dark', 'unsure']).optional(),
+  patterns: z.array(z.enum(['straight', 'running-bond', 'herringbone', 'diagonal'])).max(4).optional(),
+  border: z.enum(['yes', 'no', 'auto']).optional(),
+}).strict();
+export type RequestPreferences = z.infer<typeof requestPreferencesSchema>;
 /** 方案需求. Demo villa: pick finishes and stones now. Drawing: upload next; finishes are derived after conversion. */
 export const createFinishRequestSchema = z.discriminatedUnion('source', [
   z.object({ source: z.literal('demo-villa'), operationId: idSchema, finishIds: z.array(z.string().min(1).max(120)).min(1).max(50),
-    stones: z.array(stoneRef).min(1).max(3), note: z.string().trim().max(500).optional() }).strict(),
+    stones: z.array(stoneRef).min(1).max(3), note: z.string().trim().max(500).optional(), preferences: requestPreferencesSchema.optional() }).strict(),
   z.object({ source: z.literal('drawing'), operationId: idSchema, stones: z.array(stoneRef).min(1).max(3),
-    note: z.string().trim().max(500).optional() }).strict(),
+    note: z.string().trim().max(500).optional(), preferences: requestPreferencesSchema.optional() }).strict(),
 ]);
 export const publishFinishRequestSchema = z.object({ operationId: idSchema }).strict();
 export type FinishRequestStatus = 'awaiting_drawing' | 'converting' | 'assisted_conversion' | 'pending_review' | 'published';
@@ -19,8 +26,13 @@ export type FinishSchemeView = {
   surfaceDesign: SurfaceDesign;
   render: Pick<RenderView, 'id' | 'status' | 'width' | 'height' | 'error'> & { imageHref: string | null } | null;
 };
+/** Display data of one finish in a request: name, kind and owning level (for floor tabs). */
+export type RequestFinishView = { id: string; name: string; kind: 'floor' | 'wall' | 'stair'; levelId: string | null; levelName: string | null };
 export type FinishRequestView = {
   id: string; workspaceId: string; projectId: string; source: 'demo-villa' | 'drawing'; status: FinishRequestStatus;
+  /** Project name; for drawings the uploaded file name once known. */
+  title: string; origin: 'customer' | 'member'; drawingName: string | null;
+  finishes: RequestFinishView[]; preferences: RequestPreferences | null;
   /** Customer-facing explanation of the state; never claims recognition for assisted drawings. */
   statusLabel: string;
   finishIds: string[]; stones: { stoneId: string; stoneVersion: number }[]; note: string | null;
@@ -31,7 +43,11 @@ export type FinishRequestView = {
   confirmation: { schemeId: string; revision: number; current: boolean; confirmedAt: string } | null;
   createdAt: string; updatedAt: string; publishedAt: string | null;
 };
-export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; demoVilla: { finishes: Finish[] } };
+/** Plan outline of the demo villa for the finish picker (metres, plan x/z). */
+export type DemoVillaPlanView = { levels: { id: string; name: string }[]; rooms: { id: string; name: string | null; levelId: string; outline: { x: number; z: number }[] }[];
+  walls: { id: string; levelId: string; a: { x: number; z: number }; b: { x: number; z: number } }[];
+  stairs: { id: string; levelId: string; outline: { x: number; z: number }[] }[] };
+export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; demoVilla: { finishes: Finish[]; plan: DemoVillaPlanView } };
 export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; schemeId: string | null; schemeRevision: number | null;
   message: string | null; contactRequested: boolean; preferredTime: string | null; createdAt: string };
 export type ShareView = { id: string; targetPhone: string | null; bindingCode: boolean; expiresAt: string | null; revokedAt: string | null; createdAt: string };
@@ -50,7 +66,9 @@ export const decideApplicationSchema = z.object({ operationId: idSchema, decisio
 export const bindShareSchema = z.object({ operationId: idSchema, code: z.string().trim().min(4).max(12).optional() }).strict();
 export const applyBindingSchema = z.object({ operationId: idSchema, note: z.string().trim().max(200).optional() }).strict();
 export type CreatedShareView = { share: ShareView; url: string | null; token: string | null; bindingCode: string | null; note: string };
-export type SharePreviewView = { workspace: { slug: string; name: string }; request: FinishRequestView; bound: boolean; binding: 'phone' | 'code' };
+/** `viewer` is present when the visitor is signed in: whether the request is theirs and whether they applied. */
+export type SharePreviewView = { workspace: { slug: string; name: string }; request: FinishRequestView; bound: boolean; binding: 'phone' | 'code';
+  viewer: { boundToMe: boolean; application: 'pending' | 'rejected' | null } | null };
 
 const tileSize = z.object({ length: z.number().finite().positive().max(4), width: z.number().finite().positive().max(4) }).strict();
 /** One option-based change to one finish of a scheme. Omitted fields keep their current value. */

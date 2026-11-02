@@ -5,8 +5,9 @@ import { DomainError } from '../../contracts/src/project';
 import { transaction } from '../../persistence/src/client';
 import { privateStore, type PrivateFileStore } from '../../files/src/storage';
 import type { RenderRow } from './service';
-import { renderArtifact } from './image';
+import { renderArtifact, schemeShot } from './image';
 import { hash, bytesHash, renderVersions } from './versions';
+import { RENDER_LEASE_SECONDS } from './queue';
 
 // Capture the code/assets this module was loaded alongside. A long-lived Worker must not
 // label an old in-memory renderer with newer source files' fingerprints after a hot edit.
@@ -37,7 +38,7 @@ export async function claimRender(id: string): Promise<RenderClaim | null> {
     const generation = row.generation + 1, resourceId = randomUUID(), key = `projects/${row.project_id}/resources/${resourceId}.png`;
     await client.query("INSERT INTO resources(id,project_id,object_key,media_type,state) VALUES($1,$2,$3,'image/png','pending')", [resourceId, row.project_id, key]);
     await client.query('INSERT INTO render_attempts(render_id,generation,resource_id) VALUES($1,$2,$3)', [id, generation, resourceId]);
-    await client.query("UPDATE project_renders SET status='running',generation=$2,attempts=attempts+1,lease_until=clock_timestamp()+interval '120 seconds',error=NULL,updated_at=now() WHERE id=$1", [id, generation]);
+    await client.query("UPDATE project_renders SET status='running',generation=$2,attempts=attempts+1,lease_until=clock_timestamp()+make_interval(secs => $3),error=NULL,updated_at=now() WHERE id=$1", [id, generation, RENDER_LEASE_SECONDS]);
     return { render: row, generation, resourceId, key };
   });
 }
@@ -68,8 +69,10 @@ export async function runRender(id: string, options: { store?: PrivateFileStore;
       throw new DomainError('RENDER_VERSION_CHANGED', '生成规则已更新，请按当前规则重新生成。', 409);
     if (hash({ scene: row.snapshot, source: row.source, scale: row.scale, synthetic: row.synthetic }) !== row.snapshot_hash)
       throw new DomainError('SNAPSHOT_MISMATCH', '来源快照校验失败。', 409);
+    const preset = row.source.kind === 'scheme' ? schemeShot(row.snapshot) : undefined;
     const bytes = await (options.render ?? renderArtifact)(row.snapshot, row.label,
-      `项目修订 ${row.source.projectRevision}　快照 ${row.snapshot_hash.slice(0, 12)}　资产 ${row.asset_version.slice(0, 8)}　渲染 ${row.renderer_version.slice(0, 8)}`);
+      `项目修订 ${row.source.projectRevision}　快照 ${row.snapshot_hash.slice(0, 12)}　资产 ${row.asset_version.slice(0, 8)}　渲染 ${row.renderer_version.slice(0, 8)}`,
+      undefined, preset ? { preset } : undefined);
     const after = await renderVersions();
     if (after.assetVersion !== versions.assetVersion || after.rendererVersion !== versions.rendererVersion)
       throw new DomainError('RENDER_VERSION_CHANGED', '生成期间规则已更新，请重新生成。', 409);

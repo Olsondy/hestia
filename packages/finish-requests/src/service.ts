@@ -2,9 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { PgBoss } from 'pg-boss';
 import { DomainError, idSchema, spatialStateSchema, type SpatialState } from '../../contracts/src/project';
+import { effectiveLevels, levelOf, stairToPlan } from '../../contracts/src/building';
 import type { Finish } from '../../contracts/src/finishes';
 import type { SceneSnapshot } from '../../contracts/src/scene';
-import { createFinishRequestSchema, createMemberRequestSchema, publishFinishRequestSchema, type ClientCatalogView, type FinishRequestStatus, type FinishRequestView,
+import { createFinishRequestSchema, createMemberRequestSchema, publishFinishRequestSchema, type ClientCatalogView, type DemoVillaPlanView, type FinishRequestStatus, type FinishRequestView,
+  type RequestFinishView, type RequestPreferences,
   type FinishSchemeView, type LeadView } from '../../contracts/src/finish-requests';
 import { pool, transaction } from '../../persistence/src/client';
 import { actorOf, type Principal } from '../../workspaces/src/access';
@@ -21,7 +23,7 @@ import { sharingOf } from './sharing-view';
 export type RequestRow = {
   id: string; workspace_id: string; customer_id: string | null; created_by: string; origin: 'customer' | 'member'; project_id: string; request_id: string; request_hash: string;
   source: 'demo-villa' | 'drawing'; floorplan_import_id: string | null; finish_ids: string[]; stones: { stoneId: string; stoneVersion: number }[];
-  note: string | null; status: 'awaiting_drawing' | 'converting' | 'pending_review' | 'published'; review_reason: string | null;
+  note: string | null; preferences: RequestPreferences | null; status: 'awaiting_drawing' | 'converting' | 'pending_review' | 'published'; review_reason: string | null;
   published_at: Date | null; published_by: string | null; created_at: Date; updated_at: Date;
 };
 export type SchemeRow = { id: string; request_id: string; ordinal: number; name: string; summary: string; revision: number;
@@ -52,12 +54,30 @@ async function importStatus(client: Pick<PoolClient, 'query'>, row: RequestRow):
   const status = (await client.query<{ status: string }>('SELECT status FROM floorplan_imports WHERE id=$1', [row.floorplan_import_id])).rows[0]?.status;
   return status === 'assisted_conversion' ? 'assisted_conversion' : status === 'pending_review' || status === 'failed' ? 'pending_review' : 'converting';
 }
+/** Name, kind and level of each requested finish, read from the project's fixed facts. */
+export function requestFinishes(facts: SpatialState['fixedFacts'], ids: string[]): RequestFinishView[] {
+  const levels = effectiveLevels(facts), named = new Map((facts.levels ?? []).map((level, index) => [level.id, level.name ?? `${index + 1} 层`]));
+  return ids.flatMap(id => {
+    const finish = facts.finishes?.find(item => item.id === id);
+    if (!finish) return [];
+    const levelId = finish.kind === 'stair' ? facts.stairs?.find(stair => stair.id === finish.stairId)?.fromLevelId
+      : finish.kind === 'wall' ? levelOf(facts.walls.find(wall => wall.id === finish.wallId) ?? {}, levels)
+        : finish.levelId ?? (finish.roomId ? levelOf(facts.rooms.find(room => room.id === finish.roomId) ?? {}, levels) : undefined);
+    const level = facts.levels?.length ? levelId ?? null : null;
+    return [{ id, name: finish.name ?? id, kind: finish.kind, levelId: level, levelName: level ? named.get(level) ?? null : null }];
+  });
+}
 export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience: 'customer' | 'member', slug?: string): Promise<FinishRequestView> {
   const status = await importStatus(client, row);
+  const project = (await client.query<{ name: string; snapshot: unknown }>('SELECT name,snapshot FROM projects WHERE id=$1', [row.project_id])).rows[0];
+  const drawingName = row.floorplan_import_id
+    ? (await client.query<{ file_name: string }>('SELECT file_name FROM floorplan_imports WHERE id=$1', [row.floorplan_import_id])).rows[0]?.file_name ?? null : null;
+  const facts = spatialStateSchema.parse(project.snapshot).fixedFacts;
   const schemes = audience === 'customer' && row.status !== 'published' ? []
     : (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE request_id=$1 ORDER BY ordinal', [row.id])).rows;
   const renders = await renderStatuses(row.project_id, schemes.flatMap(s => s.render_id ? [s.render_id] : []), client);
   return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, source: row.source, status, statusLabel: labels[status],
+    title: project.name, origin: row.origin, drawingName, finishes: requestFinishes(facts, row.finish_ids), preferences: row.preferences ?? null,
     finishIds: row.finish_ids, stones: row.stones, note: row.note, floorplanImportId: row.floorplan_import_id,
     schemes: schemes.map(s => {
       const render = s.render_id ? renders.get(s.render_id) : undefined;
@@ -115,11 +135,22 @@ async function settle(client: PoolClient, row: RequestRow, result: { count: numb
   else await client.query("UPDATE finish_requests SET status='published',review_reason=NULL,published_at=now(),published_by=$2,updated_at=now() WHERE id=$1", [row.id, publishedBy]);
 }
 
+function planOf(facts: SpatialState['fixedFacts']): DemoVillaPlanView {
+  const levels = effectiveLevels(facts);
+  return {
+    levels: levels.map((level, index) => ({ id: level.id, name: level.name ?? `${index + 1} 层` })),
+    rooms: facts.rooms.map(room => ({ id: room.id, name: room.name ?? null, levelId: levelOf(room, levels), outline: room.outline })),
+    walls: facts.walls.map(wall => ({ id: wall.id, levelId: levelOf(wall, levels), a: wall.a, b: wall.b })),
+    stairs: (facts.stairs ?? []).map(stair => ({ id: stair.id, levelId: stair.fromLevelId,
+      outline: [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => stairToPlan(stair, { x: x * stair.width / 2, z: z * stair.depth / 2 })) })),
+  };
+}
 /** Public: what a customer can choose from at an entry. */
 export async function clientCatalog(slug: string): Promise<ClientCatalogView> {
   return transaction(async client => {
     const entry = await customerEntry(client, slug), state = initialState('demo-villa');
-    return { workspace: { slug: entry.slug, name: entry.name }, stones: await workspaceStones(client, entry.id), demoVilla: { finishes: state.fixedFacts.finishes ?? [] } };
+    return { workspace: { slug: entry.slug, name: entry.name }, stones: await workspaceStones(client, entry.id),
+      demoVilla: { finishes: state.fixedFacts.finishes ?? [], plan: planOf(state.fixedFacts) } };
   });
 }
 
@@ -168,9 +199,10 @@ export async function createFinishRequest(principal: Principal, slug: string, in
     if (demo) for (const id of value.finishIds) if (!state.fixedFacts.finishes?.some(finish => finish.id === id))
       throw new DomainError('FINISH_NOT_FOUND', '所选部位不在示例别墅中。', 404);
     const projectId = await insertProjectInTransaction(client, { workspaceId: entry.id, createdBy: userId, name: demo ? '方案需求 · 示例别墅' : '方案需求 · 户型图纸', state, operationId: value.operationId });
-    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,created_by,project_id,request_id,request_hash,source,finish_ids,stones,note,status)
-      VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [randomUUID(), entry.id, userId, projectId, value.operationId, hash, value.source,
-      JSON.stringify(demo ? value.finishIds : []), JSON.stringify(value.stones), value.note ?? null, demo ? 'pending_review' : 'awaiting_drawing'])).rows[0];
+    const row = (await client.query<RequestRow>(`INSERT INTO finish_requests(id,workspace_id,customer_id,created_by,project_id,request_id,request_hash,source,finish_ids,stones,note,status,preferences)
+      VALUES($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`, [randomUUID(), entry.id, userId, projectId, value.operationId, hash, value.source,
+      JSON.stringify(demo ? value.finishIds : []), JSON.stringify(value.stones), value.note ?? null, demo ? 'pending_review' : 'awaiting_drawing',
+      value.preferences ? JSON.stringify(value.preferences) : null])).rows[0];
     if (demo) await settle(client, row, await generate(client, row, state, 1, deps), null);
     return view(client, (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [row.id])).rows[0], 'customer', slug);
   });
@@ -217,6 +249,22 @@ export async function readSchemeImage(principal: Principal, slug: string, reques
     return { row, renderId: scheme.render_id };
   });
   return readRenderImage(row.project_id, renderId, store);
+}
+
+/** Frozen scene of a scheme's current render: the same snapshot the still was rendered from, for the 3D viewer. */
+export async function renderScene(client: Pick<PoolClient, 'query'>, row: RequestRow, schemeId: string): Promise<SceneSnapshot> {
+  const scheme = (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE id=$1 AND request_id=$2', [idSchema.parse(schemeId), row.id])).rows[0];
+  if (!scheme?.render_id) throw notFound();
+  const render = (await client.query<{ snapshot: SceneSnapshot }>('SELECT snapshot FROM project_renders WHERE id=$1 AND project_id=$2', [scheme.render_id, row.project_id])).rows[0];
+  if (!render) throw notFound();
+  return render.snapshot;
+}
+export async function readSchemeScene(principal: Principal, slug: string, requestId: string, schemeId: string) {
+  return transaction(async client => {
+    const { userId, entry } = await customer(client, principal, slug), row = (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [idSchema.parse(requestId)])).rows[0];
+    if (!row || row.customer_id !== userId || row.workspace_id !== entry.id || row.status !== 'published') throw notFound();
+    return renderScene(client, row, schemeId);
+  });
 }
 
 /** Leads (线索) of a workspace, for members. */

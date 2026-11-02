@@ -23,6 +23,8 @@ import * as bindRoute from '../../../apps/web/app/api/client/[entry]/shares/[tok
 import * as applyRoute from '../../../apps/web/app/api/client/[entry]/shares/[token]/apply/route';
 import * as requestRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/route';
 import * as adjustRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/adjust/route';
+import * as shareSceneRoute from '../../../apps/web/app/api/share/[token]/schemes/[schemeId]/scene/route';
+import * as clientSceneRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/scene/route';
 
 // HTTP route handlers + real PostgreSQL. Renders run through the real runner with an injected PNG.
 const run = randomUUID().slice(0, 8), slug = `d08-${run}`, password = 'synthetic-d08-password-482!', adminEmail = `d08-admin-${run}@example.test`, phones: string[] = [];
@@ -97,6 +99,17 @@ test('anyone with the link previews published schemes and images, but nothing el
   assert.equal((await call(adjustRoute.POST, { entry: slug, requestId: request.id, schemeId: scheme.id }, stranger.cookie,
     { operationId: randomUUID(), expectedRevision: 1, finishId: 'finish-f1-stair', border: false })).status, 404);
   assert.equal((await call(previewRoute.GET, { token: 'x'.repeat(32) })).status, 404);
+  // The 3D scene is the frozen snapshot the still was rendered from; public behind the link, closed through client APIs.
+  const scene = await call(shareSceneRoute.GET, { token: created.token, schemeId: scheme.id });
+  assert.equal(scene.status, 200); assert.equal(scene.body.scene.surfaceDesign.tilings.length > 0, true);
+  assert.equal((await call(clientSceneRoute.GET, { entry: slug, requestId: request.id, schemeId: scheme.id }, stranger.cookie)).status, 404);
+  assert.equal((await call(clientSceneRoute.GET, { entry: slug, requestId: request.id, schemeId: scheme.id })).status, 401);
+  assert.equal((await call(shareSceneRoute.GET, { token: 'x'.repeat(32), schemeId: scheme.id })).status, 404);
+  // Signed-in visitors learn only their own relation to the request; display data carries no customer details.
+  assert.equal(preview.body.preview.viewer, null);
+  assert.deepEqual((await call(previewRoute.GET, { token: created.token }, stranger.cookie)).body.preview.viewer, { boundToMe: false, application: null });
+  assert.equal(preview.body.preview.request.title, '临水别墅 · 企业预置方案'); assert.equal(preview.body.preview.request.origin, 'member');
+  assert.deepEqual(preview.body.preview.request.finishes.map((f: { id: string; levelName: string }) => `${f.id}@${f.levelName}`), ['finish-f1-living-floor@一层', 'finish-f1-stair@一层']);
 });
 
 test('targeted share binds only the matching verified phone; one primary customer; unbind is recorded', async () => {
@@ -106,6 +119,8 @@ test('targeted share binds only the matching verified phone; one primary custome
   const bound = await bind(target.cookie, created.token);
   assert.equal(bound.status, 200, JSON.stringify(bound.body));
   assert.equal((await call(requestRoute.GET, { entry: slug, requestId: request.id }, target.cookie)).status, 200, 'bound customer can open the request');
+  assert.equal((await call(previewRoute.GET, { token: created.token }, target.cookie)).body.preview.viewer.boundToMe, true);
+  assert.equal((await call(clientSceneRoute.GET, { entry: slug, requestId: request.id, schemeId: request.schemes[0].id }, target.cookie)).status, 200);
   assert.equal((await bind(target.cookie, created.token)).status, 200, 'binding again is harmless');
   assert.equal((await call(previewRoute.GET, { token: created.token })).body.preview.bound, true);
   assert.equal((await call(applyRoute.POST, { entry: slug, token: created.token }, other.cookie, { operationId: randomUUID() })).body.error.code, 'ALREADY_BOUND');
@@ -143,12 +158,15 @@ test('applications wait for a member; approval binds, rejection does not; revoke
   const toReject = byPhone(rejected.phoneNumber);
   current = (await call(decisionRoute.POST, { workspaceId, requestId: request.id, applicationId: toReject.id }, adminCookie, { operationId: randomUUID(), decision: 'reject' })).body.lead;
   assert.equal(current.customer, null);
+  assert.equal((await call(previewRoute.GET, { token: created.token }, rejected.cookie)).body.preview.viewer.application, 'rejected');
+  assert.equal((await call(previewRoute.GET, { token: created.token }, applicant.cookie)).body.preview.viewer.application, 'pending');
   const approved = await call(decisionRoute.POST, { workspaceId, requestId: request.id, applicationId: byPhone(applicant.phoneNumber).id }, adminCookie, { operationId: randomUUID(), decision: 'approve' });
   assert.equal(approved.body.lead.customer.phone, `+86${applicant.phoneNumber}`);
   assert.equal((await call(requestRoute.GET, { entry: slug, requestId: request.id }, applicant.cookie)).status, 200);
   // Revoking the link ends previews and further binding; the bound customer keeps access through their account.
   await call(revokeRoute.POST, { workspaceId, requestId: request.id, shareId: created.share.id }, adminCookie, { operationId: randomUUID() });
-  assert.equal((await call(previewRoute.GET, { token: created.token })).status, 404);
+  const revoked = await call(previewRoute.GET, { token: created.token });
+  assert.equal(revoked.status, 404); assert.equal(revoked.body.error.details.reason, 'revoked');
   assert.equal((await bind(target.cookie, created.token)).status, 404);
   assert.equal((await call(requestRoute.GET, { entry: slug, requestId: request.id }, applicant.cookie)).status, 200);
   const history = (await lead(request.id)).sharing.history.map((e: { kind: string }) => e.kind);

@@ -7,7 +7,7 @@ import { transaction } from '../../persistence/src/client';
 import { actorOf, type Principal } from '../../workspaces/src/access';
 import { normalizePhone } from '../../identity/src/phone';
 import { readRenderImage } from '../../renders/src/service';
-import { customer, listLeads, lockedRequest, memberOf, view, type RequestRow } from './service';
+import { customer, listLeads, lockedRequest, memberOf, renderScene, view, type RequestRow } from './service';
 
 // D08: a share link grants preview only. Binding a request to its one primary customer needs a verified phone that
 // matches a targeted share, a one-time binding code told separately, or member approval. Every step is recorded.
@@ -16,7 +16,8 @@ const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', CODE_TTL_HOURS = 48, CODE_ATTEMPTS = 5;
 type ShareRow = { id: string; request_id: string; token_hash: string; target_phone: string | null; code_hash: string | null; code_expires_at: Date | null;
   code_attempts: number; code_used_at: Date | null; expires_at: Date | null; revoked_at: Date | null; created_by: string; created_at: Date };
-const unavailable = () => new DomainError('SHARE_UNAVAILABLE', '这个分享链接已失效，请联系企业重新分享。', 404);
+const unavailable = (reason: 'revoked' | 'expired' | 'unavailable' = 'unavailable') =>
+  new DomainError('SHARE_UNAVAILABLE', reason === 'revoked' ? '这个分享链接已被企业撤销。' : reason === 'expired' ? '这个分享链接已过期。' : '这个分享链接已失效，请联系企业重新分享。', 404, { reason });
 const codeHash = (shareId: string, code: string) => sha(`${shareId}:${code.toUpperCase()}`);
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 async function record(client: PoolClient, requestId: string, shareId: string | null, kind: string, actorId: string, extra: { method?: string; subjectId?: string } = {}) {
@@ -42,7 +43,10 @@ async function memberRequest(client: PoolClient, principal: Principal, workspace
 async function liveShare(client: PoolClient, token: string, lock = false) {
   if (typeof token !== 'string' || token.length < 20 || token.length > 100) throw unavailable();
   const share = (await client.query<ShareRow>(`SELECT * FROM request_shares WHERE token_hash=$1${lock ? ' FOR UPDATE' : ''}`, [sha(token)])).rows[0];
-  if (!share || share.revoked_at || (share.expires_at && share.expires_at < new Date())) throw unavailable();
+  if (!share) throw unavailable();
+  // The token proves possession of the link, so telling revoked from expired leaks nothing new.
+  if (share.revoked_at) throw unavailable('revoked');
+  if (share.expires_at && share.expires_at < new Date()) throw unavailable('expired');
   const row = lock ? await lockedRequest(client, share.request_id) : (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [share.request_id])).rows[0];
   if (!row || row.status !== 'published') throw unavailable();
   return { share, row };
@@ -123,14 +127,21 @@ export async function decideApplication(principal: Principal, workspaceId: strin
 }
 
 /** Public preview: published schemes only; no customer, phone or other request data. */
-export async function sharePreview(token: string): Promise<SharePreviewView> {
+export async function sharePreview(token: string, viewerId: string | null = null): Promise<SharePreviewView> {
   return transaction(async client => {
     const { share, row } = await liveShare(client, token);
+    const application = viewerId ? (await client.query<{ status: 'pending' | 'rejected' }>(
+      "SELECT status FROM binding_applications WHERE request_id=$1 AND applicant_id=$2 AND status IN ('pending','rejected') ORDER BY created_at DESC LIMIT 1",
+      [row.id, viewerId])).rows[0]?.status ?? null : null;
     const workspace = (await client.query('SELECT slug,name FROM workspaces WHERE id=$1', [row.workspace_id])).rows[0];
     const request = await view(client, row, 'customer', workspace.slug);
     request.schemes = request.schemes.map(s => ({ ...s, render: s.render && { ...s.render, imageHref: s.render.status === 'completed' ? `/api/share/${token}/schemes/${s.id}/image` : null } }));
-    return { workspace, request: { ...request, note: null, confirmation: null }, bound: !!row.customer_id, binding: share.target_phone ? 'phone' : 'code' };
+    return { workspace, request: { ...request, note: null, preferences: null, confirmation: null }, bound: !!row.customer_id, binding: share.target_phone ? 'phone' : 'code',
+      viewer: viewerId ? { boundToMe: row.customer_id === viewerId, application } : null };
   });
+}
+export async function shareScene(token: string, schemeId: string) {
+  return transaction(async client => renderScene(client, (await liveShare(client, token)).row, schemeId));
 }
 export async function shareImage(token: string, schemeId: string) {
   const { row, renderId } = await transaction(async client => {

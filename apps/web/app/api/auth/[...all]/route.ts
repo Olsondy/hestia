@@ -11,6 +11,7 @@ export async function POST(request: Request) {
     const input = await body(request);
     const headers = new Headers(request.headers);
     headers.delete('content-length'); headers.delete('transfer-encoding');
-    return handlers.POST(new Request(request, { headers, body: JSON.stringify(input) }));
+    // Rebuild from the URL: under the Next server the incoming object is not an undici Request and cannot be cloned.
+    return handlers.POST(new Request(request.url, { method: 'POST', headers, body: JSON.stringify(input) }));
   } catch (error) { return endpoint(async () => { throw error; }); }
 }

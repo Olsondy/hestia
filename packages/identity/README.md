@@ -19,3 +19,7 @@ CLI 的第二个参数是有效小时数，默认 24，最大 720。它显示邀
 2026-10-25 在本地 PostgreSQL 实测 7 个子场景通过：禁止注册、哈希保存与重复消费、过期、同邀请并发、不同邀请同邮箱竞争与回滚、两身份登录/错误密码/退出/会话到期、accept 接口来源与邮箱覆盖拒绝。测试用随机 example.test 身份，结束仅删除本次创建的身份和邀请；没有清空共享库。
 
 依据：[Better Auth Drizzle adapter](https://better-auth.com/docs/adapters/drizzle)、[Email/password](https://better-auth.com/docs/authentication/email-password)、[Next.js 路由集成](https://better-auth.com/docs/integrations/next)，同时核对实际安装的 `api/routes/sign-up.mjs` 与加密导出。版本升级需重跑真实数据库集成测试。
+
+## 客户手机号登录（D02）
+
+客户从企业 H5 入口用手机号验证码登录：`POST /api/auth/phone/send-code`、`POST /api/auth/phone/sign-in`，同样是 Better Auth 插件端点，会话与邮箱密码登录一致；首次从某入口登录记录 `workspace_customers` 客户关系，不是成员。验证码只存 HMAC，时效、错误次数与按手机号/来源限频可配置；`SMS_PROVIDER=mock` 仅用于演示，生产环境启动即拒绝。接口、错误码、环境变量与验证见 [D02 验证记录](../../docs/validation/D02-customer-login.md)。

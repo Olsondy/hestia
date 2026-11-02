@@ -34,7 +34,23 @@ export type FinishRequestView = {
 export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; demoVilla: { finishes: Finish[] } };
 export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; schemeId: string | null; schemeRevision: number | null;
   message: string | null; contactRequested: boolean; preferredTime: string | null; createdAt: string };
-export type LeadView = FinishRequestView & { customer: { userId: string; phone: string | null; name: string | null }; reviewReason: string | null; events: RequestEventView[] };
+export type ShareView = { id: string; targetPhone: string | null; bindingCode: boolean; expiresAt: string | null; revokedAt: string | null; createdAt: string };
+export type BindingApplicationView = { id: string; shareId: string; applicant: { userId: string; phone: string | null }; note: string | null; status: 'pending' | 'approved' | 'rejected' | 'superseded'; createdAt: string };
+export type BindingEventView = { kind: string; method: string | null; actorId: string; subjectId: string | null; createdAt: string };
+export type LeadView = FinishRequestView & { origin: 'customer' | 'member'; customer: { userId: string; phone: string | null; name: string | null } | null;
+  reviewReason: string | null; events: RequestEventView[];
+  sharing: { shares: ShareView[]; applications: BindingApplicationView[]; history: BindingEventView[] } };
+export const createMemberRequestSchema = z.object({ operationId: idSchema, name: z.string().trim().min(1).max(100),
+  finishIds: z.array(z.string().min(1).max(120)).min(1).max(50), stones: z.array(stoneRef).min(1).max(3), note: z.string().trim().max(500).optional() }).strict();
+/** Targeted share (phone) or, without a phone, a one-time binding code told to the customer separately. */
+export const createShareSchema = z.object({ operationId: idSchema, phone: z.string().trim().min(5).max(20).optional(),
+  expiresInDays: z.number().int().min(1).max(90).default(30) }).strict();
+export const memberOperationSchema = z.object({ operationId: idSchema }).strict();
+export const decideApplicationSchema = z.object({ operationId: idSchema, decision: z.enum(['approve', 'reject']) }).strict();
+export const bindShareSchema = z.object({ operationId: idSchema, code: z.string().trim().min(4).max(12).optional() }).strict();
+export const applyBindingSchema = z.object({ operationId: idSchema, note: z.string().trim().max(200).optional() }).strict();
+export type CreatedShareView = { share: ShareView; url: string | null; token: string | null; bindingCode: string | null; note: string };
+export type SharePreviewView = { workspace: { slug: string; name: string }; request: FinishRequestView; bound: boolean; binding: 'phone' | 'code' };
 
 const tileSize = z.object({ length: z.number().finite().positive().max(4), width: z.number().finite().positive().max(4) }).strict();
 /** One option-based change to one finish of a scheme. Omitted fields keep their current value. */

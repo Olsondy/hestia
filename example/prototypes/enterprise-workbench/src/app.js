@@ -1,6 +1,6 @@
 // 企业工作台交互原型（P02）：电脑端、演示数据、不接服务端。仅供审阅交互与视觉，不作为生产代码基础。
 import {icon} from '../../client-h5/src/icons.js';
-import {stones, stoneById, layoutName, specLabel, villa, facets, facetById, kindName, makeSchemes, checkFinish, maskPhone} from '../../client-h5/src/data.js';
+import {stones, stoneById, layoutName, specLabel, villa, facets, facetById, kindName, makeSchemes, checkFinish, maskPhone, softStyles, softById} from '../../client-h5/src/data.js';
 import {swatchURL} from '../../client-h5/src/stone.js';
 import {renderImage} from '../../client-h5/src/render3d.js';
 import {member, followName, followOrder, statusInfo, seedLeads, lastEvent, needsAction} from './data.js';
@@ -62,12 +62,12 @@ function planSVG(floorId, selected) {
 function shell(content, {nav = ''} = {}) {
   const counts = state.leads.reduce((n, l) => { const a = needsAction(l); return n + (a.review || a.assist || a.contact || a.apply ? 1 : 0); }, 0);
   return `<header class="top">
-      <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true">标志</span><span><b>演示石材企业</b><small>企业工作台</small></span></a>
+      <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true">标志</span><span><b>演示家装企业</b><small>企业工作台</small></span></a>
       <nav class="nav" aria-label="工作台">
         <a href="#/" ${nav === 'today' ? 'aria-current="page"' : ''}>今日${counts ? `<span class="count">${counts}</span>` : ''}</a>
         <a href="#/leads" ${nav === 'leads' ? 'aria-current="page"' : ''}>线索</a>
         <a href="#/new" ${nav === 'new' ? 'aria-current="page"' : ''}>预置方案</a>
-        <a href="#/stones" ${nav === 'stones' ? 'aria-current="page"' : ''}>石材库</a>
+        <a href="#/stones" ${nav === 'stones' ? 'aria-current="page"' : ''}>石材与软装</a>
       </nav>
       <div class="who"><span>${member.name}</span><button data-act="logout">退出</button><button class="demo-chip" data-act="review">演示</button></div>
     </header>
@@ -78,10 +78,10 @@ function shell(content, {nav = ''} = {}) {
 // ---------- 登录 / 无权访问 ----------
 function loginView() {
   const L = state.login;
-  return `<header class="top"><a class="brand" href="#/login"><span class="brand-mark" aria-hidden="true">标志</span><span><b>演示石材企业</b><small>企业工作台</small></span></a><div class="who"><button class="demo-chip" data-act="review">演示</button></div></header>
+  return `<header class="top"><a class="brand" href="#/login"><span class="brand-mark" aria-hidden="true">标志</span><span><b>演示家装企业</b><small>企业工作台</small></span></a><div class="who"><button class="demo-chip" data-act="review">演示</button></div></header>
     <main class="auth">
       <section class="story"><span class="kicker">企业成员</span><h1 class="display">每一条线索，<br><em>都有一个具体的家。</em></h1>
-        <p class="lede">客户在 H5 提交的需求、确认的方案和留言都汇总在这里。审核自动结果、为客户预置方案并分享，跟进到成交。</p>
+        <p class="lede">客户在 H5 提交的需求、确认的方案和留言都汇总在这里。用 Agent 出硬装 + 软装的整体方案，核对后发布给客户，跟进到成交。</p>
         <span class="rule"></span><p class="small muted">工作台不开放注册。成员账号由企业管理员邀请开通。</p></section>
       <form class="auth-form" data-form="login"><h2>登录工作台</h2><p class="small muted">使用企业邀请时设置的邮箱和密码。</p>
         <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="username" value="${esc(L.email)}"></label>
@@ -167,10 +167,11 @@ function detailView(l) {
   const s = l.schemes?.find(x => x.id === ui.scheme), conf = confirmed(l);
   const a = needsAction(l);
   const facetsHere = l.facets.filter(id => facetById[id].floor === ui.floor);
-  const bar = l.status === 'review' ? `<span class="hint">图纸自动转换的结果需要核对后才能发布给客户。</span><a class="btn primary" href="#/lead/${l.id}/review">审核并发布 ${icon('arrow', 16)}</a>`
+  const agentBtn = l.schemes || l.status === 'review' ? `<a class="btn ghost" href="#/lead/${l.id}/agent">${icon('chat', 16)} Agent 出方案</a>` : '';
+  const bar = l.status === 'review' ? `<span class="hint">图纸自动转换的结果需要核对后才能发布给客户。</span>${agentBtn}<a class="btn primary" href="#/lead/${l.id}/review">审核并发布 ${icon('arrow', 16)}</a>`
     : l.status === 'assist' ? `<span class="hint">这份图纸不能自动识别，需要企业导入整理好的户型。</span><a class="btn primary" href="#/lead/${l.id}/assist">辅助转换 ${icon('arrow', 16)}</a>`
-      : l.origin === 'member' ? `<span class="hint">${l.customer ? `已绑定 ${maskPhone(l.customer.phone)}` : '还没有绑定客户。分享后，客户按企业设定的方式绑定。'}</span><button class="btn primary" data-act="share" data-v="${l.id}">${icon('link', 16)} 分享给客户</button>`
-        : `<span class="hint">客户自己提交的项目属于客户本人，无须分享绑定。</span>${a.contact ? `<button class="btn primary" data-act="follow" data-v="contacted">已回电，标记为已联系</button>` : ''}`;
+      : l.origin === 'member' ? `<span class="hint">${l.customer ? `已绑定 ${maskPhone(l.customer.phone)}` : '还没有绑定客户。分享后，客户按企业设定的方式绑定。'}</span>${agentBtn}<button class="btn primary" data-act="share" data-v="${l.id}">${icon('link', 16)} 分享给客户</button>`
+        : `<span class="hint">客户自己提交的项目属于客户本人，无须分享绑定。</span>${agentBtn}${a.contact ? `<button class="btn primary" data-act="follow" data-v="contacted">已回电，标记为已联系</button>` : ''}`;
   const sharing = l.origin === 'customer' ? '<p class="small muted" style="margin-top:12px">客户自助提交，项目属于客户本人，不需要分享与绑定。</p>' : `
     ${l.customer ? `<div class="share-card"><div class="head"><span><b>主客户</b> · ${esc(l.customer.name || '客户')} ${l.customer.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1 $2 $3')}</span><button class="btn danger small" data-act="confirm" data-k="unbind" data-v="${l.id}">解绑</button></div><p>解绑后客户不能再打开这个项目，可以重新分享给其他人。</p></div>` : ''}
     ${l.applications.filter(x => x.status === 'pending').map(x => `<div class="apply"><b>绑定申请 · ${maskPhone(x.phone)}</b><span class="small muted"> · ${when(x.at)}</span><p>${esc(x.note)}</p>
@@ -203,13 +204,14 @@ function detailView(l) {
         <div class="plate-top"><span>${villa.floors.find(f => f.id === ui.floor).name} · 方案 ${s.id} ${s.title} · 修订 ${l.revisions[s.id]}</span>${floors.length > 1 ? `<div class="seg" style="background:var(--paper);border:0">${floors.map(f => `<button aria-pressed="${f.id === ui.floor}" data-act="floor" data-v="${f.id}" style="color:var(--ink)">${f.name}</button>`).join('')}</div>` : ''}</div>
         <div class="plate-img"><img data-render="${ui.floor}" data-lead="${l.id}" data-scheme="${s.id}" data-w="1280" data-h="720" alt="方案 ${s.id} 效果图（示意）"></div>
         <figcaption><span>${conf ? `客户已确认：${esc(conf.text.replace('确认 ', ''))}` : '客户尚未确认'}</span><span>效果图 · 示意素材</span></figcaption></figure>
-      <div class="rail" role="group" aria-label="方案">${l.schemes.map(x => { const fin = x.finishes[facetsHere[0]]; return `<button class="rail-item" aria-pressed="${x.id === s.id}" data-act="scheme" data-v="${x.id}"><b>${x.id} · ${x.title}</b><small>${fin ? finishLine(facetsHere[0], fin) : ''}<br>修订 ${l.revisions[x.id]}</small>${conf?.text.includes(`方案 ${x.id}`) ? `<span class="badge">${icon('check', 13)} 已确认</span>` : ''}</button>`; }).join('')}</div>` :
+      <div class="rail" role="group" aria-label="方案">${l.schemes.map(x => { const fin = x.finishes[facetsHere[0]]; return `<button class="rail-item" aria-pressed="${x.id === s.id}" data-act="scheme" data-v="${x.id}"><b>${x.id} · ${x.title}</b><small>硬装：${fin ? finishLine(facetsHere[0], fin) : '—'}<br>软装：${softById[x.soft]?.name || '—'} · 修订 ${l.revisions[x.id] || 1}</small>${conf?.text.includes(`方案 ${x.id}`) ? `<span class="badge">${icon('check', 13)} 已确认</span>` : ''}${x.id === 'D' ? '<span class="badge" style="color:var(--accent)">待审 · 客户不可见</span>' : ''}</button>`; }).join('')}</div>` :
         `<div class="plate"><div class="plate-img" style="display:grid;place-items:center;color:#5a4a41;font-size:13px">${l.status === 'assist' ? '图纸需要辅助转换，转换并生成方案后在这里显示' : '方案生成并核对后在这里显示'}</div></div>`}
       <div class="detail-body"><div class="cols">
         <section><div class="section-head"><h2 class="h3">客户动作</h2></div>
           <ol class="timeline">${[...l.events].reverse().map(e => `<li class="ev-${e.kind}"><time>${clock(e.at)}</time><div>${e.kind === 'contact' ? `<b>${esc(e.text)}</b>` : esc(e.text)}${e.message ? `<blockquote>${esc(e.message)}</blockquote>` : ''}</div></li>`).join('')}</ol>
-          ${s ? `<div class="section-head" style="margin-top:28px"><h2 class="h3">方案 ${s.id} · ${villa.floors.find(f => f.id === ui.floor).name}饰面</h2></div>
-          <ul class="finish-list">${facetsHere.map(id => `<li><b>${facetById[id].name}</b><span><span class="sw" style="background-image:url(${swatchURL(s.finishes[id].stone, 32)})"></span>${finishLine(id, s.finishes[id])}</span></li>`).join('')}</ul>` : ''}
+          ${s ? `<div class="section-head" style="margin-top:28px"><h2 class="h3">方案 ${s.id} · ${villa.floors.find(f => f.id === ui.floor).name}硬装</h2></div>
+          <ul class="finish-list">${facetsHere.map(id => `<li><b>${facetById[id].name}</b><span><span class="sw" style="background-image:url(${swatchURL(s.finishes[id].stone, 32)})"></span>${finishLine(id, s.finishes[id])}</span></li>`).join('')}</ul>
+          ${softBlock(s, ui.floor)}` : ''}
         </section>
         <section><div class="section-head"><h2 class="h3">分享与绑定</h2>${l.origin === 'member' && l.status === 'published' ? `<button class="btn ghost small" data-act="share" data-v="${l.id}">${icon('plus', 14)} 新建分享</button>` : ''}</div>${sharing}</section>
       </div></div>
@@ -273,6 +275,64 @@ function assistView(l) {
     <div class="action-bar" style="position:fixed;left:0;right:0;bottom:0"><span class="hint">生成后进入审核：核对效果图，再发布给客户。</span><button class="btn primary" data-act="assist-generate" data-v="${l.id}" ${st === 'valid' ? '' : 'disabled'}>生成待审方案 ${icon('arrow', 16)}</button></div>`, {nav: 'leads'});
 }
 
+function softBlock(s, floorId) {
+  const st = softById[s.soft]; if (!st) return '';
+  const rooms = villa.floors.find(f => f.id === floorId).rooms.map(r => r.name).filter(n => st.rooms[n]);
+  return `<div class="section-head" style="margin-top:28px"><h2 class="h3">软装 · ${st.name} <small>${esc(st.line)}</small></h2><span class="palette">${Object.values(st.palette).slice(0, 5).map(c => `<i style="background:${c}"></i>`).join('')}</span></div>
+    <ul class="finish-list">${rooms.length ? rooms.map(n => `<li><b>${n}</b><span>${esc(st.rooms[n])}</span></li>`).join('') : '<li><b>本层</b><span>沿用整体风格</span></li>'}</ul>`;
+}
+
+// ---------- Agent 出方案（企业内部使用，需联网调用模型） ----------
+const prompts = ['客厅大气一点，二层主卧做新中式', '整体换成轻奢风，地面保持浅色', '客厅地面用爵士白大板'];
+function agentPlan(text) {
+  if (/爵士白/.test(text)) return {rejected: '企业石材库中没有「爵士白」。可选的浅色石材：雅士白、鱼肚白。要改用鱼肚白大板吗？'};
+  const lux = /轻奢/.test(text);
+  return {soft: lux ? 'luxury' : 'chinese', stones: lux ? ['yudu', 'heijin'] : ['feiwang', 'yashi'], title: lux ? 'Agent · 浅色轻奢' : 'Agent · 雅致新中式', theme: lux ? 0 : 1,
+    steps: ['读取 9 处饰面与企业目录（石材 6 款、软装风格 3 套）', lux ? '硬装：客厅、餐厅地面 鱼肚白 750×1500 直铺，黑金花波打线' : '硬装：客厅、餐厅地面 雅士白 800×800 斜铺，黑金花波打线；背景墙 啡网纹工字铺',
+      lux ? '软装：轻奢（弧形丝绒沙发、大理石金属茶几、浅色长毛地毯）' : '软装：客厅新中式（圈椅、长条茶几、屏风），二层主卧实木架子床', '排版与家具碰撞校验：通过，1 条窄条提示', '出图 3 张（客厅、起居厅、茶室）']};
+}
+function agentView(l) {
+  const A = l.agent ||= {status: 'idle', messages: [], candidate: null};
+  const st = A.status, c = A.candidate;
+  const msgs = A.messages.map(m => m.role === 'user' ? `<div class="msg me">${esc(m.text)}</div>`
+    : `<div class="msg ai">${m.steps ? `<ol class="agent-steps">${m.steps.map((t, i) => `<li class="${i < (m.done ?? m.steps.length) ? 'done' : i === m.done ? 'now' : ''}">${esc(t)}</li>`).join('')}</ol>` : ''}${m.text ? `<p>${esc(m.text)}</p>` : ''}</div>`).join('');
+  let right;
+  if (st === 'nomodel') right = `<div class="empty" style="text-align:left;padding:40px 0"><h2 class="h2">未配置模型</h2><p>Agent 需要联网调用模型。当前环境没有配置（或网络不可用），不会模拟结果。</p><div class="row-actions" style="margin-top:16px"><button class="btn primary" data-act="agent-fallback" data-v="${l.id}">打开预先出好的演示方案</button></div></div>`;
+  else if (!c) right = `<div class="empty" style="text-align:left;padding:30px 0"><h2 class="h2">${st === 'running' ? '正在出方案…' : '告诉 Agent 你想要什么'}</h2><p>${st === 'running' ? '读取饰面与企业目录，选择石材与软装风格，排版校验后出图。可以离开此页，完成后在线索里查看。' : 'Agent 只在企业的石材库与软装风格目录内出方案，所有结果先作为候选，由你核对后才发布给客户。'}</p>${st === 'running' ? '<div class="bar-progress" style="max-width:360px"><i></i></div>' : ''}</div>`;
+  else {
+    const hints = Object.entries(c.finishes).flatMap(([id, fin]) => checkFinish(id, fin)).slice(0, 2);
+    right = `<figure class="plate"><div class="plate-top"><span>候选 · ${esc(c.title)} · 一层客厅</span><span class="tag" style="background:var(--paper)">候选 · 客户不可见</span></div>
+      <div class="plate-img"><img data-render="f1" data-cand="${l.id}" data-w="1280" data-h="720" alt="候选方案效果图（示意）"></div><figcaption><span>硬装 + 软装 · ${softById[c.soft].name}</span><span>效果图 · 示意素材</span></figcaption></figure>
+      <div class="detail-body" style="padding:24px 0 0"><div class="cols">
+        <section><div class="section-head"><h2 class="h3">硬装</h2></div><ul class="finish-list">${Object.keys(c.finishes).filter(id => facetById[id].floor === 'f1').map(id => `<li><b>${facetById[id].name}</b><span><span class="sw" style="background-image:url(${swatchURL(c.finishes[id].stone, 32)})"></span>${finishLine(id, c.finishes[id])}</span></li>`).join('')}</ul></section>
+        <section>${softBlock(c, 'f1').replace('margin-top:28px', 'margin-top:0')}${hints.map(h => `<p class="alert hint">${icon('info', 14)}<span><b>提示</b>${esc(h.text)}</span></p>`).join('')}<p class="alert ok">${icon('check', 14)}<span>排版与家具碰撞校验通过</span></p></section>
+      </div></div>`;
+  }
+  return shell(`<section class="spread agent">
+    <div class="story chat"><a class="text-link" href="#/lead/${l.id}" style="align-self:flex-start;border:0">${icon('back', 15)} ${esc(l.title)}</a>
+      <h1 class="display sm" style="margin-top:12px">Agent<br><em>出整体方案</em></h1>
+      <p class="small muted" style="margin-top:8px">硬装 + 软装 · 企业内部使用 · 需联网</p>
+      <div class="msgs">${msgs || '<p class="small muted">例如：</p>'}</div>
+      ${st !== 'running' ? `<div class="chips" style="margin-top:10px">${prompts.map(t => `<button class="chip" data-act="agent-say" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
+      <form class="note-form" data-form="agent"><textarea name="text" rows="3" maxlength="300" placeholder="描述客户的要求，例如：二层主卧换成轻奢风" ${st === 'running' ? 'disabled' : ''}></textarea><button class="btn primary small" type="submit" style="justify-self:start" ${st === 'running' ? 'disabled' : ''}>发送</button></form>
+    </div>
+    <div class="work">${right}</div></section>
+    <div class="action-bar" style="position:fixed;left:0;right:0;bottom:0"><span class="hint">${c ? '采用后成为待审方案，核对后再发布给客户。' : '结果先作为候选，客户看不到。'}</span>${c ? `<button class="btn ghost" data-act="agent-say" data-v="主卧再换成轻奢风">继续调整</button><button class="btn primary" data-act="confirm" data-k="adopt" data-v="${l.id}">采用为待审方案 ${icon('arrow', 16)}</button>` : ''}</div>`, {nav: 'leads'});
+}
+function agentRun(l, text) {
+  const A = l.agent ||= {status: 'idle', messages: [], candidate: null};
+  A.messages.push({role: 'user', text});
+  if (A.forceNoModel) { A.status = 'nomodel'; A.messages.push({role: 'ai', text: '没有可用的模型（未配置或网络不可用），这次请求没有执行。'}); return; }
+  const plan = agentPlan(text);
+  if (plan.rejected) { A.messages.push({role: 'ai', text: plan.rejected}); return; }
+  const m = {role: 'ai', steps: plan.steps, done: 0}; A.messages.push(m); A.status = 'running';
+  const tick = () => { m.done++; if (m.done < plan.steps.length) { save(); render(); setTimeout(tick, 700); return; }
+    const base = makeSchemes(l.facets.length ? l.facets : ['f1-living', 'f1-dining', 'f1-wall', 's12'], plan.stones)[plan.theme];
+    A.candidate = {...base, id: 'D', title: plan.title, soft: plan.soft, line: plan.steps[1].replace('硬装：', '')};
+    m.text = `已出好候选「${plan.title}」：硬装与软装都通过校验。可以继续调整，或采用为待审方案。`; A.status = 'ready'; save(); render(); };
+  setTimeout(tick, 700);
+}
+
 // ---------- 预置方案 ----------
 function newView() {
   const d = state.draft;
@@ -294,18 +354,24 @@ function newView() {
       <div class="section-head" style="margin-top:34px"><h2 class="h3">石材 <small>最多 3 款，按顺序优先使用</small></h2><span class="tag">示意素材</span></div>
       <div class="stone-grid" style="margin-top:16px">${stones.map(s => { const n = d.stones.indexOf(s.id) + 1; return `<button class="stone-pick" aria-pressed="${n > 0}" data-act="dstone" data-v="${s.id}"><img src="${swatchURL(s.id, 240)}" alt=""><span>${s.name}</span>${n ? `<i>${n}</i>` : ''}</button>`; }).join('')}</div>
     </div></section>
-    <div class="action-bar" style="position:fixed;left:0;right:0;bottom:0"><span class="hint">生成后可以先在线索详情里查看效果图，再分享。</span><button class="btn primary" data-act="create" ${d.facets.length && d.stones.length ? '' : 'disabled'}>生成方案 ${icon('arrow', 16)}</button></div>`, {nav: 'new'});
+    <div class="action-bar" style="position:fixed;left:0;right:0;bottom:0"><span class="hint">生成后可以先在线索详情里查看效果图，再分享。</span><button class="btn ghost" data-act="create" data-agent="1" ${d.facets.length ? '' : 'disabled'}>${icon('chat', 16)} 让 Agent 出方案</button><button class="btn primary" data-act="create" ${d.facets.length && d.stones.length ? '' : 'disabled'}>按规则生成方案 ${icon('arrow', 16)}</button></div>`, {nav: 'new'});
 }
 
-// ---------- 石材库 ----------
+// ---------- 石材与软装 ----------
 function stonesView() {
+  return stonesHtml();
+}
+function stonesHtml() {
   const meta = {yashi: ['抛光', '600–1500', 1], yudu: ['抛光', '600–1500', 1], shaanna: ['抛光', '300–1200', 2], huimu: ['哑光', '200–1200', 1], feiwang: ['抛光', '300–1200', 1], heijin: ['抛光', '200–800', 1]};
   return shell(`<section class="spread">
-    <div class="story"><span class="kicker">石材库</span><h1 class="display md">${stones.length} 款<br><em>在售石材</em></h1>
-      <p class="lede">客户在 H5 只能从这里的石材中选择。贴图为程序生成的示意素材；上传企业真实素材在后续版本提供。</p>
+    <div class="story"><span class="kicker">石材与软装</span><h1 class="display md">${stones.length} 款石材<br><em>${softStyles.length} 套软装</em></h1>
+      <p class="lede">客户在 H5 只能从这里的石材与软装风格中选择，Agent 也只在这个范围内出方案。贴图与家具均为示意素材；上传企业真实素材在后续版本提供。</p>
       <span class="rule"></span><p class="small muted">下架的版本不再出现在客户的选择里，已用它的方案保留原样。</p></div>
     <div class="work"><div class="catalog">${[...stones, {id: 'shaanna', name: '莎安娜米黄', retired: true}].map(s => { const [surface, size, v] = meta[s.id]; return `<article class="stone-card ${s.retired ? 'retired' : ''}"><img src="${swatchURL(s.id, 240)}" alt=""><div><b>${s.name}</b>${s.retired ? '<span class="tag" style="margin-left:8px">已下架 · 版本 1</span>' : '<span class="tag" style="margin-left:8px">示意素材</span>'}
-      <dl><dt>表面</dt><dd>${surface}</dd><dt>规格</dt><dd>${size} mm</dd><dt>纹理</dt><dd>${esc(s.note || '—')}</dd><dt>版本</dt><dd>${s.retired ? 1 : v}${s.retired ? '' : ' · 在售'}</dd></dl></div></article>`; }).join('')}</div></div></section>`, {nav: 'stones'});
+      <dl><dt>表面</dt><dd>${surface}</dd><dt>规格</dt><dd>${size} mm</dd><dt>纹理</dt><dd>${esc(s.note || '—')}</dd><dt>版本</dt><dd>${s.retired ? 1 : v}${s.retired ? '' : ' · 在售'}</dd></dl></div></article>`; }).join('')}</div>
+    <div class="section-head" style="margin-top:40px"><h2 class="h3">软装风格 <small>按房间给出家具组合与配色 · 版本 1</small></h2><span class="tag">示意素材</span></div>
+    <div class="catalog" style="margin-top:18px">${softStyles.map(st => `<article class="stone-card soft"><div class="soft-swatch">${Object.values(st.palette).map(c => `<i style="background:${c}"></i>`).join('')}</div><div><b>${st.name}</b><p class="small muted" style="margin-top:4px">${esc(st.line)}</p>
+      <dl>${Object.entries(st.rooms).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div></article>`).join('')}</div></div></section>`, {nav: 'stones'});
 }
 
 // ---------- 弹层 ----------
@@ -335,6 +401,7 @@ const confirms = {
   unbind: ['解绑这位客户？', '解绑后客户不能再打开这个项目，绑定与解绑都会留下记录。可以重新分享给其他人。', '解绑'],
   approve: ['批准绑定？', '项目会绑定到申请人的账号，申请人可以调整和确认。其他待审申请同时作废。', '批准绑定'],
   reject: ['拒绝这个申请？', '申请人仍可预览，但不能调整或确认。', '拒绝'],
+  adopt: ['采用为待审方案？', '候选会加入这条线索的方案，状态为待审核；核对效果图后再发布给客户。', '采用'],
 };
 
 // ---------- 原型审阅导航 ----------
@@ -357,9 +424,13 @@ const R = {
   'assist-ok': ['审核与转换', '辅助转换 · 校验通过', () => { state = fresh(); leadById('L4').assistStage = 'valid'; go('/lead/L4/assist'); }],
   'new': ['方案与分享', '预置方案', () => { state = fresh(); go('/new'); }],
   'share': ['方案与分享', '分享 · 选择方式', () => { state = fresh(); go('/lead/L5'); setTimeout(() => shareModal('L5'), 250); }],
-  'share-once': ['方案与分享', '分享 · 链接与绑定码（只显示一次）', () => { state = fresh(); go('/lead/L5'); setTimeout(() => onceModal('https://demo-stone.example/s/Qm8x…V2Lk', 'K7M2Q9'), 250); }],
+  'share-once': ['方案与分享', '分享 · 链接与绑定码（只显示一次）', () => { state = fresh(); go('/lead/L5'); setTimeout(() => onceModal('https://demo-home.example/s/Qm8x…V2Lk', 'K7M2Q9'), 250); }],
   'confirm-revoke': ['方案与分享', '撤销链接确认', () => { state = fresh(); go('/lead/L2'); setTimeout(() => confirmModal('revoke', 'L2:S1'), 250); }],
-  'stones': ['石材库', '石材库', () => { state = fresh(); go('/stones'); }],
+  'agent': ['Agent 出方案', '空白 · 快捷提示', () => { state = fresh(); go('/lead/L1/agent'); }],
+  'agent-ready': ['Agent 出方案', '候选方案（硬装 + 软装）', () => { state = fresh(); const l = leadById('L1'); l.agent = {status: 'ready', messages: [{role: 'user', text: prompts[0]}, {role: 'ai', steps: agentPlan(prompts[0]).steps, done: 5, text: '已出好候选「Agent · 雅致新中式」：硬装与软装都通过校验。可以继续调整，或采用为待审方案。'}], candidate: {...makeSchemes(l.facets, ['feiwang', 'yashi'])[1], id: 'D', title: 'Agent · 雅致新中式', soft: 'chinese'}}; go('/lead/L1/agent'); }],
+  'agent-rejected': ['Agent 出方案', '超出企业目录被拒', () => { state = fresh(); const l = leadById('L1'); l.agent = {status: 'idle', messages: [{role: 'user', text: prompts[2]}, {role: 'ai', text: agentPlan(prompts[2]).rejected}], candidate: null}; go('/lead/L1/agent'); }],
+  'agent-nomodel': ['Agent 出方案', '未配置模型 / 无网络', () => { state = fresh(); const l = leadById('L1'); l.agent = {status: 'nomodel', forceNoModel: true, messages: [{role: 'user', text: prompts[0]}, {role: 'ai', text: '没有可用的模型（未配置或网络不可用），这次请求没有执行。'}], candidate: null}; go('/lead/L1/agent'); }],
+  'stones': ['目录', '石材与软装风格', () => { state = fresh(); go('/stones'); }],
 };
 function openReview() {
   const groups = {};
@@ -400,7 +471,7 @@ const actions = {
     const exp = new Date(Date.now() + days * 864e5);
     l.shares.push({id: 'S' + state.seq++, mode, phone, createdAt: Date.now(), expires: `${exp.getFullYear()}-${String(exp.getMonth() + 1).padStart(2, '0')}-${String(exp.getDate()).padStart(2, '0')}`, status: 'active'});
     log(l, mode === 'phone' ? `定向分享给 ${maskPhone(phone)}` : '绑定码分享（一次性绑定码，48 小时有效）');
-    save(); render(); onceModal(`https://demo-stone.example/s/${token()}`, code, phone); return false;
+    save(); render(); onceModal(`https://demo-home.example/s/${token()}`, code, phone); return false;
   },
   copy: el => { navigator.clipboard?.writeText(el.dataset.v).catch(() => {}); toast('已复制'); return false; },
   confirm: el => { confirmModal(el.dataset.k, el.dataset.v); return false; },
@@ -411,6 +482,7 @@ const actions = {
     if (kind === 'revoke') { l.shares.find(s => s.id === sub).status = 'revoked'; log(l, '撤销分享链接'); toast('链接已撤销'); }
     if (kind === 'unbind') { log(l, `解绑客户 ${maskPhone(l.customer.phone)}`); l.customer = null; toast('已解绑'); }
     if (kind === 'approve') { const a = l.applications.find(x => x.id === sub); a.status = 'approved'; l.customer = {phone: a.phone, name: a.note.split('：')[0]}; log(l, `批准绑定申请，绑定 ${maskPhone(a.phone)}`); l.events.push({kind: 'bind', at: Date.now(), text: `企业批准绑定：${maskPhone(a.phone)}`}); toast('已批准，项目绑定到申请人'); }
+    if (kind === 'adopt') { const c = l.agent.candidate; l.schemes = [...(l.schemes || []).filter(x => x.id !== 'D'), c]; l.revisions = {...l.revisions, D: 1}; l.agent = {status: 'idle', messages: [], candidate: null}; l.events.push({kind: 'agent', at: Date.now(), text: `采用 Agent 候选「${c.title}」为待审方案 D`}); state.ui[l.id] = {...(state.ui[l.id] || {}), scheme: 'D'}; toast('已采用为待审方案 D，核对后发布'); go(`/lead/${l.id}`); return false; }
     if (kind === 'reject') { l.applications.find(x => x.id === sub).status = 'rejected'; log(l, '拒绝绑定申请'); toast('已拒绝'); }
   },
   generate: el => { const l = leadById(el.dataset.v); l.stage = 'generating'; save(); render(); later(() => { l.stage = 'ready'; l.schemes = makeSchemes(l.facets, l.stones); save(); render(); }, 2600); return false; },
@@ -421,14 +493,18 @@ const actions = {
     l.assistStage = 'validating'; save(); render(); later(() => { l.assistStage = v === 'ok' ? 'valid' : 'invalid'; save(); render(); }, 1600); return false;
   },
   'assist-generate': el => { const l = leadById(el.dataset.v); l.status = 'review'; l.source = 'other'; l.facets = ['f1-living', 'f1-dining', 'f1-foyer', 's12', 'f2-lounge', 's23', 'f3-tea', 'f3-hall']; l.convert = {levels: 3, finishes: 8, scale: '按导入户型尺寸', hints: []}; l.reviewReason = '辅助转换的户型需企业核对'; l.events.push({kind: 'convert', at: Date.now(), text: '企业完成辅助转换：3 层、8 处饰面'}); l.stage = 'generating'; save(); go(`/lead/${l.id}/review`); later(() => { l.stage = 'ready'; l.schemes = makeSchemes(l.facets, l.stones); save(); render(); }, 2600); return false; },
+  'agent-say': el => { agentRun(current(), el.dataset.v); },
+  'agent-fallback': el => { const l = leadById(el.dataset.v); l.agent = {status: 'ready', messages: [...l.agent.messages, {role: 'ai', text: '已打开预先出好的演示方案（演示数据，非本次生成）。'}], candidate: {...makeSchemes(l.facets, ['feiwang', 'yashi'])[1], id: 'D', title: 'Agent · 雅致新中式（预先生成）', soft: 'chinese'}}; },
   dfloor: el => { state.draft.floor = el.dataset.v; },
   dfacet: el => { const a = state.draft.facets, i = a.indexOf(el.dataset.v); i < 0 ? a.push(el.dataset.v) : a.splice(i, 1); },
   dstone: el => { const a = state.draft.stones, i = a.indexOf(el.dataset.v); if (i >= 0) a.splice(i, 1); else if (a.length < 3) a.push(el.dataset.v); else toast('最多选择 3 款石材'); },
-  create: () => {
-    const d = state.draft, id = 'L' + state.seq++;
+  create: el => {
+    const d = state.draft, id = 'L' + state.seq++, viaAgent = !!el?.dataset?.agent;
     state.leads.unshift({id, title: d.name.trim() || '示例别墅 · 企业预置方案', origin: 'member', source: 'sample', status: 'published', customer: null, createdAt: Date.now(), facets: [...d.facets], stones: [...d.stones], prefs: '—', note: d.note,
       schemes: makeSchemes(d.facets, d.stones), revisions: {A: 1, B: 1, C: 1}, events: [{kind: 'create', at: Date.now(), text: '企业预置 3 个方案（全部通过排版校验，已发布）'}], follow: 'new', notes: [], shares: [], applications: [], history: []});
-    state.draft = freshDraft(); save(); go(`/lead/${id}`); setTimeout(() => shareModal(id), 250); return false;
+    state.draft = freshDraft(); save();
+    if (viaAgent) { const l = leadById(id); l.schemes = null; l.events = [{kind: 'create', at: Date.now(), text: '企业新建预置方案，交给 Agent 出整体方案'}]; save(); go(`/lead/${id}/agent`); return false; }
+    go(`/lead/${id}`); setTimeout(() => shareModal(id), 250); return false;
   },
 };
 
@@ -438,7 +514,8 @@ function fillRenders(root) {
   let i = 0;
   const step = () => {
     const img = imgs[i++]; if (!img) return;
-    const l = leadById(img.dataset.lead), sc = l?.schemes?.find(s => s.id === (img.dataset.scheme || state.ui[l.id]?.scheme || 'A')) || l?.schemes?.[0];
+    const cand = img.dataset.cand && leadById(img.dataset.cand)?.agent?.candidate;
+    const l = leadById(img.dataset.lead || img.dataset.cand), sc = cand || l?.schemes?.find(s => s.id === (img.dataset.scheme || state.ui[l.id]?.scheme || 'A')) || l?.schemes?.[0];
     const box = img.closest('.plate-img, .thumb');
     if (sc) { box?.classList.add('loading'); const url = renderImage(img.dataset.render, sc, +(img.dataset.w || 960), +(img.dataset.h || 600)); if (url) img.src = url; box?.classList.remove('loading'); }
     setTimeout(step, 0);
@@ -452,7 +529,7 @@ function view() {
     case 'login': return loginView();
     case 'denied': return deniedView();
     case 'leads': return leadsView(q);
-    case 'lead': { const l = leadById(parts[1]); if (!l) return leadsView({}); if (parts[2] === 'review' && l.status === 'review') return reviewView(l); if (parts[2] === 'assist' && l.status === 'assist') return assistView(l); return detailView(l); }
+    case 'lead': { const l = leadById(parts[1]); if (!l) return leadsView({}); if (parts[2] === 'review' && l.status === 'review') return reviewView(l); if (parts[2] === 'assist' && l.status === 'assist') return assistView(l); if (parts[2] === 'agent') return agentView(l); return detailView(l); }
     case 'new': return newView();
     case 'stones': return stonesView();
     default: return todayView();
@@ -468,7 +545,7 @@ function render() {
   if (path !== lastPath) {
     scrollTo(0, 0);
     if (!reduced()) [...root.querySelectorAll('.story > *, .work > *')].slice(0, 10).forEach((el, i) => el.animate([{opacity: 0, transform: 'translateY(12px)'}, {opacity: 1, transform: 'none'}], {duration: 650, delay: 30 + i * 45, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards'}));
-    document.title = `演示石材企业 · ${root.querySelector('h1')?.textContent || '企业工作台'}（原型）`;
+    document.title = `演示家装企业 · ${root.querySelector('h1')?.textContent || '企业工作台'}（原型）`;
   } else scrollTo(0, y);
   lastPath = path;
   root.querySelector('#search')?.addEventListener('change', e => { const {q} = parse(); go('/leads?' + new URLSearchParams({...q, t: e.target.value.trim()}).toString()); });
@@ -492,6 +569,7 @@ document.addEventListener('submit', e => {
     if (data.email.trim().toLowerCase() !== member.email || data.password !== member.password) { state.login = {email: data.email, password: '', error: data.email.includes('@') && data.password === member.password ? 'denied' : 'wrong'}; save(); render(); return; }
     state.session = true; state.login.error = null; save(); go('/');
   }
+  if (form.dataset.form === 'agent') { const t = (data.text || '').trim(); if (!t) return; agentRun(current(), t); save(); render(); return; }
   if (form.dataset.form === 'note') { const t = (data.note || '').trim(); if (!t) return; current().notes.push({by: member.name, at: Date.now(), text: t}); save(); render(); toast('备注已添加'); }
 });
 document.querySelector('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });

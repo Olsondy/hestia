@@ -14,14 +14,14 @@ import { pool, transaction } from '../packages/persistence/src/client';
 import { acceptInvitation, createInvitation } from '../packages/identity/src/service';
 import { createWorkspace } from '../packages/workspaces/src/service';
 import { addStones } from '../packages/finishes/src/catalog';
-import { demoStones } from '../packages/finishes/src/demo-stones';
+import { demoStones } from '../packages/finishes/src/demo-homes';
 import { initializeRenderQueue, renderQueue } from '../packages/renders/src/queue';
 import { runRender } from '../packages/renders/src/runner';
 import { createMemberRequest, listLeads } from '../packages/finish-requests/src/service';
 import { createShare, revokeShare, sharePreview } from '../packages/finish-requests/src/sharing';
 
 const DEMO = {
-  slug: 'demo-stone', name: '演示石材企业', member: { email: 'consultant@demo-stone.example', name: '演示方案顾问' },
+  slug: 'demo-home', name: '演示家装企业', member: { email: 'consultant@demo-home.example', name: '演示方案顾问' },
   // Customers sign in with these numbers during the demo (mock SMS shows the code on the page).
   phones: { targeted: '13800138000', selfService: '13900139000', withCode: '13700137000' },
 };

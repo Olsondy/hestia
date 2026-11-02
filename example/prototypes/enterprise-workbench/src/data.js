@@ -1,7 +1,7 @@
 // 企业工作台原型的演示数据：中性命名、示意尺寸，不含真实企业资料。别墅、饰面与石材沿用 H5 客户端原型（P01）。
 import {makeSchemes, defaultFacets} from '../../client-h5/src/data.js';
 
-export const member = {name: '演示方案顾问', email: 'consultant@demo-stone.example', password: 'demo-password'};
+export const member = {name: '演示方案顾问', email: 'consultant@demo-home.example', password: 'demo-password'};
 export const followName = {new: '新线索', contacted: '已联系', active: '跟进中', won: '已成交', parked: '已搁置'};
 export const followOrder = ['new', 'contacted', 'active', 'won', 'parked'];
 export const statusInfo = {

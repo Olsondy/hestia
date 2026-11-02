@@ -404,3 +404,11 @@ input,textarea{caret-color:var(--accent)}
   *,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
   .loom line{stroke-dashoffset:0}
 }
+
+/* 软装风格 */
+.soft-row{display:grid;gap:8px}
+.soft{display:grid;grid-template-columns:56px 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;text-align:left;padding:10px;border:1px solid var(--line);transition:border-color .25s,background .25s}
+.soft[aria-pressed=true]{border-color:var(--accent);background:#fbf7f1}
+.soft-pal{grid-row:span 2;display:grid;grid-template-columns:1fr 1fr;width:56px;height:56px}.soft-pal i{display:block}
+.soft b{font-weight:500;font-size:15px}.soft[aria-pressed=true] b{color:var(--accent)}
+.soft small{font-size:11px;color:var(--muted);line-height:1.5}

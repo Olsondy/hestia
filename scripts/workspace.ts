@@ -5,7 +5,7 @@ import { pool } from '../packages/persistence/src/client';
 try {
   const [kind, slug, name, adminEmail] = process.argv.slice(2);
   if (!kind || !slug || !name || !adminEmail)
-    throw new Error('Usage: pnpm workspace:create <kind> <slug> <name> <admin-email>   e.g. enterprise demo-stone "演示企业" admin@example.test');
+    throw new Error('Usage: pnpm workspace:create <kind> <slug> <name> <admin-email>   e.g. enterprise demo-home "演示企业" admin@example.test');
   const result = await createWorkspace({ kind, slug, name, adminEmail });
   console.log(JSON.stringify(result, null, 2));
 } catch (error) {

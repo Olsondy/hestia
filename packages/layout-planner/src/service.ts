@@ -1,9 +1,12 @@
 import type { PoolClient } from 'pg';
+import { and, eq, ne } from 'drizzle-orm';
 import { DomainError, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationBrief, ConversationState } from '../../contracts/src/tasks';
 import { savePlannedCandidateInTransaction } from '../../candidates/src/service';
 import { hash } from '../../candidates/src/checks';
-import { projectAccess } from '../../workspaces/src/access';
+import { canAccessProject } from '../../workspaces/src/access';
+import { orm } from '../../persistence/src/client';
+import { candidates, designTasks, operations, projects } from '../../persistence/src/schema';
 import { planLayout } from './planner';
 import type { LayoutPlan, PlanDecision } from './contract';
 
@@ -13,17 +16,23 @@ export async function planRoomCandidateInTransaction(client: PoolClient, input: 
   ownerId: string; projectId: string; baseRevision: number; operationId: string; taskId: string; intentVersion: number;
   decision: PlanDecision; brief: ConversationBrief; input: ConversationState['input'];
 }): Promise<PlanCandidateResult> {
-  const task = (await client.query('SELECT conversation,status FROM design_tasks WHERE id=$1 AND project_id=$2 AND actor_id=$3', [input.taskId, input.projectId, input.ownerId])).rows[0];
-  if (!task || task.status !== 'running' || task.conversation?.brief?.intentVersion !== input.intentVersion || input.brief.intentVersion !== input.intentVersion
-    || hash(task.conversation.brief) !== hash(input.brief) || hash(task.conversation.input) !== hash(input.input))
+  const tx = orm(client);
+  const [task] = await tx.select({ conversation: designTasks.conversation, status: designTasks.status }).from(designTasks)
+    .where(and(eq(designTasks.id, input.taskId), eq(designTasks.projectId, input.projectId), eq(designTasks.actorId, input.ownerId)));
+  const conversation = task?.conversation as ConversationState | null | undefined;
+  if (!task || task.status !== 'running' || conversation?.brief?.intentVersion !== input.intentVersion || input.brief.intentVersion !== input.intentVersion
+    || hash(conversation.brief) !== hash(input.brief) || hash(conversation.input) !== hash(input.input))
     throw new DomainError('PLANNER_INTENT_CONFLICT', '布局请求不属于当前执行意图。', 409);
   const plannerRequestHash = hash(input);
-  const previous = (await client.query('SELECT result FROM operations WHERE actor_id=$1 AND id=$2', [input.ownerId, input.operationId])).rows[0]?.result;
+  const [operation] = await tx.select({ result: operations.result }).from(operations)
+    .where(and(eq(operations.actorId, input.ownerId), eq(operations.id, input.operationId)));
+  const previous = operation?.result as { plannerRequestHash?: string; report?: LayoutPlan; candidateId?: string; candidateRevision?: number; checkId?: string } | undefined;
   if (previous) {
     if (previous.plannerRequestHash !== plannerRequestHash || !previous.report) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已经用于另一布局请求。', 409);
     return { status: 'recommended', candidateId: previous.candidateId, candidateRevision: previous.candidateRevision, checkId: previous.checkId, report: previous.report };
   }
-  const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [input.projectId, input.ownerId])).rows[0];
+  const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+    .where(and(eq(projects.id, input.projectId), canAccessProject(projects.id, input.ownerId))).for('update');
   if (!project || project.revision !== input.baseRevision) throw new DomainError('REVISION_CONFLICT', '项目已变化，不能保存旧布局。', 409);
   const state = spatialStateSchema.parse(project.snapshot);
   // Reuse geometry only from an actual prior candidate of this task, never an ID supplied by
@@ -32,12 +41,13 @@ export async function planRoomCandidateInTransaction(client: PoolClient, input: 
   let seedObjects: typeof state.currentLayout.objects | undefined;
   let seedCandidate: { id: string; revision: number } | undefined;
   if (history?.outcome?.candidateId) {
-    const candidate = (await client.query(`SELECT id,revision,base_revision,base_state,objects,planner_context FROM candidates
-      WHERE id=$1 AND project_id=$2 AND status<>'adopted' FOR UPDATE`,
-      [history.outcome.candidateId, input.projectId])).rows[0];
-    if (candidate && candidate.base_revision === project.revision && hash(candidate.base_state) === hash(state)
-      && candidate.planner_context?.taskId === input.taskId && candidate.planner_context?.intentVersion === history.intentVersion) {
-      seedObjects = candidate.objects;
+    const [candidate] = await tx.select({ id: candidates.id, revision: candidates.revision, baseRevision: candidates.baseRevision, baseState: candidates.baseState,
+      objects: candidates.objects, plannerContext: candidates.plannerContext }).from(candidates)
+      .where(and(eq(candidates.id, history.outcome.candidateId), eq(candidates.projectId, input.projectId), ne(candidates.status, 'adopted'))).for('update');
+    const context = candidate?.plannerContext as { taskId?: string; intentVersion?: number } | null | undefined;
+    if (candidate && candidate.baseRevision === project.revision && hash(candidate.baseState) === hash(state)
+      && context?.taskId === input.taskId && context?.intentVersion === history.intentVersion) {
+      seedObjects = candidate.objects as typeof state.currentLayout.objects;
       seedCandidate = { id: candidate.id, revision: candidate.revision };
     }
   }

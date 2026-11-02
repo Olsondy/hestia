@@ -1,12 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { PgBoss } from 'pg-boss';
+import { and, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { createTaskSchema, conversationInputSchema, terminalTaskStatuses, type TaskView, type TaskStatus, type TaskStep, type TaskEvent, type TaskError } from '../../contracts/src/tasks';
 import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationState } from '../../contracts/src/tasks';
 import type { Principal } from '../../projects/src/service';
-import { projectAccess } from '../../workspaces/src/access';
-import { pool, transaction } from '../../persistence/src/client';
+import { canAccessProject } from '../../workspaces/src/access';
+import { advisoryXactLock, db, orm, transaction } from '../../persistence/src/client';
+import { designTasks, operations, projects, taskEvents } from '../../persistence/src/schema';
 import { enqueueTask } from './queue';
 import { initialBrief, archiveTurn } from '../../conversation/src/brief';
 import { initialExecution, retained, settleAttempt } from './budget';
@@ -20,6 +22,14 @@ export type TaskRow = {
   conversation: (ConversationState & { operationId: string; context: unknown; callStarted: boolean; response: unknown;
     configuration?: Record<string, unknown>; effectiveDecision?: unknown }) | null;
 };
+/** Callers (budget, conversation runner) read tasks in the column (snake_case) shape. */
+export const taskRow = (r: typeof designTasks.$inferSelect): TaskRow => ({ id: r.id, actor_id: r.actorId, project_id: r.projectId,
+  request_id: r.requestId, request_hash: r.requestHash, protocol: r.protocol as TaskRow['protocol'], status: r.status as TaskStatus,
+  steps: r.steps as StoredStep[], next_step: r.nextStep, expected_revision: r.expectedRevision, generation: r.generation, lease_until: r.leaseUntil,
+  attempts: r.attempts, usage_limit: r.usageLimit, usage_used: r.usageUsed, usage_reserved: r.usageReserved, event_seq: r.eventSeq,
+  error: r.error as TaskError | null, created_at: r.createdAt, updated_at: r.updatedAt, conversation: r.conversation as TaskRow['conversation'] });
+const activeStatuses = ['queued', 'running', 'retry_wait', 'waiting_input', 'waiting_selection'];
+const one = { one: sql`1` };
 export const taskView = (row: TaskRow): TaskView => ({ id: row.id, projectId: row.project_id, protocol: row.protocol,
   label: row.protocol === 'conversation-v1' ? '空间对话' : '确定性协议测试 · 非真实模型设计', status: row.status,
   checkpoint: { nextStep: row.next_step, totalSteps: row.protocol === 'conversation-v1' ? 1 : row.steps.length, expectedRevision: row.expected_revision },
@@ -34,26 +44,30 @@ function owner(principal: Principal) {
   return principal.userId;
 }
 export async function appendEvent(client: PoolClient, taskId: string, type: TaskEvent['type'], data: Record<string, unknown>) {
-  const result = await client.query('UPDATE design_tasks SET event_seq=event_seq+1,updated_at=clock_timestamp() WHERE id=$1 RETURNING event_seq', [taskId]);
-  await client.query('INSERT INTO task_events(task_id,seq,type,data) VALUES($1,$2,$3,$4)', [taskId, result.rows[0].event_seq, type, data]);
+  const tx = orm(client);
+  const [{ eventSeq }] = await tx.update(designTasks).set({ eventSeq: sql`${designTasks.eventSeq}+1`, updatedAt: sql`clock_timestamp()` })
+    .where(eq(designTasks.id, taskId)).returning({ eventSeq: designTasks.eventSeq });
+  await tx.insert(taskEvents).values({ taskId, seq: eventSeq, type, data });
 }
 export async function createTask(principal: Principal, projectId: string, input: unknown, producer?: PgBoss) {
   const userId = owner(principal), id = idSchema.parse(projectId), request = createTaskSchema.parse(input);
   const hash = createHash('sha256').update(JSON.stringify({ projectId: id, ...request })).digest('hex');
-  const taskId = await transaction(async client => {
+  const taskId = await transaction(async (client, tx) => {
     // Match the commands advisory-lock namespace: one client operation cannot identify two effects.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
-    const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
+    await advisoryXactLock(tx, `${userId}:${request.operationId}`);
+    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+      .where(and(eq(projects.id, id), canAccessProject(projects.id, userId))).for('update');
     if (!project) throw notFound();
-    const previous = (await client.query<TaskRow>('SELECT * FROM design_tasks WHERE actor_id=$1 AND request_id=$2', [userId, request.operationId])).rows[0];
+    const [previous] = await tx.select({ id: designTasks.id, requestHash: designTasks.requestHash }).from(designTasks)
+      .where(and(eq(designTasks.actorId, userId), eq(designTasks.requestId, request.operationId)));
     if (previous) {
-      if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于不同任务。', 409);
+      if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于不同任务。', 409);
       return previous.id;
     }
-    if ((await client.query('SELECT 1 FROM operations WHERE actor_id=$1 AND id=$2', [userId, request.operationId])).rowCount)
+    if ((await tx.select(one).from(operations).where(and(eq(operations.actorId, userId), eq(operations.id, request.operationId)))).length)
       throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于其他操作。', 409);
     if (project.revision !== request.expectedRevision) throw new DomainError('REVISION_CONFLICT', '项目已更新，请重新加载。', 409);
-    if ((await client.query("SELECT 1 FROM design_tasks WHERE project_id=$1 AND status IN ('queued','running','retry_wait','waiting_input','waiting_selection')", [id])).rowCount)
+    if ((await tx.select(one).from(designTasks).where(and(eq(designTasks.projectId, id), inArray(designTasks.status, activeStatuses)))).length)
       throw new DomainError('TASK_ACTIVE', '此项目已有进行中的任务，请等待结束或取消。', 409);
     const taskId = randomUUID(), steps = request.protocol === 'deterministic-v1' ? request.steps.map(step => ({ ...step, operationId: randomUUID() })) : [];
     let conversation: TaskRow['conversation'] = null;
@@ -65,11 +79,10 @@ export async function createTask(principal: Principal, projectId: string, input:
         phase: 'accepted', outcome: null, modelUsage: { inputTokens: null, outputTokens: null }, operationId: randomUUID(),
         context: state, callStarted: false, response: null, brief: initialBrief(request.message), execution: initialExecution() };
     }
-    await client.query(`INSERT INTO design_tasks(id,actor_id,project_id,request_id,request_hash,protocol,status,steps,expected_revision,conversation,usage_limit)
-      VALUES($1,$2,$3,$4,$5,$6,'queued',$7,$8,$9,$10)`, [taskId, userId, id, request.operationId, hash, request.protocol, JSON.stringify(steps), project.revision, conversation, 8]);
+    await tx.insert(designTasks).values({ id: taskId, actorId: userId, projectId: id, requestId: request.operationId, requestHash: hash,
+      protocol: request.protocol, status: 'queued', steps, expectedRevision: project.revision, conversation, usageLimit: 8 });
     await appendEvent(client, taskId, 'status', { status: 'queued', protocol: request.protocol, label: conversation ? '空间对话' : '确定性协议测试 · 非真实模型设计' });
-    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
-      [userId, request.operationId, id, hash, { kind: 'task', taskId }]);
+    await tx.insert(operations).values({ actorId: userId, id: request.operationId, projectId: id, requestHash: hash, result: { kind: 'task', taskId } });
     await enqueueTask(client, taskId, producer);
     return taskId;
   });
@@ -79,15 +92,20 @@ export async function createTask(principal: Principal, projectId: string, input:
 export async function appendConversationInput(principal: Principal, projectId: string, taskId: string, input: unknown, producer?: PgBoss) {
   const userId = owner(principal), id = idSchema.parse(projectId), task = idSchema.parse(taskId), request = conversationInputSchema.parse(input);
   const hash = createHash('sha256').update(JSON.stringify({ projectId: id, taskId: task, ...request })).digest('hex');
-  await transaction(async client => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
-    const row = (await client.query<TaskRow>(`SELECT * FROM design_tasks t WHERE t.id=$1 AND t.project_id=$2 AND ${projectAccess('t.project_id', '$3')} FOR UPDATE`, [task, id, userId])).rows[0];
-    if (!row) throw notFound();
-    const project = (await client.query(`SELECT revision,snapshot FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
+  await transaction(async (client, tx) => {
+    await advisoryXactLock(tx, `${userId}:${request.operationId}`);
+    const [locked] = await tx.select().from(designTasks)
+      .where(and(eq(designTasks.id, task), eq(designTasks.projectId, id), canAccessProject(designTasks.projectId, userId))).for('update');
+    if (!locked) throw notFound();
+    const row = taskRow(locked);
+    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+      .where(and(eq(projects.id, id), canAccessProject(projects.id, userId))).for('update');
     if (!project) throw notFound();
-    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
+    const [previous] = await tx.select({ requestHash: operations.requestHash, result: operations.result }).from(operations)
+      .where(and(eq(operations.actorId, userId), eq(operations.id, request.operationId)));
     if (previous) {
-      if (previous.request_hash !== hash || previous.result.kind !== 'conversation-input' || previous.result.taskId !== task)
+      const result = previous.result as { kind?: string; taskId?: string };
+      if (previous.requestHash !== hash || result.kind !== 'conversation-input' || result.taskId !== task)
         throw new DomainError('IDEMPOTENCY_CONFLICT', '此请求标识已用于不同操作。', 409);
       return;
     }
@@ -97,7 +115,7 @@ export async function appendConversationInput(principal: Principal, projectId: s
     if (brief.intentVersion !== request.expectedIntentVersion) throw new DomainError('INTENT_CONFLICT', '已有新的补充，请刷新后重试。', 409);
     if (project.revision !== request.expectedRevision) throw new DomainError('REVISION_CONFLICT', '项目已更新，请刷新后补充。', 409);
     if (brief.inputs.length >= 40) throw new DomainError('INPUT_LIMIT', '本任务输入数量达到上限，已有记录保留。');
-    if ((await client.query("SELECT 1 FROM design_tasks WHERE project_id=$1 AND id<>$2 AND status IN ('queued','running','retry_wait','waiting_input','waiting_selection')", [id, task])).rowCount)
+    if ((await tx.select(one).from(designTasks).where(and(eq(designTasks.projectId, id), ne(designTasks.id, task), inArray(designTasks.status, activeStatuses)))).length)
       throw new DomainError('TASK_ACTIVE', '此项目已有另一个进行中的任务。', 409);
     const state = spatialStateSchema.parse(project.snapshot);
     const selectedObjectId = request.kind === 'message' ? request.selectedObjectId ?? conversation.input.selectedObjectId : conversation.input.selectedObjectId;
@@ -132,37 +150,40 @@ export async function appendConversationInput(principal: Principal, projectId: s
     conversation.operationId = randomUUID(); conversation.callStarted = false; conversation.response = null; delete conversation.configuration;
     delete conversation.effectiveDecision;
     conversation.phase = 'accepted'; conversation.outcome = null; conversation.modelUsage = { inputTokens: null, outputTokens: null };
-    await client.query("UPDATE design_tasks SET conversation=$2,status='queued',generation=generation+1,attempts=0,next_step=0,expected_revision=$3,lease_until=NULL,usage_used=$4,usage_reserved=0,error=NULL WHERE id=$1", [task, conversation, project.revision, used]);
+    await tx.update(designTasks).set({ conversation, status: 'queued', generation: sql`${designTasks.generation}+1`, attempts: 0, nextStep: 0,
+      expectedRevision: project.revision, leaseUntil: null, usageUsed: used, usageReserved: 0, error: null }).where(eq(designTasks.id, task));
     await appendEvent(client, task, 'status', { status: 'queued', phase: 'accepted', intentVersion: nextIntent, inputId, unknownPriorUsage: unknownCall });
-    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
-      [userId, request.operationId, id, hash, { kind: 'conversation-input', taskId: task, inputId, intentVersion: nextIntent }]);
+    await tx.insert(operations).values({ actorId: userId, id: request.operationId, projectId: id, requestHash: hash,
+      result: { kind: 'conversation-input', taskId: task, inputId, intentVersion: nextIntent } });
     await enqueueTask(client, task, producer, randomUUID(), nextIntent);
   });
   return getTask(principal, id, task);
 }
 export async function getTask(principal: Principal, projectId: string, taskId: string) {
-  const result = await pool.query<TaskRow>(`SELECT t.* FROM design_tasks t
-    WHERE t.id=$1 AND t.project_id=$2 AND ${projectAccess('t.project_id', '$3')}`, [idSchema.parse(taskId), idSchema.parse(projectId), owner(principal)]);
-  if (!result.rows[0]) throw notFound();
-  return taskView(result.rows[0]);
+  const [row] = await db.select().from(designTasks).where(and(eq(designTasks.id, idSchema.parse(taskId)), eq(designTasks.projectId, idSchema.parse(projectId)),
+    canAccessProject(designTasks.projectId, owner(principal))));
+  if (!row) throw notFound();
+  return taskView(taskRow(row));
 }
 export async function listTasks(principal: Principal, projectId: string) {
   const userId = owner(principal), id = idSchema.parse(projectId);
-  if (!(await pool.query(`SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, userId])).rowCount) throw notFound();
-  const result = await pool.query<TaskRow>('SELECT * FROM design_tasks WHERE project_id=$1 ORDER BY created_at DESC LIMIT 20', [id]);
-  return result.rows.map(taskView);
+  if (!(await db.select(one).from(projects).where(and(eq(projects.id, id), canAccessProject(projects.id, userId)))).length) throw notFound();
+  const rows = await db.select().from(designTasks).where(eq(designTasks.projectId, id)).orderBy(desc(designTasks.createdAt)).limit(20);
+  return rows.map(row => taskView(taskRow(row)));
 }
 export async function cancelTask(principal: Principal, projectId: string, taskId: string) {
   const userId = owner(principal), id = idSchema.parse(projectId), task = idSchema.parse(taskId);
-  await transaction(async client => {
-    const row = (await client.query<TaskRow>(`SELECT t.* FROM design_tasks t
-      WHERE t.id=$1 AND t.project_id=$2 AND ${projectAccess('t.project_id', '$3')} FOR UPDATE OF t`, [task, id, userId])).rows[0];
-    if (!row) throw notFound();
+  await transaction(async (client, tx) => {
+    const [locked] = await tx.select().from(designTasks)
+      .where(and(eq(designTasks.id, task), eq(designTasks.projectId, id), canAccessProject(designTasks.projectId, userId))).for('update', { of: designTasks });
+    if (!locked) throw notFound();
+    const row = taskRow(locked);
     if (terminalTaskStatuses.has(row.status)) return;
     // This lock also fences command commits. A winning prior commit remains in the checkpoint.
     const unknownCall = row.conversation?.callStarted && !row.conversation.response;
-    if (row.conversation) { settleAttempt(row); await client.query('UPDATE design_tasks SET conversation=$2 WHERE id=$1', [task, row.conversation]); }
-    await client.query("UPDATE design_tasks SET status='cancelled',generation=generation+1,lease_until=NULL,usage_used=usage_used+$2,usage_reserved=0,error=NULL WHERE id=$1", [task, unknownCall ? row.usage_reserved : 0]);
+    if (row.conversation) { settleAttempt(row); await tx.update(designTasks).set({ conversation: row.conversation }).where(eq(designTasks.id, task)); }
+    await tx.update(designTasks).set({ status: 'cancelled', generation: sql`${designTasks.generation}+1`, leaseUntil: null,
+      usageUsed: sql`${designTasks.usageUsed}+${unknownCall ? row.usage_reserved : 0}`, usageReserved: 0, error: null }).where(eq(designTasks.id, task));
     await appendEvent(client, task, 'status', { status: 'cancelled', completedSteps: row.next_step, message: '任务已取消；已提交的修改保留，可在操作历史撤销。' });
   });
   return getTask(principal, id, task);
@@ -171,6 +192,7 @@ export async function readTaskEvents(principal: Principal, projectId: string, ta
   if (!Number.isSafeInteger(after) || after < 0) throw new DomainError('INVALID_CURSOR', '事件游标不正确。');
   const task = await getTask(principal, projectId, taskId);
   if (after > task.eventsCursor) throw new DomainError('INVALID_CURSOR', '事件游标超出当前任务进度。');
-  const result = await pool.query('SELECT seq,type,data,created_at FROM task_events WHERE task_id=$1 AND seq>$2 ORDER BY seq LIMIT 100', [taskId, after]);
-  return { task, events: result.rows.map((row): TaskEvent => ({ taskId, seq: row.seq, type: row.type, data: row.data, createdAt: row.created_at.toISOString() })) };
+  const rows = await db.select({ seq: taskEvents.seq, type: taskEvents.type, data: taskEvents.data, createdAt: taskEvents.createdAt }).from(taskEvents)
+    .where(and(eq(taskEvents.taskId, taskId), gt(taskEvents.seq, after))).orderBy(taskEvents.seq).limit(100);
+  return { task, events: rows.map((row): TaskEvent => ({ taskId, seq: row.seq, type: row.type as TaskEvent['type'], data: row.data as TaskEvent['data'], createdAt: row.createdAt.toISOString() })) };
 }

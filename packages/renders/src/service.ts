@@ -1,77 +1,80 @@
 import { randomUUID } from 'node:crypto';
 import type { PgBoss } from 'pg-boss';
 import type { PoolClient } from 'pg';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { createRenderSchema, type RenderView, type RenderSource } from '../../contracts/src/renders';
 import { DomainError, idSchema, spatialStateSchema, type SpatialState } from '../../contracts/src/project';
 import type { SceneSnapshot } from '../../contracts/src/scene';
 import { toScene, type Principal } from '../../projects/src/service';
-import { projectAccess } from '../../workspaces/src/access';
-import { pool, transaction } from '../../persistence/src/client';
+import { canAccessProject } from '../../workspaces/src/access';
+import { advisoryXactLock, db, orm, pool, transaction, type Database } from '../../persistence/src/client';
+import { candidates, operations, projectRenders, projects, resources } from '../../persistence/src/schema';
 import { privateStore, type PrivateFileStore } from '../../files/src/storage';
 import { enqueueRender } from './queue';
 import { hash, bytesHash, renderVersions } from './versions';
 import { artifactLabel } from './label';
 
-export type RenderRow = {
-  id: string; actor_id: string; project_id: string; source: RenderSource; snapshot: SceneSnapshot; snapshot_hash: string;
-  asset_version: string; renderer_version: string; scale: RenderView['scale']; synthetic: boolean; concept: boolean; label: string;
-  status: RenderView['status']; generation: number; attempts: number; lease_until: Date | null;
-  resource_id: string | null; width: number | null; height: number | null; image_hash: string | null; error: RenderView['error'];
-  created_at: Date; updated_at: Date; current_project_revision?: number; current_candidate_revision?: number | null;
-};
+export type RenderRow = typeof projectRenders.$inferSelect & { source: RenderSource; snapshot: SceneSnapshot; scale: RenderView['scale'];
+  status: RenderView['status']; error: RenderView['error'] };
+type JoinedRender = { render: RenderRow; currentProjectRevision: number; currentCandidateRevision: number | null };
 const notFound = () => new DomainError('NOT_FOUND', '项目或静态成果不存在。', 404);
 function owner(principal: Principal) {
   if (!principal.userId) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   return principal.userId;
 }
-function view(row: RenderRow): RenderView {
-  const completed = row.status === 'completed', revision = row.current_project_revision!;
-  const stale = row.source.projectRevision !== revision || (row.source.kind === 'candidate' && row.current_candidate_revision !== row.source.revision);
-  const href = `/api/projects/${row.project_id}/renders/${row.id}/content`;
-  return { id: row.id, projectId: row.project_id, status: row.status, source: row.source,
-    snapshotHash: row.snapshot_hash, assetVersion: row.asset_version, rendererVersion: row.renderer_version,
+function view({ render: row, currentProjectRevision: revision, currentCandidateRevision }: JoinedRender): RenderView {
+  const completed = row.status === 'completed';
+  const stale = row.source.projectRevision !== revision || (row.source.kind === 'candidate' && currentCandidateRevision !== row.source.revision);
+  const href = `/api/projects/${row.projectId}/renders/${row.id}/content`;
+  return { id: row.id, projectId: row.projectId, status: row.status, source: row.source,
+    snapshotHash: row.snapshotHash, assetVersion: row.assetVersion, rendererVersion: row.rendererVersion,
     synthetic: row.synthetic, scale: row.scale, concept: row.concept, label: row.label, stale,
-    currentProjectRevision: revision, currentCandidateRevision: row.current_candidate_revision ?? null,
-    resourceId: completed ? row.resource_id : null, contentHref: completed ? href : null, downloadHref: completed ? `${href}?download=1` : null,
-    width: row.width, height: row.height, imageHash: row.image_hash, error: row.error,
-    createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() };
+    currentProjectRevision: revision, currentCandidateRevision,
+    resourceId: completed ? row.resourceId : null, contentHref: completed ? href : null, downloadHref: completed ? `${href}?download=1` : null,
+    width: row.width, height: row.height, imageHash: row.imageHash, error: row.error,
+    createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
 }
-const joined = `SELECT r.*,p.revision AS current_project_revision,c.revision AS current_candidate_revision
-  FROM project_renders r JOIN projects p ON p.id=r.project_id
-  LEFT JOIN candidates c ON c.id=(r.source->>'candidateId')::uuid AND c.project_id=r.project_id`;
+/** Render with the current project and (for candidate sources) candidate revisions, for staleness. */
+const joined = (q: Database) => q.select({ render: projectRenders, currentProjectRevision: projects.revision, currentCandidateRevision: candidates.revision })
+  .from(projectRenders).innerJoin(projects, eq(projects.id, projectRenders.projectId))
+  .leftJoin(candidates, and(eq(candidates.id, sql`(${projectRenders.source}->>'candidateId')::uuid`), eq(candidates.projectId, projectRenders.projectId)));
+const views = (rows: { render: typeof projectRenders.$inferSelect; currentProjectRevision: number; currentCandidateRevision: number | null }[]) =>
+  rows.map(row => view(row as JoinedRender));
 export async function createRender(principal: Principal, projectId: string, input: unknown, queue?: PgBoss) {
   const userId = owner(principal), id = idSchema.parse(projectId), request = createRenderSchema.parse(input);
   const requestHash = hash({ kind: 'static-render', projectId: id, ...request }), versions = await renderVersions();
-  const renderId = await transaction(async client => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${userId}:${request.operationId}`]);
-    const project = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, userId])).rows[0];
+  const renderId = await transaction(async (client, tx) => {
+    await advisoryXactLock(tx, `${userId}:${request.operationId}`);
+    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+      .where(and(eq(projects.id, id), canAccessProject(projects.id, userId))).for('update');
     if (!project) throw notFound();
-    const previous = (await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [userId, request.operationId])).rows[0];
+    const [previous] = await tx.select({ requestHash: operations.requestHash, result: operations.result }).from(operations)
+      .where(and(eq(operations.actorId, userId), eq(operations.id, request.operationId)));
     if (previous) {
-      if (previous.request_hash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
-      return previous.result.renderId as string;
+      if (previous.requestHash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
+      return (previous.result as { renderId: string }).renderId;
     }
     let state = spatialStateSchema.parse(project.snapshot), projectRevision = project.revision;
     if (request.source.kind === 'current') {
       if (project.revision !== request.source.revision) throw new DomainError('REVISION_CONFLICT', '当前方案已更新，请重新选择版本。', 409);
     } else {
-      const candidate = (await client.query('SELECT * FROM candidates WHERE id=$1 AND project_id=$2 FOR SHARE', [request.source.candidateId, id])).rows[0];
+      const [candidate] = await tx.select({ revision: candidates.revision, baseRevision: candidates.baseRevision, baseState: candidates.baseState,
+        visualStyle: candidates.visualStyle, objects: candidates.objects }).from(candidates)
+        .where(and(eq(candidates.id, request.source.candidateId), eq(candidates.projectId, id))).for('share');
       if (!candidate) throw notFound();
       if (candidate.revision !== request.source.revision) throw new DomainError('CANDIDATE_REVISION_CONFLICT', '候选已有新版本，请重新选择。', 409);
-      const base = spatialStateSchema.parse(candidate.base_state);
-      state = spatialStateSchema.parse({ ...base, visualStyle: candidate.visual_style ?? base.visualStyle, currentLayout: { ...base.currentLayout, objects: candidate.objects } });
-      projectRevision = candidate.base_revision;
+      const base = spatialStateSchema.parse(candidate.baseState);
+      state = spatialStateSchema.parse({ ...base, visualStyle: candidate.visualStyle ?? base.visualStyle, currentLayout: { ...base.currentLayout, objects: candidate.objects } });
+      projectRevision = candidate.baseRevision;
     }
     const source: RenderSource = { ...request.source, projectRevision, fixedFactsId: state.fixedFacts.id, fixedFactsRevision: state.fixedFacts.revision };
     const label = artifactLabel(source, state.scale, state.synthetic), scene = toScene(state, label);
     if (!scene.rooms.length) throw new DomainError('EMPTY_SCENE', '空间尚无可展示的轮廓，请先建立空间。');
     const snapshotHash = hash({ scene, source, scale: state.scale, synthetic: state.synthetic }), renderId = randomUUID();
-    await client.query(`INSERT INTO project_renders(id,actor_id,project_id,request_id,request_hash,source,snapshot,snapshot_hash,
-      asset_version,renderer_version,scale,synthetic,concept,label,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'queued')`,
-      [renderId, userId, id, request.operationId, requestHash, source, scene, snapshotHash, versions.assetVersion, versions.rendererVersion,
-        state.scale, state.synthetic, !['calibrated', 'synthetic'].includes(state.scale), label]);
-    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)',
-      [userId, request.operationId, id, requestHash, { kind: 'static-render', renderId }]);
+    await tx.insert(projectRenders).values({ id: renderId, actorId: userId, projectId: id, requestId: request.operationId, requestHash, source,
+      snapshot: scene, snapshotHash, assetVersion: versions.assetVersion, rendererVersion: versions.rendererVersion, scale: state.scale,
+      synthetic: state.synthetic, concept: !['calibrated', 'synthetic'].includes(state.scale), label, status: 'queued' });
+    await tx.insert(operations).values({ actorId: userId, id: request.operationId, projectId: id, requestHash, result: { kind: 'static-render', renderId } });
     await enqueueRender(client, renderId, queue);
     return renderId;
   });
@@ -87,49 +90,51 @@ export async function enqueueSchemeRender(client: PoolClient, input: { projectId
   const source: RenderSource = { kind: 'scheme', ...input.scheme, projectRevision: input.projectRevision, fixedFactsId: state.fixedFacts.id, fixedFactsRevision: state.fixedFacts.revision };
   const label = `${input.label}　|　${artifactLabel(source, state.scale, state.synthetic).split('　|　')[1]}`, scene = toScene(state, label);
   const snapshotHash = hash({ scene, source, scale: state.scale, synthetic: state.synthetic }), renderId = randomUUID(), requestId = randomUUID();
-  await client.query(`INSERT INTO project_renders(id,actor_id,project_id,request_id,request_hash,source,snapshot,snapshot_hash,
-    asset_version,renderer_version,scale,synthetic,concept,label,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'queued')`,
-    [renderId, input.actorId, input.projectId, requestId, hash({ kind: 'scheme-render', ...input.scheme, snapshotHash }), source, scene, snapshotHash,
-      versions.assetVersion, versions.rendererVersion, state.scale, state.synthetic, !['calibrated', 'synthetic'].includes(state.scale), label]);
+  await orm(client).insert(projectRenders).values({ id: renderId, actorId: input.actorId, projectId: input.projectId, requestId,
+    requestHash: hash({ kind: 'scheme-render', ...input.scheme, snapshotHash }), source, snapshot: scene, snapshotHash,
+    assetVersion: versions.assetVersion, rendererVersion: versions.rendererVersion, scale: state.scale, synthetic: state.synthetic,
+    concept: !['calibrated', 'synthetic'].includes(state.scale), label, status: 'queued' });
   await enqueueRender(client, renderId, queue);
   return renderId;
 }
 /** Internal status of renders the caller is already authorised to see (by project). */
 export async function renderStatuses(projectId: string, renderIds: string[], client: Pick<PoolClient, 'query'> = pool) {
   if (!renderIds.length) return new Map<string, RenderView>();
-  const rows = (await client.query<RenderRow>(`${joined} WHERE r.project_id=$1 AND r.id=ANY($2::uuid[])`, [projectId, renderIds])).rows;
-  return new Map(rows.map(row => [row.id, view(row)]));
+  const rows = await joined(orm(client as PoolClient)).where(and(eq(projectRenders.projectId, projectId), inArray(projectRenders.id, renderIds)));
+  return new Map(views(rows).map(row => [row.id, row]));
 }
 /** Internal image bytes for an authorised caller; digest checked as in readRender. */
 export async function readRenderImage(projectId: string, renderId: string, store: PrivateFileStore = privateStore()) {
   const result = (await renderStatuses(projectId, [renderId])).get(renderId);
   if (!result) throw notFound();
   if (result.status !== 'completed') throw new DomainError('OUTPUT_NOT_READY', '效果图尚未完成。', 409);
-  const resource = (await pool.query("SELECT object_key FROM resources WHERE id=$1 AND project_id=$2 AND state='ready'", [result.resourceId, projectId])).rows[0];
+  const [resource] = await db.select({ objectKey: resources.objectKey }).from(resources)
+    .where(and(eq(resources.id, result.resourceId!), eq(resources.projectId, projectId), eq(resources.state, 'ready')));
   if (!resource) throw new DomainError('OUTPUT_UNAVAILABLE', '效果图暂时不可用。', 503);
   try {
-    const bytes = await store.read(resource.object_key);
+    const bytes = await store.read(resource.objectKey);
     if (bytesHash(bytes) !== result.imageHash) throw new Error('Image digest mismatch');
     return bytes;
   } catch { throw new DomainError('OUTPUT_UNAVAILABLE', '效果图暂时不可用，请稍后重试。', 503); }
 }
 export async function getRender(principal: Principal, projectId: string, renderId: string) {
-  const row = (await pool.query<RenderRow>(`${joined} WHERE r.id=$1 AND r.project_id=$2 AND ${projectAccess('r.project_id', '$3')}`,
-    [idSchema.parse(renderId), idSchema.parse(projectId), owner(principal)])).rows[0];
-  if (!row) throw notFound(); return view(row);
+  const [row] = views(await joined(db).where(and(eq(projectRenders.id, idSchema.parse(renderId)), eq(projectRenders.projectId, idSchema.parse(projectId)),
+    canAccessProject(projectRenders.projectId, owner(principal)))));
+  if (!row) throw notFound(); return row;
 }
 export async function listRenders(principal: Principal, projectId: string) {
   const id = idSchema.parse(projectId), userId = owner(principal);
-  if (!(await pool.query(`SELECT 1 FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, userId])).rowCount) throw notFound();
-  return (await pool.query<RenderRow>(`${joined} WHERE r.project_id=$1 ORDER BY r.created_at DESC LIMIT 20`, [id])).rows.map(view);
+  if (!(await db.select({ one: sql`1` }).from(projects).where(and(eq(projects.id, id), canAccessProject(projects.id, userId)))).length) throw notFound();
+  return views(await joined(db).where(eq(projectRenders.projectId, id)).orderBy(desc(projectRenders.createdAt)).limit(20));
 }
 export async function readRender(principal: Principal, projectId: string, renderId: string, store: PrivateFileStore = privateStore()) {
   const result = await getRender(principal, projectId, renderId);
   if (result.status !== 'completed') throw new DomainError('OUTPUT_NOT_READY', '静态成果尚未完成。', 409);
-  const resource = (await pool.query("SELECT object_key FROM resources WHERE id=$1 AND project_id=$2 AND state='ready'", [result.resourceId, projectId])).rows[0];
+  const [resource] = await db.select({ objectKey: resources.objectKey }).from(resources)
+    .where(and(eq(resources.id, result.resourceId!), eq(resources.projectId, projectId), eq(resources.state, 'ready')));
   if (!resource) throw new DomainError('OUTPUT_UNAVAILABLE', '成果文件暂时不可用。', 503);
   try {
-    const bytes = await store.read(resource.object_key);
+    const bytes = await store.read(resource.objectKey);
     if (bytesHash(bytes) !== result.imageHash) throw new Error('Image digest mismatch');
     return bytes;
   } catch { throw new DomainError('OUTPUT_UNAVAILABLE', '成果文件暂时不可用，请稍后重试。', 503); }

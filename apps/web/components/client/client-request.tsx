@@ -12,7 +12,7 @@ import { SchemeViewer } from './scheme-viewer';
 import { softOf, styleKey } from './soft-styles';
 
 // ---------- 状态 ----------
-const rendering = (s: FinishSchemeView) => !s.render || s.render.status === 'queued' || s.render.status === 'running';
+const rendering = (s: FinishSchemeView) => !s.render || s.render.status === 'queued' || s.render.status === 'running' || s.render.status === 'retry_wait';
 export function requestStatus(r: FinishRequestView): { kind: BadgeKind; label: string; line: string; polling: boolean } {
   const done = r.schemes.filter(s => s.render?.status === 'completed').length;
   switch (r.status) {
@@ -202,6 +202,7 @@ export function RequestRoute({ id, sub }: { id: string; sub?: string }) {
   const user = useSignedIn(`${base}/r/${id}${sub ? `/${sub}` : ''}`);
   const request = useQuery({ queryKey: ['request', entry, id], queryFn: () => clientApi(entry).request(id), enabled: !!user,
     refetchInterval: query => query.state.data && requestStatus(query.state.data).polling ? 3000 : false });
+  const [peek, setPeek] = useState(false);
   if (!user || request.isLoading) return <LoadingScreen back={`${base}/projects`}/>;
   if (request.error instanceof ClientError && request.error.status === 404) return <NotFound title="找不到这个项目" text="项目不存在，或没有绑定到你的账号。"/>;
   if (!request.data) return <Screen bar={<AppBar back={`${base}/projects`}/>}><main className="screen__body"><ErrorLine error={request.error}/></main></Screen>;
@@ -212,7 +213,8 @@ export function RequestRoute({ id, sub }: { id: string; sub?: string }) {
   if (r.status === 'assisted_conversion') return <AssistView request={r}/>;
   if (r.status === 'pending_review') return <ReviewView request={r}/>;
   // First generation only: once a scheme has been adjusted, re-renders show inside the scheme and adjust pages.
-  if (!sub && r.schemes.every(s => s.revision === 1) && !r.schemes.some(s => s.render?.status === 'completed') && r.schemes.some(rendering)) return <WaitView request={r}/>;
+  // Stay until every render has finished so the progress is visible; the customer may look at finished schemes early.
+  if (!sub && !peek && r.schemes.every(s => s.revision === 1) && r.schemes.some(rendering)) return <WaitView request={r} onPeek={() => setPeek(true)}/>;
   if (sub === 'adjust') return <AdjustView request={r}/>;
   if (sub === 'confirm') return <ConfirmView request={r}/>;
   if (sub === 'done') return <DoneView request={r}/>;
@@ -233,23 +235,55 @@ function RequestSummary({ request: r }: { request: FinishRequestView }) {
     {r.note && <Row label="说明" value={r.note} stack/>}
   </Group></Section>;
 }
-function WaitView({ request: r, converting = false }: { request: FinishRequestView; converting?: boolean }) {
+const RENDER_GUESS_MS = 90_000;
+const clock = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+/** When each render was first seen running and completed on this page; the worker reports no finer progress. */
+function useRenderClock(schemes: FinishSchemeView[]) {
+  const seen = useRef(new Map<string, { start?: number; end?: number }>());
+  const [now, setNow] = useState(() => Date.now());
+  const [since] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    const at = Date.now();
+    for (const s of schemes) {
+      const entry = seen.current.get(s.id) ?? {};
+      if (s.render?.status === 'running' && !entry.start) seen.current.set(s.id, { ...entry, start: at });
+      if (s.render?.status === 'completed' && entry.start && !entry.end) seen.current.set(s.id, { ...entry, end: at });
+    }
+  }, [schemes]);
+  const measured = [...seen.current.values()].flatMap(e => e.start && e.end ? [e.end - e.start] : []);
+  const estimate = measured.length ? measured.reduce((a, b) => a + b, 0) / measured.length : null;
+  const elapsed = (id: string) => { const start = seen.current.get(id)?.start; return start ? now - start : 0; };
+  return { estimate, elapsed, waited: now - since };
+}
+function WaitView({ request: r, converting = false, onPeek }: { request: FinishRequestView; converting?: boolean; onPeek?: () => void }) {
   const { base } = useClient();
-  const total = r.schemes.length || 3, done = r.schemes.filter(s => s.render && !rendering(s)).length;
-  const k = converting ? .12 : (1 + done) / (total + 1);
+  const { estimate, elapsed, waited } = useRenderClock(r.schemes);
+  const total = r.schemes.length || 3;
+  const done = r.schemes.filter(s => s.render?.status === 'completed').length, failed = r.schemes.filter(s => s.render?.status === 'failed').length;
+  // Within a render, creep towards (never reach) the next step so a 30 s–2 min image does not look frozen.
+  const creep = r.schemes.filter(s => s.render?.status === 'running').reduce((sum, s) => sum + Math.min(.95, 1 - Math.exp(-elapsed(s.id) / (estimate ?? RENDER_GUESS_MS))), 0);
+  const k = converting ? .12 : .06 + .94 * Math.min(1, (done + failed + creep) / total);
+  const slotState = (s: FinishSchemeView) => converting ? 'todo' : s.render?.status === 'completed' ? 'done'
+    : s.render?.status === 'failed' ? 'failed' : s.render?.status === 'running' ? 'now' : 'todo';
+  const slotNote = (s: FinishSchemeView, state: string) => state === 'now' ? ` · ${clock(elapsed(s.id))}` : state === 'failed' ? ' · 失败' : state === 'todo' && !converting ? ' · 排队' : '';
+  const pace = estimate ? `每张约 ${Math.max(1, Math.round(estimate / 1000))} 秒` : '每张约 1–2 分钟';
   const steps = [...(r.source === 'drawing' ? ['识别图纸'] : []), '读取空间与饰面', '计算铺贴排版与切块', `渲染 ${total} 张效果图`, '整理方案'];
   const at = converting ? 0 : steps.length - 2;
   const slots = r.schemes.length ? r.schemes : [1, 2, 3].map(ordinal => ({ id: String(ordinal), ordinal, render: null } as unknown as FinishSchemeView));
   return <Screen bar={<AppBar back={`${base}/projects`}/>}>
     <main className="screen__body">
       <h1 className="page-title">{converting ? '正在识别图纸' : '正在排版出图'}</h1>
-      <p className="lede">{converting ? `正在读取「${r.drawingName ?? '图纸'}」的图层、墙体与楼层，识别后直接排版出图。` : `按你选择的 ${r.finishes.length} 处饰面和石材计算整块与切块，再渲染效果图。`}每张约 1–2 分钟，可以离开此页，完成后在「项目」里查看。</p>
-      <div className="renders">{slots.map(s => { const href = s.render?.status === 'completed' ? s.render.imageHref : null;
-        return <div key={s.id} className="render-slot" data-state={href ? 'done' : converting ? 'todo' : 'now'}>{href && <img src={href} alt=""/>}<span>方案 {letter(s)}</span></div>; })}</div>
+      <p className="lede">{converting ? `正在读取「${r.drawingName ?? '图纸'}」的图层、墙体与楼层，识别后直接排版出图。` : `按你选择的 ${r.finishes.length} 处饰面和石材计算整块与切块，再渲染效果图。`}{converting ? '每张约 1–2 分钟' : pace}，可以离开此页，完成后在「项目」里查看。</p>
+      <div className="renders">{slots.map(s => { const state = slotState(s);
+        return <div key={s.id} className="render-slot" data-state={state}>{state === 'done' && s.render?.imageHref && <img src={s.render.imageHref} alt=""/>}<span className="num">方案 {letter(s)}{slotNote(s, state)}</span></div>; })}</div>
       <div className="bar" role="progressbar" aria-label="出图进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(k * 100)}><i style={{ width: `${k * 100}%` }}/></div>
-      <p className="meta num" style={{ marginTop: 8 }}>{converting ? '转换中' : `已完成 ${done} / ${total}`}</p>
+      <p className="meta num" style={{ marginTop: 8 }}>{converting ? '转换中' : [`已完成 ${done} / ${total}`, failed ? `${failed} 张出图失败` : '', `已等待 ${clock(waited)}`].filter(Boolean).join(' · ')}</p>
       <ol className="timeline">{steps.map((t, i) => <li key={t} data-state={i < at ? 'done' : i === at ? 'now' : 'todo'}><i aria-hidden="true">{i < at ? <Icon name="check" size={13}/> : null}</i><div><b>{t}</b></div></li>)}</ol>
-      <div className="btn-stack"><Link className="btn btn--secondary btn--block" href={`${base}/projects`}>去我的项目</Link></div>
+      <div className="btn-stack">
+        {onPeek && done > 0 && <button type="button" className="btn btn--primary btn--block" onClick={onPeek}>先看已出的 {done} 个方案</button>}
+        <Link className="btn btn--secondary btn--block" href={`${base}/projects`}>去我的项目</Link>
+      </div>
     </main>
   </Screen>;
 }

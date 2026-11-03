@@ -51,22 +51,22 @@ try {
   const owner = await phone(browser);
   await step('定向分享：未登录预览（效果图已预生成）', async () => {
     await owner.goto(`${base}/s/${seed.targeted.token}`);
-    await owner.locator('.plate-img img').waitFor({ timeout: 30000 });
+    await owner.locator('img.stage__img').waitFor({ timeout: 30000 });
     await shot(owner, '01-share-preview');
   });
   await step('定向分享：调整需登录 → 指定手机号登录 → 自动绑定', async () => {
     await owner.getByRole('button', { name: /调整/ }).first().click();
     await owner.getByRole('button', { name: '手机号登录' }).click();
     await owner.waitForURL(/login/); await login(owner, phones.targeted);
-    await owner.getByText('已绑定到').waitFor({ timeout: 30000 }); await shot(owner, '02-bound');
+    await owner.getByRole('heading', { name: '已绑定到你的账号' }).waitFor({ timeout: 30000 }); await shot(owner, '02-bound');
     await owner.getByRole('link', { name: '查看并调整方案' }).click(); await owner.waitForURL(/\/r\//);
   });
   await step('方案页：切换方案与 3D 查看', async () => {
-    await owner.locator('.rail-item').nth(1).click();
-    await owner.getByRole('button', { name: /3D 查看/ }).click();
-    await owner.locator('.viewer canvas').waitFor({ timeout: 60000 }); await owner.waitForTimeout(4000);
+    await owner.getByRole('group', { name: '切换方案' }).getByRole('button').nth(1).click();
+    await owner.getByRole('group', { name: '查看方式' }).getByRole('button', { name: '3D' }).click();
+    await owner.locator('.stage__viewer canvas').waitFor({ timeout: 60000 }); await owner.waitForTimeout(4000);
     await owner.screenshot({ path: path.join(out, '03-3d.png'), timeout: 120000 });
-    await owner.getByRole('button', { name: /效果图/ }).first().click();
+    await owner.getByRole('group', { name: '查看方式' }).getByRole('button', { name: '效果图' }).click();
   });
   await step('确认方案并留言 → 已确认', async () => {
     await owner.getByRole('link', { name: /确认方案/ }).click(); await owner.waitForURL(/confirm/);
@@ -77,7 +77,9 @@ try {
   await step('调整：换石材 → 新修订出图中 → 提示需要重新确认', async () => {
     await owner.getByRole('link', { name: '回到方案' }).click(); await owner.waitForURL(/\/r\/[^/]+$/);
     await owner.getByRole('link', { name: /继续调整|调整/ }).first().click(); await owner.waitForURL(/adjust/);
+    await owner.getByRole('button', { name: '硬装石材' }).click();
     await owner.locator('.swatch[aria-pressed=false]').first().click();
+    await owner.getByRole('button', { name: /重新出图 · 生成修订/ }).click();
     await owner.getByText('重新出图中').first().waitFor({ timeout: 30000 }); await shot(owner, '05-rerender');
     await owner.goto(owner.url().replace(/\/adjust$/, ''));
     await owner.getByText('需要重新确认').waitFor({ timeout: 30000 });
@@ -95,7 +97,7 @@ try {
     await other.getByPlaceholder('6 位绑定码').fill('AAAAAA'); await other.getByRole('button', { name: '绑定到我的账号' }).click();
     await other.getByText(/还可尝试 4 次/).waitFor({ timeout: 30000 });
     await other.getByPlaceholder('6 位绑定码').fill(seed.code.code); await other.getByRole('button', { name: '绑定到我的账号' }).click();
-    await other.getByText('已绑定到').waitFor({ timeout: 30000 }); await shot(other, '07-code-bound');
+    await other.getByRole('heading', { name: '已绑定到你的账号' }).waitFor({ timeout: 30000 }); await shot(other, '07-code-bound');
   });
 
   // Self-service request with the demo villa.
@@ -106,15 +108,15 @@ try {
     await self.waitForURL(/\/new$/); await self.getByRole('radio', { name: /示例别墅/ }).click();
     await self.getByRole('button', { name: /下一步：选择饰面/ }).click(); await shot(self, '08-finishes');
     await self.getByRole('button', { name: /下一步：挑选石材/ }).click();
-    await self.locator('.stone').nth(0).click(); await self.locator('.stone').nth(3).click();
+    await self.locator('.swatch').nth(0).click(); await self.locator('.swatch').nth(3).click();
     await self.getByRole('radio', { name: '浅色' }).click();
     await self.getByRole('button', { name: '提交方案需求' }).click(); await self.waitForURL(/\/r\//);
-    await self.getByText('排版出图').waitFor({ timeout: 30000 });
-    await self.reload(); await self.getByText('排版出图').waitFor({ timeout: 30000 }); await shot(self, '09-generating');
+    await self.getByText('正在排版出图').waitFor({ timeout: 30000 });
+    await self.reload(); await self.getByText('正在排版出图').waitFor({ timeout: 30000 }); await shot(self, '09-generating');
   });
   await step('我的项目：自己提交的与企业分享的分组', async () => {
     await other.goto(`${base}/c/demo-home/projects`); await other.getByText('企业分享给我的').waitFor();
-    await other.locator('.proj').first().waitFor(); await shot(other, '10-projects');
+    await other.locator('.project').first().waitFor(); await shot(other, '10-projects');
   });
   await step('伪造链接 → 已失效', async () => {
     await visitor.goto(`${base}/s/${'x'.repeat(32)}`); await visitor.getByText('这个分享链接').waitFor();

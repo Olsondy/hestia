@@ -1,6 +1,6 @@
 'use client';
-// 3D view of one scheme revision: the frozen scene its still was rendered from, through the shared scene runtime
-// (same quality tiers and camera presets as background stills). The background still remains the reference.
+// 3D view of one scheme revision inside the scheme Stage: the frozen scene its still was rendered from, through the shared
+// scene runtime (same quality tiers and camera presets as background stills). The background still remains the reference.
 import { useEffect, useRef, useState } from 'react';
 import type { SpatialScene, CameraPreset } from '../../../../packages/scene-runtime/src/scene';
 import type { SceneSnapshot } from './client-api';
@@ -18,7 +18,7 @@ export function SchemeViewer({ scene, initialPreset }: { scene: SceneSnapshot | 
       if (disposed || !host.current) return;
       const instance = new SpatialScene(host.current);
       view.current = instance;
-      instance.setBackdrop('#e9e0d4');
+      instance.setBackdrop(getComputedStyle(host.current).getPropertyValue('--c-stage').trim() || '#2a2826');
       instance.load(scene);
       instance.renderer.domElement.setAttribute('aria-label', '可拖动旋转、双指缩放的方案 3D 视图');
       const list = instance.cameraPresets().filter(preset => preset.kind === 'interior' || preset.id === 'aerial');
@@ -30,13 +30,10 @@ export function SchemeViewer({ scene, initialPreset }: { scene: SceneSnapshot | 
   }, [scene, initialPreset]);
   const choose = (id: string) => { try { view.current?.applyCameraPreset(id); setActive(id); } catch { /* preset list is from this scene */ } };
   return <>
-    <div className="viewer" ref={host}>
-      {!scene && !error && <div className="viewer-msg" role="status">正在打开 3D…</div>}
-      {error && <div className="viewer-msg" role="alert">{error}</div>}
-      {scene && !error && <span className="viewer-hint">拖动旋转 · 双指缩放</span>}
-    </div>
-    {presets.length > 1 && <div className="viewer-presets" role="group" aria-label="预设视角">
-      {presets.map(preset => <button key={preset.id} aria-pressed={preset.id === active} onClick={() => choose(preset.id)}>{preset.name}</button>)}
+    <div className="stage__viewer" ref={host}/>
+    {(!scene || error) && <div className="stage__msg" role={error ? 'alert' : 'status'}>{error || '正在打开 3D…'}</div>}
+    {presets.length > 1 && <div className="stage__presets" role="group" aria-label="预设视角">
+      {presets.map(preset => <button key={preset.id} className="media-tag" aria-pressed={preset.id === active} onClick={() => choose(preset.id)}>{preset.name}</button>)}
     </div>}
   </>;
 }

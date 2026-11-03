@@ -8,7 +8,7 @@ import type { SceneSnapshot } from '../../contracts/src/scene';
 import { createFinishRequestSchema, createMemberRequestSchema, leadFilterSchema, publishFinishRequestSchema, type ClientCatalogView, type DemoVillaPlanView, type FinishRequestStatus, type FinishRequestView,
   type RequestFinishView, type RequestPreferences,
   type FinishSchemeView, type LeadView } from '../../contracts/src/finish-requests';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
 import { finishRequestEvents, finishRequests, finishSchemeRevisions, finishSchemes, floorplanImports, hestiaAuthUser, operations, projectRenders, projectRevisions,
   projects, workspaceMembers, workspaces } from '../../persistence/src/schema';
@@ -17,7 +17,7 @@ import { customerEntry, ensureCustomer } from '../../workspaces/src/customers';
 import { initialState, insertProjectInTransaction, stateFromScene } from '../../projects/src/service';
 import { workspaceStones } from '../../finishes/src/catalog';
 import { stoneKey } from '../../finishes/src/plan';
-import { createFloorplanImport, getFloorplanCandidate } from '../../drawing-imports/src/service';
+import { createFloorplanImport, getFloorplanCandidate, importCandidate } from '../../drawing-imports/src/service';
 import type { PrivateFileStore } from '../../files/src/storage';
 import { enqueueSchemeRender, readRenderImage, renderStatuses } from '../../renders/src/service';
 import { generateSchemes } from './generate';
@@ -48,9 +48,10 @@ const notFound = () => new DomainError('NOT_FOUND', '方案需求不存在。', 
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const labels: Record<FinishRequestStatus, string> = {
   awaiting_drawing: '请上传户型图纸',
-  converting: '图纸自动转换中',
-  assisted_conversion: '该图纸格式不会自动识别，企业将协助转换后出方案',
-  pending_review: '方案已生成，等待企业审核后发布',
+  converting: '正在自动识别图纸',
+  conversion_failed: '图纸没能自动识别，可重新上传或交给企业整理',
+  assisted_conversion: '已收到图纸，排队处理中',
+  pending_review: '方案已生成，等待企业确认后发布',
   published: '方案已发布',
 };
 
@@ -65,10 +66,22 @@ export async function memberOf(client: Pick<PoolClient, 'query'>, userId: string
     .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId))).limit(1);
   if (!member) throw notFound();
 }
-async function importStatus(client: Pick<PoolClient, 'query'>, row: RequestRow): Promise<FinishRequestStatus> {
-  if (row.status !== 'converting' || !row.floorplan_import_id) return row.status;
-  const status = (await ormOf(client).select({ status: floorplanImports.status }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.status;
-  return status === 'assisted_conversion' ? 'assisted_conversion' : status === 'pending_review' || status === 'failed' ? 'pending_review' : 'converting';
+/**
+ * Request status as the customer sees it while the drawing is being handled (ADR-0013): a converted DXF is still
+ * 'converting' until its schemes are generated; a failed conversion shows its reason; images wait in the queue.
+ */
+async function importState(client: Pick<PoolClient, 'query'>, row: RequestRow): Promise<{ status: FinishRequestStatus; error: string | null }> {
+  if (row.status !== 'converting' || !row.floorplan_import_id) return { status: row.status, error: null };
+  const [imported] = await ormOf(client).select({ status: floorplanImports.status, error: floorplanImports.error }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id));
+  if (imported?.status === 'assisted_conversion') return { status: 'assisted_conversion', error: null };
+  if (imported?.status === 'failed') return { status: 'conversion_failed', error: (imported.error as { message?: string } | null)?.message ?? '图纸没能自动识别。' };
+  return { status: 'converting', error: null };
+}
+const importStatus = async (client: Pick<PoolClient, 'query'>, row: RequestRow) => (await importState(client, row)).status;
+/** Raw import status: 'pending_review' means a candidate exists (converted DXF or a member's assisted import). */
+async function rawImportStatus(client: Pick<PoolClient, 'query'>, row: RequestRow) {
+  if (!row.floorplan_import_id) return null;
+  return (await ormOf(client).select({ status: floorplanImports.status }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.status ?? null;
 }
 /** Name, kind and level of each requested finish, read from the project's fixed facts. */
 export function requestFinishes(facts: SpatialState['fixedFacts'], ids: string[]): RequestFinishView[] {
@@ -84,7 +97,7 @@ export function requestFinishes(facts: SpatialState['fixedFacts'], ids: string[]
   });
 }
 export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience: 'customer' | 'member', slug?: string): Promise<FinishRequestView> {
-  const tx = ormOf(client), status = await importStatus(client, row);
+  const tx = ormOf(client), { status, error: conversionError } = await importState(client, row);
   const [project] = await tx.select({ name: projects.name, snapshot: projects.snapshot }).from(projects).where(eq(projects.id, row.project_id));
   const drawingName = row.floorplan_import_id
     ? (await tx.select({ fileName: floorplanImports.fileName }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.fileName ?? null : null;
@@ -92,7 +105,7 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
   const schemes = audience === 'customer' && row.status !== 'published' ? []
     : await tx.select(schemeColumns).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).orderBy(asc(finishSchemes.ordinal)) as SchemeRow[];
   const renders = await renderStatuses(row.project_id, schemes.flatMap(s => s.render_id ? [s.render_id] : []), client);
-  return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, source: row.source, status, statusLabel: labels[status],
+  return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, source: row.source, status, statusLabel: labels[status], conversionError,
     title: project.name, origin: row.origin, drawingName, finishes: requestFinishes(facts, row.finish_ids), preferences: row.preferences ?? null,
     finishIds: row.finish_ids, stones: row.stones, note: row.note, floorplanImportId: row.floorplan_import_id,
     schemes: schemes.map(s => {
@@ -229,20 +242,43 @@ export async function createFinishRequest(principal: Principal, slug: string, in
 
 /** Customer uploads the drawing for a drawing request. DXF converts in the background; other formats wait for assistance. */
 export async function uploadRequestDrawing(principal: Principal, slug: string, requestId: string, upload: { input: unknown; bytes: Uint8Array; fileName: string }, deps: RequestDeps = {}) {
-  const row = await transaction(async client => {
-    const { userId } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
+  const row = await transaction(async (client, tx) => {
+    const { userId, entry } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
     if (row.customer_id !== userId) throw notFound();
-    if (row.source !== 'drawing' || row.status !== 'awaiting_drawing') throw new DomainError('DRAWING_NOT_EXPECTED', '这个方案需求不需要再上传图纸。', 409);
+    // A failed automatic conversion can be replaced by a new upload (ADR-0013).
+    const retry = row.status === 'converting' && (await importStatus(client, row)) === 'conversion_failed';
+    if (row.source !== 'drawing' || (row.status !== 'awaiting_drawing' && !retry)) throw new DomainError('DRAWING_NOT_EXPECTED', '这个方案需求不需要再上传图纸。', 409);
+    // Free uploads per customer and enterprise per day (Beijing time); failed conversions count too.
+    const [workspace] = await tx.select({ settings: workspaces.settings }).from(workspaces).where(eq(workspaces.id, entry.id));
+    const limit = Number((workspace.settings as { drawingUploadsPerDay?: number }).drawingUploadsPerDay ?? 3);
+    await advisoryXactLock(tx, `drawing-upload:${entry.id}:${userId}`);
+    const [{ used }] = await tx.select({ used: sql<number>`count(*)::int` }).from(floorplanImports).innerJoin(finishRequests, eq(finishRequests.projectId, floorplanImports.projectId))
+      .where(and(eq(finishRequests.workspaceId, entry.id), eq(finishRequests.customerId, userId),
+        sql`${floorplanImports.createdAt} >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'`));
+    if (used >= limit) throw new DomainError('DRAWING_DAILY_LIMIT', `今天的 ${limit} 次免费上传已用完，明天可以再试；也可以联系企业成员。`, 429, { limit });
     return row;
   });
   const imported = await createFloorplanImport(principal, row.project_id, upload.input, upload.bytes, upload.fileName, { authorized: true, store: deps.store, queue: deps.importQueue });
-  return transaction(async (client, tx) => {
+  await transaction(async (_client, tx) => {
     await tx.update(finishRequests).set({ floorplanImportId: imported.id, status: 'converting', updatedAt: sql`now()` })
-      .where(and(eq(finishRequests.id, row.id), eq(finishRequests.status, 'awaiting_drawing')));
+      .where(and(eq(finishRequests.id, row.id), inArray(finishRequests.status, ['awaiting_drawing', 'converting'])));
+  });
+  // The import Worker may finish converting before the request points at the import; whichever side comes last generates.
+  await generateForImport(imported.id, deps);
+  return transaction(async client => view(client, await lockedRequest(client, row.id), 'customer', slug));
+}
+
+/** Customer hands a drawing that could not be converted automatically to the enterprise; it joins the queue (ADR-0013). */
+export async function handOverDrawing(principal: Principal, slug: string, requestId: string) {
+  return transaction(async (client, tx) => {
+    const { row } = await customerRequest(client, principal, slug, requestId);
+    const status = await importStatus(client, row);
+    if (status === 'assisted_conversion') return view(client, row, 'customer', slug);
+    if (status !== 'conversion_failed') throw new DomainError('DRAWING_NOT_FAILED', '这份图纸不需要交给企业整理。', 409);
+    await tx.update(floorplanImports).set({ status: 'assisted_conversion', updatedAt: sql`now()` }).where(eq(floorplanImports.id, row.floorplan_import_id!));
     return view(client, await lockedRequest(client, row.id), 'customer', slug);
   });
 }
-
 /** The request when the principal is its customer at this entry. */
 export async function customerRequest(client: PoolClient, principal: Principal, slug: string, requestId: string) {
   const { userId, entry } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
@@ -327,6 +363,53 @@ export async function listLeads(principal: Principal, workspaceId: string, filte
   });
 }
 
+/** Takes a validated drawing candidate as the project's space (floor and stair finishes derived) and generates schemes. */
+async function adoptDrawing(client: PoolClient, row: RequestRow, candidate: { scene: unknown; scale: { status: string } }, operationId: string, deps: RequestDeps) {
+  const tx = orm(client), scene = candidate.scene as SceneSnapshot, finishes = derivedFinishes(scene);
+  const state = stateFromScene({ ...scene, finishes }, candidate.scale.status === 'calibrated' ? 'calibrated' : 'estimated');
+  const [{ revision }] = await tx.update(projects).set({ snapshot: state, revision: sql`${projects.revision}+1`, updatedAt: sql`now()` })
+    .where(eq(projects.id, row.project_id)).returning({ revision: projects.revision });
+  await tx.insert(projectRevisions).values({ projectId: row.project_id, revision, snapshot: state, operationId });
+  await tx.update(finishRequests).set({ finishIds: finishes.map(finish => finish.id) }).where(eq(finishRequests.id, row.id));
+  row.finish_ids = finishes.map(finish => finish.id);
+  return generate(client, row, state, revision, deps);
+}
+
+/**
+ * ADR-0013: after a DXF converts, the request's schemes are generated and published without member review, like the
+ * demo villa. A candidate that fails validation, or no scheme passing the layout checks, turns the import into a
+ * failed conversion the customer can see and act on. Only the opt-in review-all workspace setting holds it. Idempotent.
+ */
+export async function generateForImport(importId: string, deps: RequestDeps = {}) {
+  return transaction(async (client, tx) => {
+    const [found] = await tx.select({ id: finishRequests.id }).from(finishRequests).where(eq(finishRequests.floorplanImportId, idSchema.parse(importId)));
+    if (!found) return null;
+    const row = await lockedRequest(client, found.id);
+    if (row.status !== 'converting') return row.id;
+    const [imported] = await tx.select({ status: floorplanImports.status }).from(floorplanImports).where(eq(floorplanImports.id, importId)).for('update');
+    if (imported?.status !== 'pending_review') return row.id;
+    if ((await tx.select({ one: sql`1` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).limit(1)).length) return row.id;
+    const candidate = await importCandidate(importId);
+    if (!candidate?.valid || !candidate.scene) {
+      const blocking = candidate?.issues.find(issue => issue.severity === 'blocking')?.detail;
+      await tx.update(floorplanImports).set({ status: 'failed', updatedAt: sql`now()`, error: { code: 'CANDIDATE_INVALID',
+        message: blocking ? `图纸没能自动识别出完整户型：${blocking}` : '图纸没能自动识别出完整户型。' } }).where(eq(floorplanImports.id, importId));
+      return row.id;
+    }
+    await adoptDrawing(client, row, candidate, randomUUID(), deps);
+    // Only schemes that pass the layout checks reach the customer; none passing is told to the customer like a failed conversion.
+    await tx.delete(finishSchemes).where(and(eq(finishSchemes.requestId, row.id), sql`NOT (${finishSchemes.report}->>'adoptable')::boolean`));
+    const [{ left }] = await tx.select({ left: sql<number>`count(*)::int` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id));
+    if (!left) {
+      await tx.update(floorplanImports).set({ status: 'failed', updatedAt: sql`now()`, error: { code: 'NO_ADOPTABLE_SCHEME',
+        message: '图纸识别成功，但没能排出可用的铺贴方案，可能是房间尺寸不完整。' } }).where(eq(floorplanImports.id, importId));
+      return row.id;
+    }
+    await settle(client, row, { count: left, adoptable: true }, null);
+    return row.id;
+  });
+}
+
 /**
  * Member review: publish a pending request. A drawing request first takes the reviewed import candidate as the
  * project's space (floor and stair finishes derived), then schemes are generated. Only adoptable schemes are kept.
@@ -341,19 +424,12 @@ export async function publishFinishRequest(principal: Principal, workspaceId: st
     const [previous] = await tx.select({ requestHash: operations.requestHash }).from(operations).where(and(eq(operations.actorId, userId), eq(operations.id, value.operationId)));
     if (previous) { if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409); return row.id; }
     if (row.status === 'published') throw new DomainError('ALREADY_PUBLISHED', '方案已发布。', 409);
-    if (row.source === 'drawing' && (await importStatus(client, row)) !== 'pending_review') throw new DomainError('DRAWING_NOT_READY', '图纸尚未转换完成，请先完成转换或辅助导入户型。', 409);
+    if (row.source === 'drawing' && (await rawImportStatus(client, row)) !== 'pending_review') throw new DomainError('DRAWING_NOT_READY', '图纸尚未转换完成，请先完成转换或辅助导入户型。', 409);
     const hasSchemes = async () => (await tx.select({ one: sql`1` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).limit(1)).length > 0;
     if (row.source === 'drawing' && !(await hasSchemes())) {
       const candidate = await getFloorplanCandidate({ userId }, row.project_id, row.floorplan_import_id!);
       if (!candidate.valid || !candidate.scene) throw new DomainError('DRAWING_INVALID', '图纸候选未通过校验，请先修正或辅助导入户型。', 409);
-      const scene = candidate.scene as SceneSnapshot, finishes = derivedFinishes(scene);
-      const state = stateFromScene({ ...scene, finishes }, candidate.scale.status === 'calibrated' ? 'calibrated' : 'estimated');
-      const [{ revision }] = await tx.update(projects).set({ snapshot: state, revision: sql`${projects.revision}+1`, updatedAt: sql`now()` })
-        .where(eq(projects.id, row.project_id)).returning({ revision: projects.revision });
-      await tx.insert(projectRevisions).values({ projectId: row.project_id, revision, snapshot: state, operationId: value.operationId });
-      await tx.update(finishRequests).set({ finishIds: finishes.map(finish => finish.id) }).where(eq(finishRequests.id, row.id));
-      row.finish_ids = finishes.map(finish => finish.id);
-      await generate(client, row, state, revision, deps);
+      await adoptDrawing(client, row, candidate, value.operationId, deps);
     }
     await tx.delete(finishSchemes).where(and(eq(finishSchemes.requestId, row.id), sql`NOT (${finishSchemes.report}->>'adoptable')::boolean`));
     if (!(await hasSchemes())) throw new DomainError('NO_ADOPTABLE_SCHEME', '没有通过校验的方案可以发布。', 409);

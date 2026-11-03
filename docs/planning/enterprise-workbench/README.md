@@ -5,7 +5,7 @@
 | 规格/能力 | 本地规格 | 阻塞 | GitHub |
 | --- | --- | --- | --- |
 | 总规格 | [spec.md](spec.md) | — | [#42](https://github.com/Olsondy/hestia/issues/42) |
-| S01：图纸需求先生成待审方案 | [S01.md](S01.md) | 无 | [#43](https://github.com/Olsondy/hestia/issues/43) |
+| S01：图纸需求直接出方案（ADR-0013） | [S01.md](S01.md) | 无 | [#43](https://github.com/Olsondy/hestia/issues/43) |
 | S02：线索跟进状态与内部备注 | [S02.md](S02.md) | 无 | [#44](https://github.com/Olsondy/hestia/issues/44) |
 | K01：软装风格目录、家具素材与多楼层布局 | [K01.md](K01.md) | 无 | [#52](https://github.com/Olsondy/hestia/issues/52) |
 | K02：整体方案：硬装 + 软装，客户切换软装风格 | [K02.md](K02.md) | K01 | [#53](https://github.com/Olsondy/hestia/issues/53) |
@@ -14,7 +14,7 @@
 | P03：H5 原型补充软装风格（需用户审阅） | [P03.md](P03.md) | 无 | [#55](https://github.com/Olsondy/hestia/issues/55) |
 | W01：工作台入口与成员登录 | [W01.md](W01.md) | P02 | [#46](https://github.com/Olsondy/hestia/issues/46) |
 | W02：线索列表与详情 | [W02.md](W02.md) | P02, W01, S02 | [#47](https://github.com/Olsondy/hestia/issues/47) |
-| W03：审核发布与辅助转换 | [W03.md](W03.md) | W02, S01 | [#48](https://github.com/Olsondy/hestia/issues/48) |
+| W03：图纸整理队列（辅助转换） | [W03.md](W03.md) | W02, S01 | [#48](https://github.com/Olsondy/hestia/issues/48) |
 | W04：预置方案、分享与绑定管理 | [W04.md](W04.md) | W02 | [#49](https://github.com/Olsondy/hestia/issues/49) |
 | W05：石材库与软装风格目录（只读） | [W05.md](W05.md) | W01, K01 | [#50](https://github.com/Olsondy/hestia/issues/50) |
 | W07：工作台 Agent 出方案界面 | [W07.md](W07.md) | P02, W02, K03 | [#56](https://github.com/Olsondy/hestia/issues/56) |

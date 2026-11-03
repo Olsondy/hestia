@@ -17,9 +17,10 @@ export function requestStatus(r: FinishRequestView): { kind: BadgeKind; label: s
   const done = r.schemes.filter(s => s.render?.status === 'completed').length;
   switch (r.status) {
     case 'awaiting_drawing': return { kind: 'act', label: '待上传图纸', line: '请重新上传户型图纸', polling: false };
-    case 'converting': return { kind: 'wait', label: '图纸转换中', line: '正在读取图层、墙体与楼层', polling: true };
-    case 'assisted_conversion': return { kind: 'wait', label: '需协助转换', line: '等待企业转换图纸', polling: true };
-    case 'pending_review': return { kind: 'wait', label: '待审核', line: '企业核对后发布', polling: true };
+    case 'converting': return { kind: 'wait', label: '识别中', line: '正在自动识别图纸', polling: true };
+    case 'conversion_failed': return { kind: 'act', label: '未能识别', line: '可重新上传，或交给企业整理', polling: false };
+    case 'assisted_conversion': return { kind: 'wait', label: '排队处理中', line: '企业整理户型后出方案', polling: true };
+    case 'pending_review': return { kind: 'wait', label: '等待确认', line: '企业确认后发布', polling: true };
     default: {
       const polling = r.schemes.some(rendering), c = r.confirmation;
       if (c) {
@@ -126,11 +127,11 @@ export function NewRequestView() {
         <div className="upload" data-on={drawing ? '' : undefined}>
           <label className="option" role="radio" aria-checked={drawing}><input type="file" className="sr-only" accept=".dxf,.dwg,.pdf,.png,.jpg,.jpeg" onChange={e => pick(e.target.files?.[0])}/>
             <span className="option__media"><Icon name="upload" size={22}/></span>
-            <span className="option__body"><b>上传我的图纸</b><small>DXF 提交后自动转换；PDF、图片、DWG 由企业协助转换</small></span>
+            <span className="option__body"><b>上传我的图纸</b><small>DXF 立即识别出方案；照片、PDF、DWG 排队由企业整理</small></span>
             <span className="radio"><Icon name="check" size={14}/></span></label>
           {drawing && d.fileName && <>
-            <div className="upload__file"><Icon name="file" size={16}/><b>{d.fileName}</b>{fileMissing ? <Badge kind="act">需重新选择</Badge> : dxf ? <Badge>提交后自动转换</Badge> : <Badge>需企业协助转换</Badge>}</div>
-            <p className="meta">{fileMissing ? '页面刷新后需要重新选择这个文件。' : dxf ? '自动转换的结果需企业核对后才会发布。' : `这个格式不能自动识别，${workspaceName}会协助转换后再出方案。可以继续提交偏好。`}</p>
+            <div className="upload__file"><Icon name="file" size={16}/><b>{d.fileName}</b>{fileMissing ? <Badge kind="act">需重新选择</Badge> : dxf ? <Badge>立即识别</Badge> : <Badge>排队处理</Badge>}</div>
+            <p className="meta">{fileMissing ? '页面刷新后需要重新选择这个文件。' : dxf ? '提交后几分钟内识别并出方案；识别不了会告诉你原因。每天可免费上传 3 次。' : `照片、PDF 和 DWG 需要${workspaceName}整理户型，提交后排队处理，完成后在「项目」里查看。每天可免费上传 3 次。`}</p>
           </>}
         </div>
       </div></>;
@@ -207,6 +208,7 @@ export function RequestRoute({ id, sub }: { id: string; sub?: string }) {
   const r = request.data;
   if (r.status === 'awaiting_drawing') return <UploadAgainView request={r}/>;
   if (r.status === 'converting') return <WaitView request={r} converting/>;
+  if (r.status === 'conversion_failed') return <ConversionFailedView request={r}/>;
   if (r.status === 'assisted_conversion') return <AssistView request={r}/>;
   if (r.status === 'pending_review') return <ReviewView request={r}/>;
   // First generation only: once a scheme has been adjusted, re-renders show inside the scheme and adjust pages.
@@ -235,13 +237,13 @@ function WaitView({ request: r, converting = false }: { request: FinishRequestVi
   const { base } = useClient();
   const total = r.schemes.length || 3, done = r.schemes.filter(s => s.render && !rendering(s)).length;
   const k = converting ? .12 : (1 + done) / (total + 1);
-  const steps = [...(r.source === 'drawing' ? ['转换图纸'] : []), '读取空间与饰面', '计算铺贴排版与切块', `渲染 ${total} 张效果图`, r.source === 'drawing' ? '提交企业审核' : '整理方案'];
+  const steps = [...(r.source === 'drawing' ? ['识别图纸'] : []), '读取空间与饰面', '计算铺贴排版与切块', `渲染 ${total} 张效果图`, '整理方案'];
   const at = converting ? 0 : steps.length - 2;
   const slots = r.schemes.length ? r.schemes : [1, 2, 3].map(ordinal => ({ id: String(ordinal), ordinal, render: null } as unknown as FinishSchemeView));
   return <Screen bar={<AppBar back={`${base}/projects`}/>}>
     <main className="screen__body">
-      <h1 className="page-title">{converting ? '正在转换图纸' : '正在排版出图'}</h1>
-      <p className="lede">{converting ? `正在读取「${r.drawingName ?? '图纸'}」的图层、墙体与楼层。` : `按你选择的 ${r.finishes.length} 处饰面和石材计算整块与切块，再渲染效果图。`}每张约 1–2 分钟，可以离开此页，完成后在「项目」里查看。</p>
+      <h1 className="page-title">{converting ? '正在识别图纸' : '正在排版出图'}</h1>
+      <p className="lede">{converting ? `正在读取「${r.drawingName ?? '图纸'}」的图层、墙体与楼层，识别后直接排版出图。` : `按你选择的 ${r.finishes.length} 处饰面和石材计算整块与切块，再渲染效果图。`}每张约 1–2 分钟，可以离开此页，完成后在「项目」里查看。</p>
       <div className="renders">{slots.map(s => { const href = s.render?.status === 'completed' ? s.render.imageHref : null;
         return <div key={s.id} className="render-slot" data-state={href ? 'done' : converting ? 'todo' : 'now'}>{href && <img src={href} alt=""/>}<span>方案 {letter(s)}</span></div>; })}</div>
       <div className="bar" role="progressbar" aria-label="出图进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(k * 100)}><i style={{ width: `${k * 100}%` }}/></div>
@@ -254,17 +256,41 @@ function WaitView({ request: r, converting = false }: { request: FinishRequestVi
 function ReviewView({ request: r }: { request: FinishRequestView }) {
   const { base, workspaceName } = useClient();
   const drawing = r.source === 'drawing';
-  return <StatusScreen back={`${base}/projects`} title="方案已生成，企业审核后发布"
-    sub={`${drawing ? `你的图纸由系统自动转换。为避免尺寸或饰面边界不准确的方案误导你，${workspaceName}会先核对，再发布给你。` : `${workspaceName}会先核对方案，再发布给你。`}发布后可以在「项目」里查看。`}
-    items={[['提交方案需求', 'done', dateText(r.createdAt)], [drawing ? '图纸转换与排版出图' : '排版出图', 'done', `${r.schemes.length || 3} 个整体方案`], ['企业审核', 'now', '核对尺寸与饰面边界'], ['发布方案', '']]}>
+  return <StatusScreen back={`${base}/projects`} title="方案已生成，企业确认后发布"
+    sub={`${workspaceName}设置了先确认、再发布方案。发布后可以在「项目」里查看。`}
+    items={[['提交方案需求', 'done', dateText(r.createdAt)], [drawing ? '识别图纸与排版出图' : '排版出图', 'done', `${r.schemes.length || 3} 个整体方案`], ['企业确认', 'now', ''], ['发布方案', '']]}>
     <RequestSummary request={r}/>
   </StatusScreen>;
 }
 function AssistView({ request: r }: { request: FinishRequestView }) {
   const { base, workspaceName } = useClient();
-  return <StatusScreen back={`${base}/projects`} title="图纸需要企业协助转换"
-    sub={`「${r.drawingName ?? '图纸'}」不是 DXF，系统不能自动识别。${workspaceName}会协助转换图纸，与你确认楼层和饰面后再出方案。`}
-    items={[['提交方案需求', 'done', dateText(r.createdAt)], ['企业协助转换图纸', 'now', '通常 1–2 个工作日'], ['确认楼层与饰面', ''], ['排版出图并发布', '']]}>
+  return <StatusScreen back={`${base}/projects`} title="已收到图纸，排队处理中"
+    sub={`${workspaceName}会按顺序整理「${r.drawingName ?? '图纸'}」的户型，整理好后自动排版出图，完成后在「项目」里查看。不用一直停在这个页面。`}
+    items={[['提交图纸', 'done', dateText(r.createdAt)], ['企业整理户型', 'now', '排队中，通常 1–2 个工作日'], ['排版出图', ''], ['查看方案', '']]}>
+    <RequestSummary request={r}/>
+  </StatusScreen>;
+}
+/** ADR-0013: a DXF the system could not read is explained right away; the customer uploads again or hands it over. */
+function ConversionFailedView({ request: r }: { request: FinishRequestView }) {
+  const { base, entry, workspaceName } = useClient();
+  const queries = useQueryClient(), [op] = useState(operationId);
+  const settle = (v: FinishRequestView) => { queries.setQueryData(['request', entry, r.id], v); queries.invalidateQueries({ queryKey: ['requests', entry] }); };
+  const send = useMutation({ mutationFn: (file: File) => clientApi(entry).drawing(r.id, file, op), onSuccess: settle });
+  const hand = useMutation({ mutationFn: () => clientApi(entry).handOver(r.id), onSuccess: settle });
+  return <StatusScreen back={`${base}/projects`} seal={<span className="seal seal--quiet" aria-hidden="true"><Icon name="file" size={26}/></span>}
+    title="图纸没能自动识别" sub={r.conversionError ?? '系统没能从这份图纸读出完整的户型。'}>
+    <Section title="可以这样重新导出">
+      <Group>
+        <div className="row"><RowMain icon="check" title="另存为 DXF（AutoCAD 2013 或更早格式）" sub="墙线画成闭合的多段线，单位设为毫米"/></div>
+        <div className="row"><RowMain icon="check" title="只保留一层平面" sub="删去图框、标注和家具图块后再导出"/></div>
+      </Group>
+    </Section>
+    <div className="btn-stack">
+      <label className="btn btn--primary btn--block"><input type="file" className="sr-only" accept=".dxf,.dwg,.pdf,.png,.jpg,.jpeg" disabled={send.isPending}
+        onChange={e => { const f = e.target.files?.[0]; if (f) send.mutate(f); e.target.value = ''; }}/>{send.isPending ? '正在上传…' : '重新上传图纸'}</label>
+      <button className="btn btn--secondary btn--block" disabled={hand.isPending} onClick={() => hand.mutate()}>{hand.isPending ? '正在提交…' : `交给${workspaceName || '企业'}整理`}</button>
+    </div>
+    <ErrorLine error={send.error ?? hand.error}/>
     <RequestSummary request={r}/>
   </StatusScreen>;
 }

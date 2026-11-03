@@ -74,6 +74,8 @@ async function importState(client: Pick<PoolClient, 'query'>, row: RequestRow): 
   if (row.status !== 'converting' || !row.floorplan_import_id) return { status: row.status, error: null };
   const [imported] = await ormOf(client).select({ status: floorplanImports.status, error: floorplanImports.error }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id));
   if (imported?.status === 'assisted_conversion') return { status: 'assisted_conversion', error: null };
+  // A member's imported floor plan waiting for 「出方案」 is still the enterprise's queue to the customer.
+  if (imported?.status === 'pending_review' && (await importCandidate(row.floorplan_import_id))?.source === 'member-housespec') return { status: 'assisted_conversion', error: null };
   if (imported?.status === 'failed') return { status: 'conversion_failed', error: (imported.error as { message?: string } | null)?.message ?? '图纸没能自动识别。' };
   return { status: 'converting', error: null };
 }
@@ -385,29 +387,58 @@ export async function generateForImport(importId: string, deps: RequestDeps = {}
     const [found] = await tx.select({ id: finishRequests.id }).from(finishRequests).where(eq(finishRequests.floorplanImportId, idSchema.parse(importId)));
     if (!found) return null;
     const row = await lockedRequest(client, found.id);
-    if (row.status !== 'converting') return row.id;
-    const [imported] = await tx.select({ status: floorplanImports.status }).from(floorplanImports).where(eq(floorplanImports.id, importId)).for('update');
-    if (imported?.status !== 'pending_review') return row.id;
-    if ((await tx.select({ one: sql`1` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).limit(1)).length) return row.id;
-    const candidate = await importCandidate(importId);
-    if (!candidate?.valid || !candidate.scene) {
-      const blocking = candidate?.issues.find(issue => issue.severity === 'blocking')?.detail;
-      await tx.update(floorplanImports).set({ status: 'failed', updatedAt: sql`now()`, error: { code: 'CANDIDATE_INVALID',
-        message: blocking ? `图纸没能自动识别出完整户型：${blocking}` : '图纸没能自动识别出完整户型。' } }).where(eq(floorplanImports.id, importId));
-      return row.id;
-    }
-    await adoptDrawing(client, row, candidate, randomUUID(), deps);
-    // Only schemes that pass the layout checks reach the customer; none passing is told to the customer like a failed conversion.
-    await tx.delete(finishSchemes).where(and(eq(finishSchemes.requestId, row.id), sql`NOT (${finishSchemes.report}->>'adoptable')::boolean`));
-    const [{ left }] = await tx.select({ left: sql<number>`count(*)::int` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id));
-    if (!left) {
-      await tx.update(floorplanImports).set({ status: 'failed', updatedAt: sql`now()`, error: { code: 'NO_ADOPTABLE_SCHEME',
-        message: '图纸识别成功，但没能排出可用的铺贴方案，可能是房间尺寸不完整。' } }).where(eq(floorplanImports.id, importId));
-      return row.id;
-    }
-    await settle(client, row, { count: left, adoptable: true }, null);
+    await generateDrawing(client, row, deps, 'customer');
     return row.id;
   });
+}
+/**
+ * Shared step: the request's drawing candidate becomes its space and schemes; adoptable ones are published.
+ * `customer` (automatic DXF): problems are recorded as a failed conversion the customer sees. `member` (assisted
+ * import, W03): problems are returned to the member and nothing changes, so the request stays in the queue.
+ */
+async function generateDrawing(client: PoolClient, row: RequestRow, deps: RequestDeps, audience: 'customer' | 'member') {
+  const tx = orm(client), importId = row.floorplan_import_id;
+  if (row.status !== 'converting' || !importId) {
+    if (audience === 'member') throw new DomainError('DRAWING_NOT_QUEUED', '这条线索不在待整理的队列里。', 409);
+    return;
+  }
+  const [imported] = await tx.select({ status: floorplanImports.status }).from(floorplanImports).where(eq(floorplanImports.id, importId)).for('update');
+  if (imported?.status !== 'pending_review') {
+    if (audience === 'member') throw new DomainError('DRAWING_NOT_READY', '请先导入整理好的户型，校验通过后再出方案。', 409);
+    return;
+  }
+  if ((await tx.select({ one: sql`1` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).limit(1)).length) return;
+  const fail = async (code: string, message: string, details?: Record<string, unknown>) => {
+    if (audience === 'member') throw new DomainError(code, message, 409, details);
+    await tx.update(floorplanImports).set({ status: 'failed', updatedAt: sql`now()`, error: { code, message } }).where(eq(floorplanImports.id, importId));
+  };
+  const candidate = await importCandidate(importId);
+  if (!candidate?.valid || !candidate.scene) {
+    const blocking = candidate?.issues.filter(issue => issue.severity === 'blocking') ?? [];
+    return fail('CANDIDATE_INVALID', blocking[0] ? `图纸没能自动识别出完整户型：${blocking[0].detail}` : '图纸没能自动识别出完整户型。', { issues: blocking.map(issue => issue.detail) });
+  }
+  await adoptDrawing(client, row, candidate, randomUUID(), deps);
+  // Only schemes that pass the layout checks reach the customer.
+  await tx.delete(finishSchemes).where(and(eq(finishSchemes.requestId, row.id), sql`NOT (${finishSchemes.report}->>'adoptable')::boolean`));
+  const [{ left }] = await tx.select({ left: sql<number>`count(*)::int` }).from(finishSchemes).where(eq(finishSchemes.requestId, row.id));
+  if (!left) return fail('NO_ADOPTABLE_SCHEME', '图纸识别成功，但没能排出可用的铺贴方案，可能是房间尺寸不完整。');
+  await settle(client, row, { count: left, adoptable: true }, null);
+}
+/** W03: a member confirms the imported floor plan of a queued drawing; schemes are generated and published. */
+export async function generateLeadSchemes(principal: Principal, workspaceId: string, requestId: string, input: unknown, deps: RequestDeps = {}): Promise<LeadView> {
+  const userId = actorOf(principal), value = publishFinishRequestSchema.parse(input), hash = sha({ kind: 'generate-request', requestId, ...value });
+  await transaction(async (client, tx) => {
+    await advisoryXactLock(tx, `${userId}:${value.operationId}`);
+    const row = await lockedRequest(client, requestId);
+    if (row.workspace_id !== idSchema.parse(workspaceId)) throw notFound();
+    await memberOf(client, userId, row.workspace_id);
+    const [previous] = await tx.select({ requestHash: operations.requestHash }).from(operations).where(and(eq(operations.actorId, userId), eq(operations.id, value.operationId)));
+    if (previous) { if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409); return; }
+    if (row.source !== 'drawing') throw new DomainError('DRAWING_NOT_QUEUED', '这条线索不在待整理的队列里。', 409);
+    await generateDrawing(client, row, deps, 'member');
+    await tx.insert(operations).values({ actorId: userId, id: value.operationId, projectId: row.project_id, requestHash: hash, result: { requestId: row.id } });
+  });
+  return (await listLeads(principal, workspaceId)).find(lead => lead.id === requestId)!;
 }
 
 /**

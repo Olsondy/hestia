@@ -23,6 +23,9 @@ import * as drawingRoute from '../../../apps/web/app/api/client/[entry]/requests
 import * as imageRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/image/route';
 import * as leadsRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/leads/route';
 import * as handOverRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/hand-over/route';
+import * as generateRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/leads/[requestId]/generate/route';
+import * as houseSpecRoute from '../../../apps/web/app/api/projects/[id]/floorplan-imports/[importId]/housespec/route';
+import * as importRoute from '../../../apps/web/app/api/projects/[id]/floorplan-imports/[importId]/route';
 import * as publishRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/leads/[requestId]/publish/route';
 
 // HTTP route handlers + real PostgreSQL + real pg-boss producers. Renders run through the real runner with an injected
@@ -202,6 +205,32 @@ test('images and PDFs queue for the enterprise; uploads are limited to 3 per cus
   // Another customer has their own allowance.
   const neighbour = await customer();
   assert.equal((await upload(neighbour, (await drawingRequest(neighbour)).id, png, '邻居.png')).status, 202);
+});
+
+test('queued drawings: a member imports the floor plan, confirms, and the customer gets published schemes', async () => {
+  const cookie = await customer(), created = await drawingRequest(cookie);
+  const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#fff' } }).png().toBuffer();
+  const queued = (await upload(cookie, created.id, png, '户型照片.png')).body.request;
+  const target = { id: queued.projectId, importId: queued.floorplanImportId }, lead = { workspaceId, requestId: created.id };
+  // Nothing to confirm before a floor plan is imported; customers cannot confirm.
+  assert.equal((await call(generateRoute.POST, lead, { cookie: adminCookie, json: { operationId: randomUUID() } })).body.error.code, 'DRAWING_NOT_READY');
+  assert.equal((await call(generateRoute.POST, lead, { cookie, json: { operationId: randomUUID() } })).status, 404);
+  const houseSpec = JSON.parse(await readFile(new URL('../../floorplan-import/fixtures/dxf/synthetic-flat.housespec.json', import.meta.url), 'utf8'));
+  const revision = async () => (await call(importRoute.GET, target, { cookie: adminCookie })).body.import.revision;
+  // A floor plan that fails validation is reported to the member; the customer stays in the queue.
+  const broken = await call(houseSpecRoute.POST, target, { cookie: adminCookie, json: { operationId: randomUUID(), expectedRevision: await revision(), houseSpec: { walls: [] }, name: '缺墙' } });
+  assert.equal(broken.status, 200, JSON.stringify(broken.body)); assert.equal(broken.body.import.candidate.valid, false);
+  const refused = await call(generateRoute.POST, lead, { cookie: adminCookie, json: { operationId: randomUUID() } });
+  assert.equal(refused.body.error.code, 'CANDIDATE_INVALID');
+  assert.equal((await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request.status, 'assisted_conversion');
+  const imported = await call(houseSpecRoute.POST, target, { cookie: adminCookie, json: { operationId: randomUUID(), expectedRevision: await revision(), houseSpec, name: '整理后的户型' } });
+  assert.equal(imported.body.import.candidate.valid, true, JSON.stringify(imported.body.import.candidate.issues));
+  assert.equal((await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request.status, 'assisted_conversion', 'still queued until confirmed');
+  const operationId = randomUUID(), done = await call(generateRoute.POST, lead, { cookie: adminCookie, json: { operationId } });
+  assert.equal(done.status, 200, JSON.stringify(done.body)); assert.equal(done.body.lead.status, 'published');
+  assert.equal((await call(generateRoute.POST, lead, { cookie: adminCookie, json: { operationId } })).status, 200, 'retry is harmless');
+  const seen = (await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request;
+  assert.equal(seen.status, 'published'); assert.ok(seen.schemes.length >= 1);
 });
 
 test('invalid submissions are rejected without leaving a lead', async () => {

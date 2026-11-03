@@ -136,7 +136,7 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
     } else {
       const color = override ? resolveMaterial(override.materialId, override.materialVersion).swatch : object.color;
       // Named ambience props (e.g. imported furniture keys) get a parametric model; unnamed volumes stay boxes.
-      const prop = ambienceProp(object.name, object.size, color);
+      const prop = ambienceProp(object.name, object.size, color, object.tones);
       if (prop) group.add(prop);
       else { const mesh = box(object.size.width, object.size.height, object.size.depth, color); mesh.position.y = object.size.height / 2; group.add(mesh); }
     }

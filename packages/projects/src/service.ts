@@ -10,6 +10,8 @@ import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema,
   type SpatialState, type ProjectView, type ProjectSummary } from '../../contracts/src/project';
 
 import { demoVillaScene } from '../../finishes/src/demo-villa-scene';
+import { furnish } from '../../soft-styles/src/furnish';
+import { defaultDemoStyle } from '../../soft-styles/src/demo-styles';
 import { actingWorkspace } from '../../workspaces/src/service';
 import { canAccessProject, type Principal } from '../../workspaces/src/access';
 export type { Principal } from '../../workspaces/src/access';
@@ -22,8 +24,9 @@ function initialState(template: 'empty' | 'courtyard' | 'angled' | 'demo-villa')
   const scene: SceneSnapshot = template === 'empty'
     ? { version: 1, unit: 'm', plane: 'xz', label: '空白空间', synthetic: false, rooms: [], walls: [], objects: [] }
     : template === 'demo-villa'
-      // Demo villa (演示数据): furniture is ambient staging that customers cannot move, so it is kept as fixed facts.
-      ? (villa => ({ ...villa, objects: villa.objects.map(object => ({ ...object, kind: 'fixed' as const })) }))(demoVillaScene())
+      // Demo villa (演示数据): furniture comes from the default demo soft style (K01) and is kept as fixed facts:
+      // customers choose styles, they do not move furniture.
+      ? (villa => ({ ...villa, objects: furnish(villa, defaultDemoStyle).objects.map(object => ({ ...object, kind: 'fixed' as const })) }))(demoVillaScene())
       : structuredClone(template === 'courtyard' ? courtyard : angled);
   return stateFromScene(scene);
 }

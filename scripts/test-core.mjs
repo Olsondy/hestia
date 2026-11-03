@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 const result = spawnSync(process.execPath, ['--import', 'tsx', '--test',
   'packages/scene-runtime/src/scene.test.ts',
+  'packages/soft-styles/src/furnish.test.ts',
   'packages/model-validation/src/restricted-turn.test.ts',
   'packages/floorplan-import/src/house-spec.test.ts',
   'packages/floorplan-import/src/building.test.ts',

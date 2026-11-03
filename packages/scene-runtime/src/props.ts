@@ -12,10 +12,14 @@ export type PropSize = { width: number; height: number; depth: number };
 type Surface = 'fabric' | 'cushion' | 'linen' | 'wood' | 'darkWood' | 'lacquer' | 'stone' | 'metal' | 'brass' | 'chrome' | 'black'
   | 'ceramic' | 'glass' | 'leaf' | 'leafDark' | 'bark' | 'soil' | 'water' | 'felt' | 'screen' | 'paint' | 'rubber' | 'lamp' | 'grass' | 'concrete' | 'matte';
 
+/** Soft-style material tones (K01): replace the neutral defaults of these surfaces. */
+export type PropTones = { fabric: string; cushion: string; wood: string; darkWood: string; metal: string; accent: string };
+const toned: Partial<Record<Surface, keyof PropTones>> = { fabric: 'fabric', cushion: 'cushion', wood: 'wood', darkWood: 'darkWood', metal: 'metal', brass: 'metal', matte: 'accent' };
 const cache = new Map<string, T.MeshStandardMaterial>();
 /** Shared physically based materials. Base colours stay in sRGB hex like the rest of the scene. */
-function material(surface: Surface, tint: string) {
-  const key = `${surface}:${tint}`;
+function material(surface: Surface, tint: string, tones?: PropTones) {
+  const tone = tones && toned[surface] ? tones[toned[surface]!] : undefined;
+  const key = `${surface}:${tint}:${tone ?? ''}`;
   let mat = cache.get(key);
   if (mat) return mat;
   const spec: Record<Surface, T.MeshPhysicalMaterialParameters> = {
@@ -46,7 +50,7 @@ function material(surface: Surface, tint: string) {
     concrete: { color: '#bdb6aa', roughness: .85 },
     matte: { color: tint, roughness: .8 },
   };
-  mat = new T.MeshPhysicalMaterial(spec[surface]);
+  mat = new T.MeshPhysicalMaterial(tone ? { ...spec[surface], color: tone, ...(spec[surface].sheenColor ? { sheenColor: new T.Color(tone).lerp(new T.Color('#ffffff'), .35) } : {}) } : spec[surface]);
   if (surface === 'lamp') mat.userData.lamp = true;
   cache.set(key, mat);
   return mat;
@@ -54,8 +58,8 @@ function material(surface: Surface, tint: string) {
 
 class Kit {
   readonly group = new T.Group();
-  constructor(readonly tint: string) {}
-  m(surface: Surface) { return material(surface, this.tint); }
+  constructor(readonly tint: string, readonly tones?: PropTones) {}
+  m(surface: Surface) { return material(surface, this.tint, this.tones); }
   add(geometry: T.BufferGeometry, surface: Surface | T.Material, at: V3, rotation?: V3) {
     const mesh = new T.Mesh(geometry, typeof surface === 'string' ? this.m(surface) : surface);
     mesh.position.set(...at); if (rotation) mesh.rotation.set(...rotation);
@@ -235,7 +239,84 @@ function car(k: Kit, w: number, h: number, d: number, tint: string) {
   for (const x of [-1, 1]) k.box('lamp', [x * w * .32 - .12, h * .42, d / 2 - .02], [x * w * .32 + .12, h * .48, d / 2]);
 }
 
+// Soft-style pieces (K01): fill the same size envelope as the furniture they replace or are placed as extras.
+const styleBuilders: [RegExp, Builder][] = [
+  // 弧形沙发：低靠背的连续弧面，轻奢风。
+  [/^curvedSofa$/, (k, w, h, d) => {
+    // Seats along a shallow arc, convex to the back, inside the envelope; seat depth stays at a sofa's ~0.95 m.
+    const depth = Math.min(d, .95), sag = Math.min(d - depth, w * .12, .45), segs = 9, seat = Math.min(.44, h * .55);
+    const r = (w * w / 4 + sag * sag) / (2 * Math.max(sag, .01)), half = Math.asin(Math.min(1, w / 2 / r)), cz = -d / 2 + r;
+    for (let i = 0; i < segs; i++) {
+      const a = -half + (i + .5) / segs * half * 2, x = r * Math.sin(a), zBack = cz - r * Math.cos(a), sw = (2 * half * r) / segs + .015;
+      const piece = new Kit(k.tint, k.tones);
+      piece.rbox('fabric', [-sw / 2, .05, 0], [sw / 2, seat - .1, depth], .06);
+      piece.rbox('cushion', [-sw / 2 + .01, seat - .12, .2], [sw / 2 - .01, seat, depth - .02], .05);
+      piece.rbox('fabric', [-sw / 2, seat - .12, 0], [sw / 2, h, .2], .08);
+      piece.box('brass', [-sw / 2 + .02, 0, .1], [sw / 2 - .02, .05, depth - .1]);
+      piece.group.position.set(x, 0, zBack); piece.group.rotation.y = -a; k.group.add(piece.group);
+    }
+  }],
+  // 落地灯：细杆、圆底座与筒形灯罩（室内），与草坪灯区分。
+  [/^floorLamp$/, (k, w, h, d) => {
+    const r = Math.min(w, d) / 2; k.cyl('metal', [0, 0, 0], r * .55, r * .6, .025, 24); k.rod('metal', [0, .025, 0], [0, h - .3, 0], .012);
+    k.cyl('linen', [0, h - .32, 0], r * .8, r, .32, 24); k.cyl('lamp', [0, h - .3, 0], r * .7, r * .9, .02, 24); k.light([0, h - .2, 0], .6);
+  }],
+  // 圆形茶几：石面金属底，轻奢 / 现代。
+  [/^roundCoffeeTable$/, (k, w, h, d) => {
+    const r = Math.min(w, d) / 2; k.cyl('stone', [0, h - .04, 0], r, r, .04, 40); k.cyl('metal', [0, 0, 0], r * .45, r * .55, h - .04, 32);
+    k.cyl('ceramic', [r * .35, h, 0], .05, .07, .18, 20); k.sphere('leaf', [r * .35, h + .24, 0], .07, [1, .8, 1]);
+  }],
+  // 圈椅：新中式，弧形扶手与靠背连成一体。
+  [/^ringChair$/, (k, w, h, d) => {
+    // 圈椅：方座、四腿与横枨，靠背板，顶上一道从扶手前端绕到背后的半圆椅圈，由后腿与扶手立柱撑起。
+    const seat = Math.min(.46, h * .52), sw = w / 2 - .03, sd = d / 2 - .03, rail = Math.min(h - .04, seat + .3);
+    for (const [x, z] of [[-sw, -sd], [sw, -sd], [-sw, sd], [sw, sd]]) k.box('darkWood', [x - .022, 0, z - .022], [x + .022, seat, z + .022]);
+    for (const z of [-sd, sd]) k.box('darkWood', [-sw, .12, z - .012], [sw, .15, z + .012]);
+    k.box('darkWood', [-sw - .03, seat - .045, -sd - .03], [sw + .03, seat, sd + .03]);
+    k.box('fabric', [-sw + .02, seat, -sd + .02], [sw - .02, seat + .035, sd - .02]);
+    // Back posts continue to the ring; arm posts stand on the front corners.
+    for (const x of [-sw, sw]) { k.box('darkWood', [x - .02, seat, -sd - .02], [x + .02, rail, -sd + .02]); k.rod('darkWood', [x, seat, sd - .02], [x * .95, rail - .08, sd * .55], .014); }
+    k.box('darkWood', [-w * .11, seat + .02, -sd - .01], [w * .11, rail - .03, -sd + .015]);
+    const r = sw, ring = k.add(new T.TorusGeometry(r, .02, 8, 40, Math.PI), 'darkWood', [0, rail, -sd + r * .15], [Math.PI / 2, 0, 0]);
+    ring.scale.set(1, (sd * 1.4) / r, 1);
+    for (const x of [-sw, sw]) k.rod('darkWood', [x, rail, -sd + r * .15], [x * .95, rail - .08, sd * .55], .02);
+  }],
+  // 椭圆餐桌：大理石桌面、金属双柱脚，轻奢餐厅。
+  [/^ovalTable$/, (k, w, h, d) => {
+    const top = k.add(new T.CylinderGeometry(.5, .5, .04, 48), 'stone', [0, h - .02, 0]); top.scale.set(w, 1, d);
+    for (const x of [-1, 1]) { k.cyl('metal', [x * w * .25, 0, 0], .05, .05, h - .04, 16); k.cyl('metal', [x * w * .25, 0, 0], .2, .2, .025, 24); }
+    k.cyl('ceramic', [0, h, 0], .07, .05, .16, 24); k.sphere('leaf', [0, h + .2, 0], .09, [1.3, .6, 1]);
+  }],
+  // 挂画：薄画框贴墙，画面用风格点缀色。
+  [/^wallArt$/, (k, w, h, d) => {
+    k.box('darkWood', [-w / 2, 0, -d / 2], [w / 2, h, d / 2]);
+    k.box('linen', [-w / 2 + .04, .04, d / 2 - .004], [w / 2 - .04, h - .04, d / 2 + .002]);
+    k.box('matte', [-w * .3, h * .25, d / 2 + .002], [w * .1, h * .7, d / 2 + .004]); k.box('matte', [w * .05, h * .15, d / 2 + .002], [w * .32, h * .45, d / 2 + .004]);
+  }],
+  // 屏风：新中式四扇，木框格心。
+  [/^screen$|屏风/, (k, w, h, d) => {
+    const leaves = 4, lw = w / leaves;
+    for (let i = 0; i < leaves; i++) {
+      const x0 = -w / 2 + i * lw, z = (i % 2 ? 1 : -1) * d * .25;
+      k.box('darkWood', [x0, 0, z - .015], [x0 + lw - .01, h, z + .015]);
+      k.box('linen', [x0 + .05, .25, z + .016], [x0 + lw - .06, h - .12, z + .018]);
+      for (let j = 1; j < 4; j++) k.box('darkWood', [x0 + .05, .25 + j * (h - .37) / 4, z + .018], [x0 + lw - .06, .27 + j * (h - .37) / 4, z + .022]);
+    }
+  }],
+  // 吊灯（现代线性 / 新中式灯笼）：挂在桌子正上方。
+  [/^pendantLamp$/, (k, w, h, d) => {
+    k.rod('metal', [-w * .35, h, 0], [-w * .35, .08, 0], .004); k.rod('metal', [w * .35, h, 0], [w * .35, .08, 0], .004);
+    k.rbox('metal', [-w / 2, 0, -d / 2], [w / 2, .08, d / 2], .02); k.box('lamp', [-w / 2 + .03, -.004, -d / 2 + .02], [w / 2 - .03, .004, d / 2 - .02]); k.light([0, -.05, 0], .8);
+  }],
+  [/^lantern$|灯笼/, (k, w, h, d) => {
+    const r = Math.min(w, d) / 2; k.rod('darkWood', [0, h, 0], [0, h * .62, 0], .006);
+    k.cyl('darkWood', [0, h * .58, 0], r * .7, r * .7, .03, 16); k.cyl('lamp', [0, h * .08, 0], r, r * .85, h * .5, 16); k.cyl('darkWood', [0, h * .05, 0], r * .7, r * .7, .03, 16);
+    k.light([0, h * .3, 0], .7);
+  }],
+];
+
 const builders: [RegExp, Builder][] = [
+  ...styleBuilders,
   [/^lSofa$|L形沙发|转角沙发/, (k, w, h, d) => sofa(k, w, h, d, { chaise: true })],
   [/^theaterSofa$|影音沙发/, (k, w, h, d) => sofa(k, w, h, d, { seats: Math.max(2, Math.round(w / .85)) })],
   [/^(sofa|loveseat)$|沙发/, (k, w, h, d) => sofa(k, w, h, d)],
@@ -380,10 +461,10 @@ const builders: [RegExp, Builder][] = [
 ];
 
 /** Builds a detailed prop for a named object, or null when the name has no builder (callers keep the plain volume). */
-export function ambienceProp(name: string | undefined, size: PropSize, color: string): T.Group | null {
+export function ambienceProp(name: string | undefined, size: PropSize, color: string, tones?: PropTones): T.Group | null {
   if (!name) return null;
   const builder = builders.find(([pattern]) => pattern.test(name))?.[1];
-  const kit = new Kit(color);
+  const kit = new Kit(color, tones);
   const { width: w, height: h, depth: d } = size;
   if (builder) builder(kit, w, h, d);
   else kit.rbox('fabric', [-w / 2, 0, -d / 2], [w / 2, h, d / 2], Math.min(.03, w / 6, h / 6, d / 6));

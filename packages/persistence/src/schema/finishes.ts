@@ -21,3 +21,21 @@ export const workspaceStones = pgTable("workspace_stones", {
 	check("workspace_stones_stone_id_check", sql`(length(stone_id) >= 1) AND (length(stone_id) <= 120)`),
 	check("workspace_stones_version_check", sql`version > 0`),
 ]);
+
+/** 软装风格目录 (K01): workspace-private, versions immutable, retired versions stay readable for existing schemes. */
+export const workspaceSoftStyles = pgTable("workspace_soft_styles", {
+	workspaceId: uuid("workspace_id").notNull(),
+	styleId: text("style_id").notNull(),
+	version: integer().notNull(),
+	status: text().$type<'active' | 'retired'>().default('active').notNull(),
+	spec: jsonb().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId],
+			foreignColumns: [workspaces.id],
+			name: "workspace_soft_styles_workspace_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.workspaceId, table.styleId, table.version], name: "workspace_soft_styles_pkey"}),
+	check("workspace_soft_styles_status_check", sql`status = ANY (ARRAY['active'::text, 'retired'::text])`),
+]);

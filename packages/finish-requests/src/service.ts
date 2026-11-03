@@ -17,6 +17,7 @@ import { customerEntry, ensureCustomer } from '../../workspaces/src/customers';
 import { initialState, insertProjectInTransaction, stateFromScene } from '../../projects/src/service';
 import { workspaceStones } from '../../finishes/src/catalog';
 import { stoneKey } from '../../finishes/src/plan';
+import { workspaceSoftStyles } from '../../soft-styles/src/catalog';
 import { createFloorplanImport, getFloorplanCandidate, importCandidate } from '../../drawing-imports/src/service';
 import type { PrivateFileStore } from '../../files/src/storage';
 import { enqueueSchemeRender, readRenderImage, renderStatuses } from '../../renders/src/service';
@@ -182,6 +183,7 @@ export async function clientCatalog(slug: string): Promise<ClientCatalogView> {
   return transaction(async client => {
     const entry = await customerEntry(client, slug), state = initialState('demo-villa');
     return { workspace: { slug: entry.slug, name: entry.name }, stones: await workspaceStones(client, entry.id),
+      softStyles: (await workspaceSoftStyles(client, entry.id)).map(({ id, version, name, line, palette }) => ({ id, version, name, line, palette })),
       demoVilla: { finishes: state.fixedFacts.finishes ?? [], plan: planOf(state.fixedFacts) } };
   });
 }

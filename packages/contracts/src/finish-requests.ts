@@ -53,8 +53,30 @@ export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; s
 export type ShareView = { id: string; targetPhone: string | null; usedAt: string | null; expiresAt: string | null; revokedAt: string | null; createdAt: string };
 export type BindingApplicationView = { id: string; shareId: string; applicant: { userId: string; phone: string | null }; note: string | null; status: 'pending' | 'approved' | 'rejected' | 'superseded'; createdAt: string };
 export type BindingEventView = { kind: string; method: string | null; actorId: string; subjectId: string | null; createdAt: string };
+/** 线索跟进 (S02). Members only: never part of client views or share previews. */
+export const followStatuses = ['new', 'contacted', 'active', 'won', 'parked'] as const;
+export type FollowStatus = (typeof followStatuses)[number];
+export const followStatusNames: Record<FollowStatus, string> = { new: '新线索', contacted: '已联系', active: '跟进中', won: '已成交', parked: '已搁置' };
+export const setFollowStatusSchema = z.object({ operationId: idSchema, status: z.enum(followStatuses) }).strict();
+export const addLeadNoteSchema = z.object({ operationId: idSchema, note: z.string().trim().min(1).max(500) }).strict();
+export const leadFilterSchema = z.object({
+  status: z.enum(['awaiting_drawing', 'converting', 'assisted_conversion', 'pending_review', 'published']).optional(),
+  follow: z.enum(followStatuses).optional(),
+  contact: z.enum(['1', 'true']).transform(() => true).optional(),
+}).strict();
+export type LeadMember = { userId: string; name: string | null };
+export type LeadFollowView = {
+  status: FollowStatus;
+  /** Status changes, oldest first; the default 新线索 has no entry. */
+  history: { status: FollowStatus; by: LeadMember; at: string }[];
+  notes: { id: string; by: LeadMember; text: string; at: string }[];
+};
+/** Latest customer action on the lead: submitted, confirmed, left a message, asked for contact, applied for binding. */
+export type CustomerActionView = { kind: 'submit' | 'confirm' | 'message' | 'contact' | 'apply'; at: string };
 export type LeadView = FinishRequestView & { origin: 'customer' | 'member'; customer: { userId: string; phone: string | null; name: string | null } | null;
-  reviewReason: string | null; events: RequestEventView[];
+  reviewReason: string | null; events: RequestEventView[]; follow: LeadFollowView; lastCustomerAction: CustomerActionView | null;
+  /** Whether the customer has asked to be contacted (any message with a contact request). */
+  contactRequested: boolean;
   sharing: { shares: ShareView[]; applications: BindingApplicationView[]; history: BindingEventView[] } };
 export const createMemberRequestSchema = z.object({ operationId: idSchema, name: z.string().trim().min(1).max(100),
   finishIds: z.array(z.string().min(1).max(120)).min(1).max(50), stones: z.array(stoneRef).min(1).max(3), note: z.string().trim().max(500).optional() }).strict();

@@ -2,7 +2,7 @@
 
 企业工作台（电脑端，成员使用）的界面规则，以 [界面工程准则](ENGINEERING_RULES.md) 为底线，只在其上收紧。与 H5 客户端同属柔和中性家族（[ADR-0011](../decisions/0011-unified-soft-neutral-for-enterprise.md)），共用配色与字体，版式按电脑端单独设计。手机端规则见 [H5_UI_DESIGN.md](H5_UI_DESIGN.md)。
 
-视觉方向由用户于 2026-11-03 在风格对比稿 `example/prototypes/enterprise-workbench-styles` 中选定 **B 悬浮**，实现依据为 `example/prototypes/enterprise-workbench/src/`（P02 原型）。
+视觉方向由用户于 2026-11-03 在风格对比稿 `example/prototypes/enterprise-workbench-styles` 中选定 **B 悬浮**，实现依据为 `example/prototypes/enterprise-workbench/src/`（P02 原型，同日经用户审阅定稿）。
 
 ## 定位
 

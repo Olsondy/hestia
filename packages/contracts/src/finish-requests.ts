@@ -110,6 +110,12 @@ export const adjustSchemeSchema = z.object({
   pattern: z.enum(['straight', 'running-bond', 'herringbone', 'diagonal']).optional(), border: z.boolean().optional(),
 }).strict().refine(value => value.stone || value.tile || value.pattern || value.border !== undefined, { message: 'No change requested' });
 export const undoSchemeSchema = z.object({ operationId: idSchema, expectedRevision: z.number().int().positive() }).strict();
+/** ADR-0010: the adjust page's pending option changes and optional soft style, applied as one revision with one render. */
+const batchChange = z.object({ finishId: z.string().min(1).max(120), stone: stoneRef.optional(), tile: tileSize.optional(),
+  pattern: z.enum(['straight', 'running-bond', 'herringbone', 'diagonal']).optional(), border: z.boolean().optional() }).strict();
+export const adjustSchemeBatchSchema = z.object({ operationId: idSchema, expectedRevision: z.number().int().positive(),
+  changes: z.array(batchChange).max(50), softStyle: z.object({ styleId: z.string().min(1).max(60), styleVersion: z.number().int().positive() }).strict().optional() }).strict()
+  .refine(value => value.changes.length > 0 || !!value.softStyle, { message: 'No change requested' });
 /** K02: switch a scheme to one of its soft style choices; a new revision, rendered in the background. */
 export const switchSoftStyleSchema = z.object({ operationId: idSchema, expectedRevision: z.number().int().positive(),
   styleId: z.string().min(1).max(60), styleVersion: z.number().int().positive() }).strict();

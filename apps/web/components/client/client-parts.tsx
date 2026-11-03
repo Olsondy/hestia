@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { StoneSpec } from '../../../../packages/contracts/src/finishes';
 import type { ClientCatalogView } from './client-api';
 import { Icon, type IconName } from './client-icons';
-import { softStyles, type SoftStyle } from './soft-styles';
+import { styleKey, type SoftStyle } from './soft-styles';
 
 // Swatches come from the same procedural recipe as the 3D textures (示意素材), rendered once per stone and size.
 const swatches = new Map<string, Promise<string>>();
@@ -113,10 +113,11 @@ export function Stepper({ step, names }: { step: number; names: string[] }) {
 }
 export const Palette = ({ style, mod = '' }: { style: SoftStyle; mod?: string }) =>
   <span className={`palette ${mod}`} aria-hidden="true">{style.palette.map(c => <i key={c} style={{ background: c }}/>)}</span>;
-export function StyleOptions({ current, onPick, disabled }: { current?: string; onPick?: (id: string) => void; disabled?: boolean }) {
-  return <div className="styles">{softStyles.map(st => {
-    const body = <><Palette style={st} mod="palette--tile"/><b>{st.name}</b><small>{st.line.split('、').slice(0, 2).join('、')}</small></>;
-    return onPick ? <button key={st.id} type="button" className="style-opt" aria-pressed={current === st.id} disabled={disabled} onClick={() => onPick(st.id)}>{body}</button>
-      : <div key={st.id} className="style-opt">{body}</div>;
+/** Soft style cards; `current` and `onPick` use `styleKey` (id@version). */
+export function StyleOptions({ styles, current, onPick, disabled }: { styles: SoftStyle[]; current?: string; onPick?: (key: string) => void; disabled?: boolean }) {
+  return <div className="styles">{styles.map(st => {
+    const key = styleKey(st), body = <><Palette style={st} mod="palette--tile"/><b>{st.name}</b><small>{st.line.split('、').slice(0, 2).join('、')}</small></>;
+    return onPick ? <button key={key} type="button" className="style-opt" aria-pressed={current === key} disabled={disabled} onClick={() => onPick(key)}>{body}</button>
+      : <div key={key} className="style-opt">{body}</div>;
   })}</div>;
 }

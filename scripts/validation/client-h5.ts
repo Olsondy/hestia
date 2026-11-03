@@ -82,11 +82,14 @@ try {
     await owner.getByRole('button', { name: /确认方案/ }).click(); await owner.waitForURL(/done/);
     await shot(owner, '04-confirmed');
   });
-  await step('调整：换石材 → 新修订出图中 → 提示需要重新确认', async () => {
+  await step('调整：换软装风格 + 换石材 → 一次出图生成一个修订 → 提示需要重新确认', async () => {
     await owner.getByRole('link', { name: '回到方案' }).click(); await owner.waitForURL(/\/r\/[^/]+$/);
     await owner.getByRole('link', { name: /继续调整|调整/ }).first().click(); await owner.waitForURL(/adjust/);
+    await owner.getByRole('button', { name: '软装风格' }).click();
+    await owner.locator('.style-opt[aria-pressed=false]').first().click();
     await owner.getByRole('button', { name: '硬装石材' }).click();
     await owner.locator('.swatch[aria-pressed=false]').first().click();
+    await owner.getByText('2 处修改未出图').first().waitFor();
     await owner.getByRole('button', { name: /重新出图 · 生成修订/ }).click();
     await owner.getByText('重新出图中').first().waitFor({ timeout: 30000 }); await shot(owner, '05-rerender');
     await owner.goto(owner.url().replace(/\/adjust$/, ''));

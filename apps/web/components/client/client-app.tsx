@@ -134,7 +134,7 @@ function HomeView() {
       <p className="lede">提交户型与石材偏好，得到 3 个整体方案的效果图。{workspaceName || '企业'}核对后发布，你可以换软装风格、换石材铺法，满意再确认。</p>
       <ol className="flow" aria-label="流程">{[['选户型', '示例或你的图纸'], ['选饰面与石材', '最多 3 款'], ['看 3 个方案', '可调整再确认']].map(([t, s]) =>
         <li key={t}>{t}<small>{s}</small></li>)}</ol>
-      <Section title="三套软装风格" aside="演示"><StyleOptions/></Section>
+      {!!catalog.data?.softStyles.length && <Section title={`${catalog.data.softStyles.length} 套软装风格`} aside="示意素材"><StyleOptions styles={catalog.data.softStyles}/></Section>}
       <Section title="企业石材库" aside="示意素材">
         {catalog.isLoading ? <Loading/> : <div className="stone-rail">{catalog.data?.stones.map(stone =>
           <figure key={`${stone.id}:${stone.version}`}><Swatch stone={stone} size={176}/><figcaption>{stone.name}</figcaption></figure>)}</div>}

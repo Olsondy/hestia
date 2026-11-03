@@ -1,6 +1,6 @@
 /* H5 客户端 v2：A 柔和中性 + ① 沉浸全屏，浅色 / 深色同一配色，默认跟随系统。
    结构：1 Tokens → 2 Base → 3 Components（一个类前缀对应一个 React 组件）→ 4 Screens。
-   规范与组件对照见 docs/client-h5-design.md；不在文件末尾追加覆盖规则。 */
+   规范与组件对照见 docs/design/H5_UI_DESIGN.md；不在文件末尾追加覆盖规则。 */
 
 /* ========== 1 Tokens ========== */
 :root{

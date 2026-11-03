@@ -1,6 +1,6 @@
 // H5 客户端交互原型 v2（P03）：A 柔和中性 + ① 沉浸全屏，浅色 / 深色跟随系统。纯前端、演示数据、不接服务端。
 // 结构按将来的 React 组件拆分：Components（AppBar、TabBar、Button…）→ Screens（HomeScreen…）→ 路由与状态。
-// 组件、状态与服务端差异的对照见 docs/client-h5-design.md。
+// 组件、状态与服务端差异的对照见 docs/design/H5_UI_DESIGN.md。
 import {swatchURL} from '../../client-h5/src/stone.js';
 import {images, workspace, stones, stoneById, sizes, patterns, patternName, finishes, makeSchemes, checks, shares, demoPhone, maskPhone, spaced, softStyles} from './data.js';
 

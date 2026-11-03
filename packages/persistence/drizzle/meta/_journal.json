@@ -22,6 +22,13 @@
       "when": 1793704607521,
       "tag": "0002_lead_follow_up",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793711426518,
+      "tag": "0003_soft_styles",
+      "breakpoints": true
     }
   ]
 }

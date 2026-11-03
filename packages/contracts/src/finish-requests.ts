@@ -50,7 +50,9 @@ export type FinishRequestView = {
 export type DemoVillaPlanView = { levels: { id: string; name: string }[]; rooms: { id: string; name: string | null; levelId: string; outline: { x: number; z: number }[] }[];
   walls: { id: string; levelId: string; a: { x: number; z: number }; b: { x: number; z: number } }[];
   stairs: { id: string; levelId: string; outline: { x: number; z: number }[] }[] };
-export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; demoVilla: { finishes: Finish[]; plan: DemoVillaPlanView } };
+/** Active soft styles for display (K01); the furnishing rules stay on the server. */
+export type SoftStyleSummary = { id: string; version: number; name: string; line: string; palette: string[] };
+export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; softStyles: SoftStyleSummary[]; demoVilla: { finishes: Finish[]; plan: DemoVillaPlanView } };
 export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; schemeId: string | null; schemeRevision: number | null;
   message: string | null; contactRequested: boolean; preferredTime: string | null; createdAt: string };
 export type ShareView = { id: string; targetPhone: string | null; usedAt: string | null; expiresAt: string | null; revokedAt: string | null; createdAt: string };

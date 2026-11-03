@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { furnitureTonesSchema } from './soft-styles';
 import { catalogReferenceSchema } from './catalog';
 import { visualStyleSchema } from './styles';
 import { checkBuilding, levelSchema, slabOpeningSchema, stairSchema, type BuildingIssue } from './building';
@@ -36,6 +37,10 @@ export const sceneSnapshotSchema = z.object({
     yaw: z.number().finite(), color,
     name: z.string().min(1).max(120).optional(), catalog: catalogReferenceSchema.optional(),
     dimensionSource: z.enum(['unknown', 'measured', 'catalog']).optional(),
+    /** Soft style that furnished this object (K01) and the material tones the renderer applies to it. */
+    softStyle: z.object({ styleId: z.string().min(1).max(60), styleVersion: z.number().int().positive(),
+      /** Original furniture key when the style swapped it; restyling starts from it. */ base: z.string().min(1).max(60).optional() }).strict().optional(),
+    tones: furnitureTonesSchema.optional(),
   }).strict()).max(1000),
 }).strict().superRefine((value, ctx) => {
   const ids = new Set<string>();

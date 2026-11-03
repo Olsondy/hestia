@@ -19,6 +19,8 @@ import { acceptInvitation, createInvitation } from '../packages/identity/src/ser
 import { createWorkspace } from '../packages/workspaces/src/service';
 import { addStones } from '../packages/finishes/src/catalog';
 import { demoStones } from '../packages/finishes/src/demo-stones';
+import { addSoftStyles } from '../packages/soft-styles/src/catalog';
+import { demoSoftStyles } from '../packages/soft-styles/src/demo-styles';
 import { initializeRenderQueue, renderQueue } from '../packages/renders/src/queue';
 import { runRender } from '../packages/renders/src/runner';
 import { createMemberRequest, listLeads } from '../packages/finish-requests/src/service';
@@ -106,8 +108,8 @@ async function main() {
   if (args.has('--reset')) await reset();
   const { id: userId, password } = await member(), principal = { userId };
   const workspace = (await createWorkspace({ kind: 'enterprise', slug: DEMO.slug, name: DEMO.name, adminEmail: DEMO.member.email })).workspace;
-  await transaction(client => addStones(client, workspace.id, demoStones));
-  log(`企业入口：${DEMO.name}（${DEMO.slug}），石材库 ${demoStones.length} 款示意素材。`);
+  await transaction(async client => { await addStones(client, workspace.id, demoStones); await addSoftStyles(client, workspace.id, demoSoftStyles); });
+  log(`企业入口：${DEMO.name}（${DEMO.slug}），石材库 ${demoStones.length} 款、软装风格 ${demoSoftStyles.length} 套示意素材。`);
 
   const saved: Saved = JSON.parse(await readFile(stateFile, 'utf8').catch(() => '{}'));
   const leads = await listLeads(principal, workspace.id);

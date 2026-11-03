@@ -16,10 +16,14 @@ export function createQueueClient(schema = QUEUE_SCHEMA) {
 export const queue = createQueueClient();
 
 /** Explicit finite setup, not a service. Never called by a request or module import. */
+// Installed means pg-boss's own version table exists (the check its Workers run), not merely the schema: a schema left
+// empty by an interrupted setup would otherwise be skipped for ever.
+export async function queueInstalled(schema: string) {
+  return !!(await pool.query('SELECT to_regclass($1) AS name', [`${validatedQueueSchema(schema)}.version`])).rows[0].name;
+}
 export async function initializeQueue(schema = QUEUE_SCHEMA) {
   validatedQueueSchema(schema);
-  const existing = await pool.query('SELECT to_regnamespace($1) AS schema', [schema]);
-  if (!existing.rows[0].schema) await pool.query(getConstructionPlans(schema));
+  if (!(await queueInstalled(schema))) await pool.query(getConstructionPlans(schema));
   const producer = createQueueClient(schema);
   await producer.createQueue(TASK_QUEUE, { policy: 'standard', retryLimit: 10, retryDelay: 2, retryBackoff: true,
     retryDelayMax: 30, expireInSeconds: 30, retentionSeconds: 86400, deleteAfterSeconds: 604800 });

@@ -1,7 +1,7 @@
 import { PgBoss, getConstructionPlans } from 'pg-boss';
 import type { PoolClient } from 'pg';
 import { pool } from '../../persistence/src/client';
-import { validatedQueueSchema } from '../../tasks/src/queue';
+import { queueInstalled, validatedQueueSchema } from '../../tasks/src/queue';
 
 export const IMPORT_QUEUE = 'hestia-floorplan-import';
 export const IMPORT_SCHEMA = 'hestia_imports';
@@ -14,7 +14,7 @@ export const importQueue = createImportQueue();
 /** Explicit finite setup. `expireInSeconds` must exceed the converter timeout; tests shorten it to observe restarts. */
 export async function initializeImportQueue(schema = IMPORT_SCHEMA, options: { expireInSeconds?: number } = {}) {
   validatedQueueSchema(schema);
-  if (!(await pool.query('SELECT to_regnamespace($1) AS schema', [schema])).rows[0].schema) await pool.query(getConstructionPlans(schema));
+  if (!(await queueInstalled(schema))) await pool.query(getConstructionPlans(schema));
   const queue = createImportQueue(schema);
   await queue.createQueue(IMPORT_QUEUE, { policy: 'standard', retryLimit: 10, retryDelay: 2, retryBackoff: true,
     retryDelayMax: 30, expireInSeconds: options.expireInSeconds ?? 180, retentionSeconds: 86400, deleteAfterSeconds: 604800 });

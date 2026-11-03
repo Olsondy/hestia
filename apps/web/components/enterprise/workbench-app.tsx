@@ -11,6 +11,7 @@ import { ClientError, get, maskPhone, post, session, signOut } from '../client/c
 import { Icon, type IconName } from '../client/client-icons';
 import { LeadDetailView, LeadsView } from './workbench-leads';
 import { AssistView } from './workbench-assist';
+import { NewView } from './workbench-new';
 
 // ---------- 上下文 ----------
 type Ctx = { slug: string; base: string; user: SessionUser; workspace: WorkspaceView; go: (path: string, replace?: boolean) => void };
@@ -64,7 +65,7 @@ function Router({ slug }: { slug: string }) {
 
   const page = !parts[0] ? <TodayView/>
     : parts[0] === 'leads' ? (parts[1] ? (parts[2] === 'assist' ? <AssistView id={parts[1]}/> : <LeadDetailView id={parts[1]}/>) : <LeadsView query={search}/>)
-      : parts[0] === 'new' ? <Pending nav="new" title="预置方案"/>
+      : parts[0] === 'new' ? <NewView/>
         : parts[0] === 'stones' ? <Pending nav="stones" title="石材与软装"/>
           : <Shell nav={null}><div className="page"><div className="empty"><b>找不到这个页面</b>请从页头进入需要的页面。</div></div></Shell>;
   return <WorkbenchContext.Provider value={ctx}>{page}</WorkbenchContext.Provider>;

@@ -380,6 +380,20 @@ dialog.modal::backdrop{background:#0c0c0e66}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 /* 生产补充 */
+/* 示例别墅平面（复用客户端 PlanDrawing 的结构） */
+.plan-svg .pl-room{fill:var(--c-surface);stroke:var(--c-line-strong);stroke-width:.5}
+.plan-svg .on .pl-room{fill:var(--c-surface-3)}
+.plan-svg .pl-area{fill:var(--c-ink);fill-opacity:.16;stroke:var(--c-ink);stroke-width:.6}
+.plan-svg .pl-stair{fill:none;stroke:var(--c-line-strong);stroke-width:.5;stroke-dasharray:1.5 1}
+.plan-svg .pl-stair.on{stroke:var(--c-ink);stroke-dasharray:none;stroke-width:.8}
+.plan-svg .pl-wall{stroke:var(--c-ink);stroke-width:1.6;stroke-linecap:round}
+.plan-svg text{font:4px var(--font);fill:var(--c-ink-2);text-anchor:middle}
+.stone-pick .swatch__img{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:var(--r-md);margin-bottom:6px;transition:box-shadow var(--d-fast)}
+.stone-pick[aria-pressed=true] .swatch__img{box-shadow:0 0 0 2px var(--c-surface),0 0 0 4px var(--c-ink)}
+.once .code{font-family:ui-monospace,Menlo,monospace}
+.once p{grid-column:1/-1;font-size:13px;color:var(--c-ink-2)}
+@media (max-width:1180px){.facet-pick{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}.stone-grid{grid-template-columns:repeat(5,1fr)}}
+
 /* 3D 查看（复用客户端 SchemeViewer 的结构） */
 .stage__3d{position:absolute;inset:0}
 .stage__viewer{position:absolute;inset:0}

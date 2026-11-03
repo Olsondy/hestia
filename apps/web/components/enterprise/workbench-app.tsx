@@ -1,6 +1,6 @@
 'use client';
-// 企业工作台 /w/{企业标识}/…：成员邮箱登录、成员校验、页头导航与「今日」。按定稿原型 enterprise-workbench（P02）实现。
-// 线索、预置方案、石材与软装页面由 W02 起接入，这里先占位；成员关系只由服务端判断。
+// 企业工作台 /w/{企业标识}/…：成员邮箱登录、成员校验、页头导航、「今日」（W01）与线索（W02，见 workbench-leads.tsx）。
+// 按定稿原型 enterprise-workbench（P02）实现；预置方案、石材与软装由 W04、W05 接入，这里先占位。成员关系只由服务端判断。
 import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -9,15 +9,19 @@ import type { LeadView } from '../../../../packages/contracts/src/finish-request
 import type { WorkspaceView } from '../../../../packages/contracts/src/workspaces';
 import { ClientError, get, maskPhone, post, session, signOut } from '../client/client-api';
 import { Icon, type IconName } from '../client/client-icons';
+import { LeadDetailView, LeadsView } from './workbench-leads';
 
 // ---------- 上下文 ----------
 type Ctx = { slug: string; base: string; user: SessionUser; workspace: WorkspaceView; go: (path: string, replace?: boolean) => void };
 const WorkbenchContext = createContext<Ctx | null>(null);
-const useWorkbench = () => useContext(WorkbenchContext)!;
+export const useWorkbench = () => useContext(WorkbenchContext)!;
 type SessionUser = { id: string; name: string; email: string | null; phoneNumber: string | null };
 const sessionUser = () => session() as Promise<SessionUser | null>;
 const memberOf = (slug: string) => get<{ workspace: WorkspaceView }>(`/api/workspaces/by-slug/${encodeURIComponent(slug)}`).then(r => r.workspace);
-const leadsOf = (workspaceId: string) => get<{ leads: LeadView[] }>(`/api/workspaces/${workspaceId}/leads`).then(r => r.leads);
+// Demo stone names end in「（示意）」; the workbench labels the section as 示意素材 once instead (same as the H5).
+export const tidy = (lead: LeadView): LeadView => ({ ...lead, schemes: lead.schemes.map(scheme => ({ ...scheme, surfaceDesign: { ...scheme.surfaceDesign,
+  stones: scheme.surfaceDesign.stones.map(stone => ({ ...stone, name: stone.name.replace(/（示意）$/, '') })) } })) });
+export const leadsOf = (workspaceId: string) => get<{ leads: LeadView[] }>(`/api/workspaces/${workspaceId}/leads`).then(r => r.leads.map(tidy));
 
 export function WorkbenchApp({ slug }: { slug: string }) {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: {
@@ -58,7 +62,7 @@ function Router({ slug }: { slug: string }) {
   if (!ctx) return <p className="page-loading">正在打开…</p>;
 
   const page = !parts[0] ? <TodayView/>
-    : parts[0] === 'leads' ? <Pending nav="leads" title={parts[1] ? '线索详情' : '线索'}/>
+    : parts[0] === 'leads' ? (parts[1] ? <LeadDetailView id={parts[1]}/> : <LeadsView query={search}/>)
       : parts[0] === 'new' ? <Pending nav="new" title="预置方案"/>
         : parts[0] === 'stones' ? <Pending nav="stones" title="石材与软装"/>
           : <Shell nav={null}><div className="page"><div className="empty"><b>找不到这个页面</b>请从页头进入需要的页面。</div></div></Shell>;
@@ -98,13 +102,13 @@ function ThemeButton() {
 }
 
 // ---------- 外壳 ----------
-type Nav = 'today' | 'leads' | 'new' | 'stones';
+export type Nav = 'today' | 'leads' | 'new' | 'stones';
 const navItems: [Nav, string, string][] = [['today', '', '今日'], ['leads', '/leads', '线索'], ['new', '/new', '预置方案'], ['stones', '/stones', '石材与软装']];
 function Brand({ name, href }: { name: string; href?: string }) {
   const inner = <><span className="brand-mark brand-mark--initial" aria-hidden="true">{name.slice(0, 1)}</span><b>{name}</b></>;
   return href ? <Link className="brand" href={href}>{inner}</Link> : <span className="brand">{inner}</span>;
 }
-function Shell({ nav, children }: { nav: Nav | null; children: React.ReactNode }) {
+export function Shell({ nav, children }: { nav: Nav | null; children: React.ReactNode }) {
   const { base, user, workspace } = useWorkbench(), logout = useSignOut(base);
   const leads = useQuery({ queryKey: ['leads', workspace.id], queryFn: () => leadsOf(workspace.id), staleTime: 30_000 });
   const count = leads.data ? leads.data.filter(lead => { const a = actionsOf(lead); return a.review || a.assist || a.contact || a.apply; }).length : 0;
@@ -113,12 +117,18 @@ function Shell({ nav, children }: { nav: Nav | null; children: React.ReactNode }
     <header className="topbar"><Brand name={workspace.name} href={base}/>
       <nav className="topnav" aria-label="工作台">{navItems.map(([key, href, label]) =>
         <Link key={key} href={`${base}${href}`} aria-current={nav === key ? 'page' : undefined}>{label}{key === 'today' && count > 0 && <span className="count" aria-label={`${count} 件需要处理`}>{count}</span>}</Link>)}</nav>
-      <div className="topbar__end"><ThemeButton/>
+      <div className="topbar__end"><TopSearch/><ThemeButton/>
         <span className="member"><span className="member__name">{name}</span><span className="avatar" title={name} aria-hidden="true">{name.slice(0, 1)}</span></span>
         <button className="icon-btn" onClick={logout} aria-label="退出登录"><Icon name="logout" size={16} strokeWidth={1.6}/></button></div>
     </header>
     <main id="page">{children}</main>
   </>;
+}
+/** 页头搜索：回车后到线索列表按手机号、称呼或项目名查找。 */
+function TopSearch() {
+  const { base, go } = useWorkbench();
+  return <label className="search"><Icon name="search" size={15} strokeWidth={1.6}/>
+    <input placeholder="搜索客户或项目" aria-label="搜索客户或项目" onKeyDown={e => { const t = e.currentTarget.value.trim(); if (e.key === 'Enter') go(`${base}/leads${t ? `?t=${encodeURIComponent(t)}` : ''}`); }}/></label>;
 }
 /** Sign-in and refusal pages: demo cover underneath, one floating panel, no navigation. */
 function AuthFrame({ children, name }: { children: React.ReactNode; name?: string }) {
@@ -132,7 +142,7 @@ function AuthFrame({ children, name }: { children: React.ReactNode; name?: strin
     </section></main>
   </>;
 }
-function Note({ kind, title, children }: { kind: 'danger' | 'hint' | 'ok' | 'info'; title: string; children: React.ReactNode }) {
+export function Note({ kind, title, children }: { kind: 'danger' | 'hint' | 'ok' | 'info'; title: string; children: React.ReactNode }) {
   const name: IconName = kind === 'danger' ? 'alert' : kind === 'ok' ? 'check' : 'info';
   return <p className={`note note--${kind}`} role={kind === 'danger' ? 'alert' : undefined}><Icon name={name} size={16} strokeWidth={1.6}/><span><b>{title}</b>{children}</span></p>;
 }
@@ -173,7 +183,7 @@ function DeniedView({ base }: { base: string }) {
 
 // ---------- 今日 ----------
 /** What a lead needs from members. A contact request is open until someone moves the lead past 新线索 (S02). */
-function actionsOf(lead: LeadView) {
+export function actionsOf(lead: LeadView) {
   return {
     review: lead.status === 'pending_review',
     assist: lead.status === 'assisted_conversion',
@@ -181,19 +191,19 @@ function actionsOf(lead: LeadView) {
     apply: lead.sharing.applications.some(application => application.status === 'pending'),
   };
 }
-const ago = (iso: string) => {
+export const ago = (iso: string) => {
   const t = Date.parse(iso), m = Math.round((Date.now() - t) / 60e3);
   if (m < 1) return '刚刚'; if (m < 60) return `${m} 分钟前`;
   const h = Math.round(m / 60); if (h < 24) return `${h} 小时前`;
   const d = new Date(t); return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
 };
 /** Phone accounts are named「手机用户 尾号」by default; only a real name is shown before the masked number. */
-const who = (lead: LeadView) => {
+export const who = (lead: LeadView) => {
   if (!lead.customer) return '未绑定客户';
   const { name, phone } = lead.customer, masked = maskPhone(phone);
   return name && !name.startsWith('手机用户') ? `${name} · ${masked}` : masked || '客户';
 };
-const letterOf = (lead: LeadView, schemeId: string | null) => {
+export const letterOf = (lead: LeadView, schemeId: string | null) => {
   const ordinal = lead.schemes.find(scheme => scheme.id === schemeId)?.ordinal;
   return ordinal ? `方案 ${String.fromCharCode(64 + ordinal)}` : '方案';
 };

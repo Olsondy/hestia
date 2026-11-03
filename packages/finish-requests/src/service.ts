@@ -282,6 +282,16 @@ export async function renderScene(client: Pick<PoolClient, 'query'>, row: Reques
   if (!render) throw notFound();
   return render.snapshot as SceneSnapshot;
 }
+/** Members: the frozen scene a scheme's still was rendered from (3D view in the workbench). */
+export async function readLeadScene(principal: Principal, workspaceId: string, requestId: string, schemeId: string) {
+  const userId = actorOf(principal);
+  return transaction(async (client, tx) => {
+    const [row] = await tx.select(requestColumns).from(finishRequests).where(eq(finishRequests.id, idSchema.parse(requestId))) as RequestRow[];
+    if (!row || row.workspace_id !== idSchema.parse(workspaceId)) throw notFound();
+    await memberOf(client, userId, row.workspace_id);
+    return renderScene(client, row, schemeId);
+  });
+}
 export async function readSchemeScene(principal: Principal, slug: string, requestId: string, schemeId: string) {
   return transaction(async (client, tx) => {
     const { userId, entry } = await customer(client, principal, slug);

@@ -18,6 +18,7 @@ import * as bindRoute from '../../../apps/web/app/api/client/[entry]/shares/[cod
 import * as previewRoute from '../../../apps/web/app/api/share/[code]/route';
 import * as requestRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/route';
 import * as requestsRoute from '../../../apps/web/app/api/client/[entry]/requests/route';
+import * as leadSceneRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/leads/[requestId]/schemes/[schemeId]/scene/route';
 import * as messagesRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/messages/route';
 
 // S02 线索跟进 over HTTP route handlers and real PostgreSQL.
@@ -125,6 +126,11 @@ test('customers, other enterprises\' members and visitors cannot read or write f
     const json = JSON.stringify(view.body);
     assert.ok(!json.includes(secret) && !json.includes('"follow"') && !json.includes('followStatus'), json.slice(0, 200));
   }
+  // The member 3D scene is members only too.
+  const scene = { workspaceId, requestId: created.id, schemeId: created.schemes[0].id };
+  assert.equal((await call(leadSceneRoute.GET, scene, cookies.admin)).status, 200);
+  assert.equal((await call(leadSceneRoute.GET, scene, owner)).status, 404);
+  assert.equal((await call(leadSceneRoute.GET, scene, cookies.outsider)).status, 404);
   const lead2 = (await call(leadsRoute.GET, { workspaceId }, cookies.admin)).body.leads.find((l: { id: string }) => l.id === created.id);
   assert.equal(lead2.follow.status, 'won'); assert.equal(lead2.follow.notes.length, 1);
 });

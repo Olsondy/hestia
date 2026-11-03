@@ -3,12 +3,14 @@ import type { PoolClient } from 'pg';
 import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
 import { surfaceDesignSchema, type Finish, type StoneSpec, type SurfaceDesign, type Tiling, type TilePattern } from '../../contracts/src/finishes';
 import { adjustSchemeSchema, confirmSchemeSchema, requestMessageSchema, undoSchemeSchema, type FinishRequestView, type SchemeOptionsView } from '../../contracts/src/finish-requests';
-import { transaction } from '../../persistence/src/client';
+import { and, eq, sql } from 'drizzle-orm';
+import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
+import { finishRequestEvents, finishRequestOperations, finishRequests, finishSchemeRevisions, finishSchemes, projects } from '../../persistence/src/schema';
 import type { Principal } from '../../workspaces/src/access';
 import { workspaceStones } from '../../finishes/src/catalog';
 import { inspectSurfaceDesign, stoneKey } from '../../finishes/src/plan';
 import { enqueueSchemeRender } from '../../renders/src/service';
-import { customerRequest, view, type RequestDeps, type RequestRow, type SchemeRow } from './service';
+import { customerRequest, requestColumns, schemeColumns, view, type RequestDeps, type RequestRow, type SchemeRow } from './service';
 
 // D07: option-based adjustment of published schemes. Every change is a new scheme revision checked by the layout engine
 // and rendered in the background; undo restores the previous revision (re-using its image); confirmation binds one
@@ -24,27 +26,30 @@ const brightness = (stone: StoneSpec) => [1, 3, 5].reduce((sum, i) => sum + pars
 
 /** Idempotent customer mutation on a published request; the result is stored per operation. */
 async function mutate<T>(principal: Principal, slug: string, requestId: string, kind: string, input: { operationId: string } & Record<string, unknown>, work: (client: PoolClient, row: RequestRow, userId: string) => Promise<T>) {
-  return transaction(async client => {
+  return transaction(async (client, tx) => {
     const { row, userId } = await customerRequest(client, principal, slug, requestId), hash = sha({ kind, requestId, ...input });
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`finish-request-op:${userId}:${input.operationId}`]);
-    const previous = (await client.query('SELECT request_hash,result FROM finish_request_operations WHERE actor_id=$1 AND id=$2', [userId, input.operationId])).rows[0];
+    await advisoryXactLock(tx, `finish-request-op:${userId}:${input.operationId}`);
+    const [previous] = await tx.select({ requestHash: finishRequestOperations.requestHash }).from(finishRequestOperations)
+      .where(and(eq(finishRequestOperations.actorId, userId), eq(finishRequestOperations.id, input.operationId)));
     if (previous) {
-      if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
+      if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
     } else {
       if (row.status !== 'published') throw new DomainError('NOT_PUBLISHED', '方案尚未发布，暂不能调整或确认。', 409);
       const result = await work(client, row, userId);
-      await client.query('INSERT INTO finish_request_operations(actor_id,id,request_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [userId, input.operationId, row.id, hash, result ?? {}]);
+      await tx.insert(finishRequestOperations).values({ actorId: userId, id: input.operationId, requestId: row.id, requestHash: hash, result: result ?? {} });
     }
-    return view(client, (await client.query<RequestRow>('SELECT * FROM finish_requests WHERE id=$1', [row.id])).rows[0], 'customer', slug);
+    const [saved] = await tx.select(requestColumns).from(finishRequests).where(eq(finishRequests.id, row.id)) as RequestRow[];
+    return view(client, saved, 'customer', slug);
   });
 }
 async function lockedScheme(client: PoolClient, row: RequestRow, schemeId: string) {
-  const scheme = (await client.query<SchemeRow>('SELECT * FROM finish_schemes WHERE id=$1 AND request_id=$2 FOR UPDATE', [idSchema.parse(schemeId), row.id])).rows[0];
+  const [scheme] = await orm(client).select(schemeColumns).from(finishSchemes)
+    .where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id))).for('update') as SchemeRow[];
   if (!scheme) throw new DomainError('NOT_FOUND', '方案不存在。', 404);
   return scheme;
 }
 async function projectState(client: PoolClient, projectId: string) {
-  const project = (await client.query<{ revision: number; snapshot: unknown }>('SELECT revision,snapshot FROM projects WHERE id=$1', [projectId])).rows[0];
+  const [project] = await orm(client).select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects).where(eq(projects.id, projectId));
   return { revision: project.revision, state: spatialStateSchema.parse(project.snapshot) };
 }
 async function saveRevision(client: PoolClient, row: RequestRow, scheme: SchemeRow, design: SurfaceDesign, report: SchemeRow['report'], userId: string,
@@ -52,10 +57,10 @@ async function saveRevision(client: PoolClient, row: RequestRow, scheme: SchemeR
   const revision = scheme.revision + 1, { revision: projectRevision, state } = await projectState(client, row.project_id);
   const render = renderId ?? await enqueueSchemeRender(client, { projectId: row.project_id, actorId: userId, projectRevision,
     state: spatialStateSchema.parse({ ...state, surfaceDesign: design }), scheme: { schemeId: scheme.id, revision }, label: `方案 ${scheme.name} · 调整 ${revision}` }, deps.renderQueue);
-  await client.query('UPDATE finish_schemes SET revision=$2,surface_design=$3,report=$4,render_id=$5,updated_at=now() WHERE id=$1', [scheme.id, revision, design, report, render]);
-  await client.query('INSERT INTO finish_scheme_revisions(scheme_id,revision,surface_design,report,render_id,change,created_by) VALUES($1,$2,$3,$4,$5,$6,$7)',
-    [scheme.id, revision, design, report, render, change, userId]);
-  await client.query('UPDATE finish_requests SET updated_at=now() WHERE id=$1', [row.id]);
+  const tx = orm(client);
+  await tx.update(finishSchemes).set({ revision, surfaceDesign: design, report, renderId: render, updatedAt: sql`now()` }).where(eq(finishSchemes.id, scheme.id));
+  await tx.insert(finishSchemeRevisions).values({ schemeId: scheme.id, revision, surfaceDesign: design, report, renderId: render, change, createdBy: userId });
+  await tx.update(finishRequests).set({ updatedAt: sql`now()` }).where(eq(finishRequests.id, row.id));
 }
 
 /** What the customer may choose for each finish of a scheme. */
@@ -125,7 +130,8 @@ export async function undoSchemeAdjustment(principal: Principal, slug: string, r
     // Each revision records the revision it was derived from (`parent`); undo returns to that content, so repeated
     // undo keeps stepping back through real adjustments.
     type Revision = { revision: number; surface_design: SurfaceDesign; report: SchemeRow['report']; render_id: string | null; change: { parent?: number } | null };
-    const revisions = (await client.query<Revision>('SELECT revision,surface_design,report,render_id,change FROM finish_scheme_revisions WHERE scheme_id=$1', [scheme.id])).rows;
+    const revisions = await orm(client).select({ revision: finishSchemeRevisions.revision, surface_design: finishSchemeRevisions.surfaceDesign, report: finishSchemeRevisions.report,
+      render_id: finishSchemeRevisions.renderId, change: finishSchemeRevisions.change }).from(finishSchemeRevisions).where(eq(finishSchemeRevisions.schemeId, scheme.id)) as Revision[];
     const latest = revisions.find(r => r.revision === scheme.revision), target = revisions.find(r => r.revision === latest?.change?.parent);
     if (!target) throw new DomainError('NOTHING_TO_UNDO', '已经是最初的方案。', 409);
     await saveRevision(client, row, scheme, target.surface_design, target.report, userId, { parent: target.change?.parent, undoOf: scheme.revision }, target.render_id, deps);
@@ -139,17 +145,17 @@ export async function confirmScheme(principal: Principal, slug: string, requestI
   return mutate(principal, slug, requestId, 'confirm', value, async (client, row, userId) => {
     const scheme = await lockedScheme(client, row, value.schemeId);
     if (scheme.revision !== value.revision) throw new DomainError('SCHEME_REVISION_CONFLICT', '方案已有新版本，请查看最新效果后再确认。', 409);
-    await client.query(`INSERT INTO finish_request_events(id,request_id,actor_id,kind,scheme_id,scheme_revision,surface_design,message,contact_requested,preferred_time)
-      VALUES($1,$2,$3,'confirmation',$4,$5,$6,$7,$8,$9)`, [randomUUID(), row.id, userId, scheme.id, scheme.revision, scheme.surface_design,
-      value.message ?? null, value.contactRequested ?? false, value.preferredTime ?? null]);
+    await orm(client).insert(finishRequestEvents).values({ id: randomUUID(), requestId: row.id, actorId: userId, kind: 'confirmation', schemeId: scheme.id,
+      schemeRevision: scheme.revision, surfaceDesign: scheme.surface_design, message: value.message ?? null, contactRequested: value.contactRequested ?? false,
+      preferredTime: value.preferredTime ?? null });
     return { schemeId: scheme.id, revision: scheme.revision };
   });
 }
 export async function leaveMessage(principal: Principal, slug: string, requestId: string, input: unknown) {
   const value = requestMessageSchema.parse(input);
   return mutate(principal, slug, requestId, 'message', value, async (client, row, userId) => {
-    await client.query(`INSERT INTO finish_request_events(id,request_id,actor_id,kind,message,contact_requested,preferred_time) VALUES($1,$2,$3,'message',$4,$5,$6)`,
-      [randomUUID(), row.id, userId, value.message ?? null, value.contactRequested, value.preferredTime ?? null]);
+    await orm(client).insert(finishRequestEvents).values({ id: randomUUID(), requestId: row.id, actorId: userId, kind: 'message', message: value.message ?? null,
+      contactRequested: value.contactRequested, preferredTime: value.preferredTime ?? null });
     return {};
   });
 }

@@ -2,9 +2,11 @@ import type { LanguageModel } from 'ai';
 import { DomainError, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationOutcome } from '../../contracts/src/tasks';
 import { executeCommandInTransaction } from '../../commands/src/service';
-import { pool, transaction } from '../../persistence/src/client';
-import { projectAccess } from '../../workspaces/src/access';
-import { appendEvent, type TaskRow } from '../../tasks/src/service';
+import { and, eq, sql } from 'drizzle-orm';
+import { db, transaction, type Database } from '../../persistence/src/client';
+import { designTasks, operations, projects, taskEvents } from '../../persistence/src/schema';
+import { canAccessProject } from '../../workspaces/src/access';
+import { appendEvent, taskRow, type TaskRow } from '../../tasks/src/service';
 import { claimTask, fenced, type TaskClaim } from '../../tasks/src/runner';
 import { resolveConversation, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
 import { exactLocalCommand } from './intent';
@@ -25,53 +27,60 @@ export type ConversationRunOptions = {
   beforeCommit?: () => Promise<void>;
   intentVersion?: number;
 };
-async function saveConversation(client: import('pg').PoolClient, row: TaskRow) {
-  await client.query('UPDATE design_tasks SET conversation=$2 WHERE id=$1', [row.id, row.conversation]);
+async function saveConversation(tx: Database, row: TaskRow) {
+  await tx.update(designTasks).set({ conversation: row.conversation }).where(eq(designTasks.id, row.id));
 }
+/** Full task row in the snake_case shape shared with the tasks runner. */
+async function readTask(taskId: string) {
+  const [t] = await db.select().from(designTasks).where(eq(designTasks.id, taskId));
+  return taskRow(t);
+}
+const leaseFromNow = sql`clock_timestamp() + interval '15 seconds'`;
 async function fail(claim: TaskClaim, code: string, message: string) {
-  await transaction(async client => {
+  await transaction(async (client, tx) => {
     const row = await fenced(client, claim);
     row.conversation!.phase = 'finished';
     settleAttempt(row); execution(row).stopReason = code;
-    await saveConversation(client, row);
+    await saveConversation(tx, row);
     const unknownCall = row.conversation!.callStarted && !row.conversation!.response;
     const status = hasRetainedWork(row) ? 'partial' : 'failed';
-    await client.query("UPDATE design_tasks SET status=$3,lease_until=NULL,usage_used=usage_used+$4,usage_reserved=0,error=$2 WHERE id=$1",
-      [row.id, { code, message }, status, unknownCall ? row.usage_reserved : 0]);
+    await tx.update(designTasks).set({ status, leaseUntil: null, usageUsed: sql`${designTasks.usageUsed} + ${unknownCall ? row.usage_reserved : 0}`,
+      usageReserved: 0, error: { code, message } }).where(eq(designTasks.id, row.id));
     await appendEvent(client, row.id, 'status', { status, phase: 'finished', message, intentVersion: row.conversation!.brief?.intentVersion ?? 1 });
   });
 }
 async function preserveRetryOnLostFence(claim: TaskClaim, error: unknown) {
-  const row = (await pool.query<TaskRow>('SELECT * FROM design_tasks WHERE id=$1', [claim.taskId])).rows[0];
+  const [row] = await db.select({ status: designTasks.status, generation: designTasks.generation }).from(designTasks).where(eq(designTasks.id, claim.taskId));
   // A cancelled task or newer owner needs no acknowledgement from this attempt. An expired
   // current owner must fail the queue callback, otherwise ACK would strand the saved response.
   if (row?.status === 'running' && row.generation === claim.generation) throw error;
 }
 async function heartbeat(claim: TaskClaim) {
-  await transaction(async client => {
+  await transaction(async (client, tx) => {
     await fenced(client, claim);
-    await client.query("UPDATE design_tasks SET lease_until=clock_timestamp()+interval '15 seconds' WHERE id=$1", [claim.taskId]);
+    await tx.update(designTasks).set({ leaseUntil: leaseFromNow }).where(eq(designTasks.id, claim.taskId));
   });
 }
 async function commitResponse(claim: TaskClaim, response: ModelResponse) {
-  await transaction(async client => {
+  await transaction(async (client, tx) => {
     const row = await fenced(client, claim), conversation = row.conversation!;
     const decision = response.decision;
     if (response.failure || !decision) throw new DomainError(response.failure ?? 'MODEL_EMPTY_RESPONSE', '模型没有返回完整、有效的本轮结果；空间未修改。');
     if (typeof response.reply !== 'string' || !response.reply.trim())
       throw new DomainError('MODEL_REPLY_REQUIRED', '旧版或不完整响应缺少本轮答复，空间未修改；请重新发起本轮。');
     // Even read-only answers are explicitly tied to the accepted project revision.
-    const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [row.project_id, row.actor_id])).rows[0];
+    const [project] = await tx.select({ revision: projects.revision }).from(projects)
+      .where(and(eq(projects.id, row.project_id), canAccessProject(projects.id, row.actor_id))).for('update');
     if (!project || project.revision !== row.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已有新修订，本轮旧结果未应用；请重新发起。', 409);
     // UI discards abandoned-generation drafts. Replaying a durable, complete response in the
     // current generation preserves the answer after recovery without invoking the model again.
-    const hasCurrentReply = (await client.query("SELECT 1 FROM task_events WHERE task_id=$1 AND type='text' AND data->>'source'='model' AND data->>'generation'=$2 LIMIT 1",
-      [row.id, String(claim.generation)])).rowCount;
+    const [hasCurrentReply] = await tx.select({ one: sql`1` }).from(taskEvents).where(and(eq(taskEvents.taskId, row.id), eq(taskEvents.type, 'text'),
+      sql`${taskEvents.data}->>'source' = 'model'`, sql`${taskEvents.data}->>'generation' = ${String(claim.generation)}`)).limit(1);
     if (!hasCurrentReply) await appendEvent(client, row.id, 'text', { text: response.reply, source: 'model', provisional: true,
       completeReply: true, replayedFromCheckpoint: true, generation: claim.generation, intentVersion: conversation.brief?.intentVersion ?? 1 });
     if (decision.kind !== 'propose_layout' && response.brief && conversation.brief) {
       applyBriefProposal(conversation.brief, response.brief);
-      await saveConversation(client, row);
+      await saveConversation(tx, row);
     }
     let outcome: ConversationOutcome;
     if (decision.kind === 'answer' || decision.kind === 'clarification') {
@@ -83,7 +92,7 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
       const prepared = prepareLayoutProposal(conversation.brief, decision, response.brief);
       conversation.brief = prepared.brief;
       const effectiveDecision = prepared.decision;
-      conversation.effectiveDecision = effectiveDecision; await saveConversation(client, row);
+      conversation.effectiveDecision = effectiveDecision; await saveConversation(tx, row);
       const result = await planRoomCandidateInTransaction(client, { ownerId: row.actor_id, projectId: row.project_id,
         baseRevision: row.expected_revision, operationId: conversation.operationId, taskId: row.id,
         intentVersion: conversation.brief.intentVersion, decision: effectiveDecision, brief: conversation.brief, input: conversation.input });
@@ -103,7 +112,8 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
       else {
         await executeCommandInTransaction(client, { userId: row.actor_id }, row.project_id,
           { operationId: conversation.operationId, expectedRevision: row.expected_revision, command: intent.command });
-        const result = (await client.query('SELECT result FROM operations WHERE actor_id=$1 AND id=$2', [row.actor_id, conversation.operationId])).rows[0].result;
+        const result = (await tx.select({ result: operations.result }).from(operations)
+          .where(and(eq(operations.actorId, row.actor_id), eq(operations.id, conversation.operationId))))[0].result as { revision: number };
         await fenced(client, claim); // Project lock waits cannot allow a stale generation to commit.
         const object = state.currentLayout.objects.find(item => item.id === intent.objectId)!;
         const after = intent.command as Extract<typeof intent.command, { type: 'move-furniture' }>;
@@ -130,10 +140,10 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
     const status = outcome.kind === 'candidate' ? 'waiting_selection' : outcome.planReport?.status === 'not_found' ? 'partial'
       : brief?.questions.some(question => question.status === 'open') ? 'waiting_input' : 'completed';
     conversation.phase = 'finished'; conversation.outcome = outcome;
-    await saveConversation(client, row);
+    await saveConversation(tx, row);
     await fenced(client, claim);
-    await client.query('UPDATE design_tasks SET status=$3,next_step=1,expected_revision=$2,lease_until=NULL,usage_reserved=0,error=$4 WHERE id=$1',
-      [row.id, row.expected_revision, status, status === 'partial' ? { code: 'LAYOUT_NOT_FOUND', message: outcome.message } : null]);
+    await tx.update(designTasks).set({ status, nextStep: 1, expectedRevision: row.expected_revision, leaseUntil: null, usageReserved: 0,
+      error: status === 'partial' ? { code: 'LAYOUT_NOT_FOUND', message: outcome.message } : null }).where(eq(designTasks.id, row.id));
     await appendEvent(client, row.id, 'status', { status, phase: 'finished', outcome, intentVersion: brief?.intentVersion ?? 1 });
   });
 }
@@ -150,7 +160,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
   try {
     // At most initial + one known-rejection retry + one admitted fallback per intent.
     for (let cycle = 0; cycle < 4; cycle++) {
-    let row = (await pool.query<TaskRow>('SELECT * FROM design_tasks WHERE id=$1', [taskId])).rows[0];
+    let row = await readTask(taskId);
     let response = row.conversation!.response as ModelResponse | null;
     // Saved complete results are reusable even if the current provider configuration is gone.
     if (response && !response.failure) {
@@ -178,11 +188,11 @@ export async function runConversationTask(taskId: string, options: ConversationR
       attempts.length ? '平台模型暂不可用，且没有通过验收的备用配置；已有成果保留。' : '没有匹配此任务的已验收平台配置，已有成果保留。');
     if (response) {
       // Durable retry preparation: a restart sees the same rejected attempt and next config.
-      await transaction(async client => {
+      await transaction(async (client, tx) => {
         const current = await fenced(client, claim);
         current.conversation!.callStarted = false; current.conversation!.response = null; current.conversation!.phase = 'accepted';
-        await saveConversation(client, current);
-        await client.query("UPDATE design_tasks SET generation=generation+1,lease_until=clock_timestamp()+interval '15 seconds' WHERE id=$1", [taskId]);
+        await saveConversation(tx, current);
+        await tx.update(designTasks).set({ generation: sql`${designTasks.generation} + 1`, leaseUntil: leaseFromNow }).where(eq(designTasks.id, taskId));
         claim.generation++;
         await appendEvent(client, taskId, 'status', { status: 'running', phase: 'accepted', generation: claim.generation,
           intentVersion, reason: attempts.length === 1 ? 'retry' : 'fallback', message: attempts.length === 1 ? '平台请求被拒绝，进行一次有限重试。' : '切换到已验收的备用配置。' });
@@ -194,9 +204,10 @@ export async function runConversationTask(taskId: string, options: ConversationR
       try { model = configuration.createModel(() => { networkDispatches++; }); } catch {
         await fail(claim, 'MODEL_NOT_CONFIGURED', '平台模型配置不可用；空间未修改。'); return;
       }
-      row = await transaction(async client => {
+      row = await transaction(async (client, tx) => {
         const current = await fenced(client, claim);
-        const project = (await client.query(`SELECT revision FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [current.project_id, current.actor_id])).rows[0];
+        const [project] = await tx.select({ revision: projects.revision }).from(projects)
+          .where(and(eq(projects.id, current.project_id), canAccessProject(projects.id, current.actor_id)));
         if (!project || project.revision !== current.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已更新，本轮未调用模型。', 409);
         reserveAttempt(current, { configurationId: configuration.id, profile,
           reason: attempts.length === 0 ? 'initial' : attempts.length === 1 ? 'retry' : 'fallback',
@@ -205,8 +216,8 @@ export async function runConversationTask(taskId: string, options: ConversationR
         current.conversation!.configuration = { model: configuration.modelId, configurationId: configuration.id, profile,
           instructionsVersion: INSTRUCTIONS_VERSION, toolContractVersion: 'resolve-turn-4-layout', policyVersion: 'bounded-execution-1',
           timeoutMs: MODEL_TIMEOUT_MS, maxOutputTokens: 1600, maxRetries: 0 };
-        await saveConversation(client, current);
-        await client.query('UPDATE design_tasks SET usage_reserved=1 WHERE id=$1', [taskId]);
+        await saveConversation(tx, current);
+        await tx.update(designTasks).set({ usageReserved: 1 }).where(eq(designTasks.id, taskId));
         await appendEvent(client, taskId, 'status', { status: 'running', phase: 'calling_model', generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 });
         return current;
       });
@@ -214,16 +225,16 @@ export async function runConversationTask(taskId: string, options: ConversationR
       response = await resolveConversation({ model, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
         onText: text => transaction(async client => { const current = await fenced(client, claim); await appendEvent(client, taskId, 'text', { text, source: 'model', provisional: true, generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 }); }) });
       response.networkDispatches = networkDispatches;
-      await transaction(async client => {
+      await transaction(async (client, tx) => {
         const current = await fenced(client, claim);
         current.conversation!.response = response; current.conversation!.modelUsage = response!.usage; current.conversation!.phase = 'validating';
         settleAttempt(current, response!);
-        await saveConversation(client, current);
+        await saveConversation(tx, current);
         // The complete reply and response checkpoint share a transaction. Replay never appends it twice.
         if (!response!.failure && response!.reply && response!.reply !== response!.streamedReply)
           await appendEvent(client, taskId, 'text', { text: response!.reply, source: 'model', provisional: true, completeReply: true, generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 });
         // Response existence proves this call was settled: both writes share this transaction.
-        await client.query('UPDATE design_tasks SET usage_used=usage_used+1,usage_reserved=0 WHERE id=$1', [taskId]);
+        await tx.update(designTasks).set({ usageUsed: sql`${designTasks.usageUsed} + 1`, usageReserved: 0 }).where(eq(designTasks.id, taskId));
         await appendEvent(client, taskId, 'usage', { ...response!.usage, unit: 'token', elapsedMs: response!.elapsedMs });
         await appendEvent(client, taskId, 'status', { status: 'running', phase: 'validating' });
       });

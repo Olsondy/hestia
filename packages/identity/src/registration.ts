@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
-import { transaction } from '../../persistence/src/client';
+import { eq } from 'drizzle-orm';
+import { advisoryXactLock, driverError, orm, transaction } from '../../persistence/src/client';
+import { hestiaAuthAccount, hestiaAuthUser } from '../../persistence/src/schema';
 import { issueRegistrationGrant } from '../../credits/src/service';
 import { ensurePersonalWorkspace } from '../../workspaces/src/service';
 import { DomainError } from '../../contracts/src/project';
@@ -19,14 +21,14 @@ type Registration = z.infer<typeof registrationSchema>;
 
 /** All new-user effects either commit together or roll back together. */
 export async function createRegistrationInTransaction(client: PoolClient, input: Registration, passwordHash: string) {
-  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`hestia:registration:${input.email}`]);
-  const existing = await client.query('SELECT id FROM hestia_auth_user WHERE email=$1', [input.email]);
-  if (existing.rowCount) return;
+  const tx = orm(client);
+  await advisoryXactLock(tx, `hestia:registration:${input.email}`);
+  const existing = await tx.select({ id: hestiaAuthUser.id }).from(hestiaAuthUser).where(eq(hestiaAuthUser.email, input.email));
+  if (existing.length) return;
   const userId = randomUUID();
   // Invitation acceptance uses the same Better Auth credential-account contract.
-  await client.query('INSERT INTO hestia_auth_user(id,name,email,email_verified) VALUES($1,$2,$3,false)', [userId, input.name, input.email]);
-  await client.query('INSERT INTO hestia_auth_account(id,account_id,provider_id,user_id,password) VALUES($1,$2,$3,$2,$4)',
-    [randomUUID(), userId, 'credential', passwordHash]);
+  await tx.insert(hestiaAuthUser).values({ id: userId, name: input.name, email: input.email, emailVerified: false });
+  await tx.insert(hestiaAuthAccount).values({ id: randomUUID(), accountId: userId, providerId: 'credential', userId, password: passwordHash });
   await issueRegistrationGrant(client, userId);
   await ensurePersonalWorkspace(client, userId);
 }
@@ -41,7 +43,8 @@ export async function register(input: unknown) {
   } catch (error) {
     // A concurrently accepted legacy invitation can win the user-email uniqueness race.
     // The losing registration transaction is entirely rolled back, and must not grant credits.
-    if ((error as { code?: string }).code !== '23505' || (error as { constraint?: string }).constraint !== 'hestia_auth_user_email_key') throw error;
+    const pgError = driverError(error) as { code?: string; constraint?: string };
+    if (pgError.code !== '23505' || pgError.constraint !== 'hestia_auth_user_email_key') throw error;
   }
   // Neutral response for existing identities prevents account enumeration. Login validates password.
   return { registered: true as const };

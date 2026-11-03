@@ -1,4 +1,7 @@
+import { and, eq, exists, inArray, sql, type SQL } from 'drizzle-orm';
+import { QueryBuilder, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { DomainError } from '../../contracts/src/project';
+import { projectAccess as accessView } from '../../persistence/src/schema/workspaces';
 
 /** Authenticated caller. `workspaceId` selects the workspace for list/create; omitted means the personal workspace. */
 export type Principal = { userId: string; workspaceId?: string };
@@ -16,8 +19,14 @@ export function actorOf(principal: Principal) {
   return principal.userId;
 }
 
+/** Drizzle predicate: `userId` may use the project identified by `project` (a column or SQL expression). */
+export function canAccessProject(project: AnyPgColumn | SQL, userId: string, capability: ProjectCapability = 'workbench') {
+  return exists(new QueryBuilder().select({ one: sql`1` }).from(accessView)
+    .where(and(eq(accessView.projectId, project), eq(accessView.userId, userId), inArray(accessView.via, [...relations[capability]]))));
+}
+
 /**
- * SQL predicate that the user bound at `userParam` may use the project identified by `projectRef`.
+ * Raw-SQL form of `canAccessProject` for queries not yet on Drizzle. SQL predicate that the user bound at `userParam` may use the project identified by `projectRef`.
  * Both arguments are trusted SQL fragments written by services (a column reference and a bind placeholder).
  */
 export function projectAccess(projectRef: string, userParam: string, capability: ProjectCapability = 'workbench') {

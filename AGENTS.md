@@ -109,7 +109,7 @@ pnpm test:db       # 本地真实 PostgreSQL 验证
 ### Database Rules
 
 - 表结构以 `packages/persistence/src/schema/` 为准：改 schema → `pnpm db:generate` → 提交生成的 SQL 和 `meta/`。不手写迁移，不手改 snapshot，不往 `packages/persistence/migrations/` 加文件（已冻结，`db:migrate` 会拒绝）。`pnpm check` 中的 `db:check` 会拦截有 schema 改动但没有生成迁移的情况。
-- 新查询默认用 Drizzle（`db`、`orm(client)` 或 `transaction((client, tx) => …)` 的 `tx`），行类型从 schema 推导。行锁用 `.for('update')`；advisory 锁、`jsonb_set` 等可以用 `` sql`...` `` 或参数化 SQL。修改到含手写 SQL 的模块时顺手迁移，范例见 `packages/finishes/src/catalog.ts`。
+- 新查询默认用 Drizzle（`db`、`orm(client)` 或 `transaction((client, tx) => …)` 的 `tx`），行类型从 schema 推导。行锁用 `.for('update')`；advisory 锁、`jsonb_set` 等可以用 `` sql`...` `` 或参数化 SQL。业务代码不再新增 `client.query`（例外：pg-boss 适配器、迁移执行器、事务控制语句，见 ADR-0009）。在事务回调内部按 Postgres 错误码判断时，先调用 `driverError(error)`。
 - 触发器、函数、视图、数据回填用 `drizzle-kit generate --custom`；Drizzle 不支持 `DEFERRABLE` 外键，涉及时用自定义迁移。
 
 ### Next.js Guardrails

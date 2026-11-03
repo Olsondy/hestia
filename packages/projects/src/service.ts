@@ -1,7 +1,9 @@
 import type { PoolClient } from 'pg';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
-import { pool, transaction } from '../../persistence/src/client';
+import { advisoryXactLock, db, orm, transaction, type Database } from '../../persistence/src/client';
+import { operations, projectRevisions, projects, resources } from '../../persistence/src/schema';
 import { courtyard, angled } from '../../scene-runtime/src/fixtures';
 import { sceneSnapshotSchema, type SceneSnapshot } from '../../scene-runtime/src/snapshot';
 import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema, DomainError, buildingFacts, finishFacts,
@@ -9,7 +11,7 @@ import { createProjectSchema, renameProjectSchema, idSchema, spatialStateSchema,
 
 import { demoVillaScene } from '../../finishes/src/demo-villa-scene';
 import { actingWorkspace } from '../../workspaces/src/service';
-import { projectAccess, type Principal } from '../../workspaces/src/access';
+import { canAccessProject, type Principal } from '../../workspaces/src/access';
 export type { Principal } from '../../workspaces/src/access';
 const notFound = () => new DomainError('NOT_FOUND', '项目或资源不存在。', 404);
 function identity(principal: Principal) {
@@ -46,18 +48,23 @@ export function toScene(state: SpatialState, label: string): SceneSnapshot {
 /** Projects of the acting workspace (personal unless the principal names another workspace it belongs to). */
 export async function listProjects(principal: Principal): Promise<ProjectSummary[]> {
   identity(principal);
-  const rows = await transaction(async client => (await client.query('SELECT id,name,revision,snapshot,updated_at FROM projects WHERE workspace_id=$1 ORDER BY updated_at DESC',
-    [await actingWorkspace(client, principal)])).rows);
+  const rows = await transaction(async (client, tx) => {
+    const workspaceId = await actingWorkspace(client, principal);
+    return tx.select({ id: projects.id, name: projects.name, revision: projects.revision, snapshot: projects.snapshot, updatedAt: projects.updatedAt })
+      .from(projects).where(eq(projects.workspaceId, workspaceId)).orderBy(desc(projects.updatedAt));
+  });
   return rows.map(row => ({ id: row.id, name: row.name, revision: row.revision,
-    synthetic: spatialStateSchema.parse(row.snapshot).synthetic, updatedAt: row.updated_at.toISOString() }));
+    synthetic: spatialStateSchema.parse(row.snapshot).synthetic, updatedAt: row.updatedAt.toISOString() }));
 }
 export async function getProject(principal: Principal, projectId: string): Promise<ProjectView> {
   const id = idSchema.parse(projectId);
-  const row = (await pool.query(`SELECT name,revision,snapshot,updated_at FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')}`, [id, identity(principal)])).rows[0];
+  const [row] = await db.select({ name: projects.name, revision: projects.revision, snapshot: projects.snapshot, updatedAt: projects.updatedAt })
+    .from(projects).where(and(eq(projects.id, id), canAccessProject(projects.id, identity(principal))));
   if (!row) throw notFound();
   const state = spatialStateSchema.parse(row.snapshot);
-  const files = (await pool.query('SELECT id,project_id AS "projectId",media_type AS "mediaType",state FROM resources WHERE project_id=$1', [id])).rows;
-  return { id, name: row.name, revision: row.revision, updatedAt: row.updated_at.toISOString(), synthetic: state.synthetic,
+  const files = await db.select({ id: resources.id, projectId: resources.projectId, mediaType: resources.mediaType, state: resources.state })
+    .from(resources).where(eq(resources.projectId, id));
+  return { id, name: row.name, revision: row.revision, updatedAt: row.updatedAt.toISOString(), synthetic: state.synthetic,
     scale: state.scale, scene: toScene(state, row.name), fixedFacts: { id: state.fixedFacts.id, revision: state.fixedFacts.revision },
     currentLayout: { id: state.currentLayout.id, revision: state.currentLayout.revision },
     lockedObjectIds: state.currentLayout.lockedObjectIds,
@@ -68,26 +75,29 @@ export { initialState };
 /** Inserts a project and its first revision inside the caller's transaction (caller authorises the workspace). */
 export async function insertProjectInTransaction(client: PoolClient, input: { workspaceId: string; createdBy: string; name: string; state: SpatialState; operationId: string }) {
   const projectId = randomUUID();
-  await client.query('INSERT INTO projects(id,workspace_id,created_by,name,revision,snapshot) VALUES($1,$2,$3,$4,1,$5)', [projectId, input.workspaceId, input.createdBy, input.name, input.state]);
-  await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,1,$2,$3)', [projectId, input.state, input.operationId]);
+  await insertProject(orm(client), { ...input, projectId });
   return projectId;
+}
+async function insertProject(tx: Database, input: { projectId: string; workspaceId: string; createdBy: string; name: string; state: SpatialState; operationId: string }) {
+  await tx.insert(projects).values({ id: input.projectId, workspaceId: input.workspaceId, createdBy: input.createdBy, name: input.name, revision: 1, snapshot: input.state });
+  await tx.insert(projectRevisions).values({ projectId: input.projectId, revision: 1, snapshot: input.state, operationId: input.operationId });
 }
 export async function createProject(principal: Principal, input: unknown): Promise<ProjectView> {
   const value = createProjectSchema.parse(input), actorId = identity(principal);
   const hash = createHash('sha256').update(JSON.stringify({ kind: 'create', ...value })).digest('hex');
-  const result = await transaction(async client => {
+  const result = await transaction(async (client, tx) => {
     // Same-actor retries serialize even before a project exists. No process-local mutex.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${actorId}:${value.operationId}`]);
-    const previous = await client.query('SELECT request_hash,result FROM operations WHERE actor_id=$1 AND id=$2', [actorId, value.operationId]);
-    if (previous.rowCount) {
-      if (previous.rows[0].request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
-      return previous.rows[0].result as { projectId: string };
+    await advisoryXactLock(tx, `${actorId}:${value.operationId}`);
+    const [previous] = await tx.select({ requestHash: operations.requestHash, result: operations.result })
+      .from(operations).where(and(eq(operations.actorId, actorId), eq(operations.id, value.operationId)));
+    if (previous) {
+      if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
+      return previous.result as { projectId: string };
     }
     const projectId = randomUUID(), state = initialState(value.template), workspaceId = await actingWorkspace(client, principal);
-    await client.query('INSERT INTO projects(id,workspace_id,created_by,name,revision,snapshot) VALUES($1,$2,$3,$4,1,$5)', [projectId, workspaceId, actorId, value.name, state]);
-    await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,1,$2,$3)', [projectId, state, value.operationId]);
+    await insertProject(tx, { projectId, workspaceId, createdBy: actorId, name: value.name, state, operationId: value.operationId });
     const saved = { projectId };
-    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [actorId, value.operationId, projectId, hash, saved]);
+    await tx.insert(operations).values({ actorId, id: value.operationId, projectId, requestHash: hash, result: saved });
     return saved;
   });
   return getProject(principal, result.projectId);
@@ -95,42 +105,46 @@ export async function createProject(principal: Principal, input: unknown): Promi
 export async function renameProject(principal: Principal, projectId: string, input: unknown): Promise<ProjectView> {
   const value = renameProjectSchema.parse(input), actorId = identity(principal), id = idSchema.parse(projectId);
   const hash = createHash('sha256').update(JSON.stringify({ kind: 'rename', projectId: id, ...value })).digest('hex');
-  await transaction(async client => {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${actorId}:${value.operationId}`]);
-    const row = (await client.query(`SELECT * FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR UPDATE`, [id, actorId])).rows[0];
+  await transaction(async (_client, tx) => {
+    await advisoryXactLock(tx, `${actorId}:${value.operationId}`);
+    const [row] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+      .where(and(eq(projects.id, id), canAccessProject(projects.id, actorId))).for('update');
     if (!row) throw notFound();
-    const previous = (await client.query('SELECT request_hash FROM operations WHERE actor_id=$1 AND id=$2', [actorId, value.operationId])).rows[0];
+    const [previous] = await tx.select({ requestHash: operations.requestHash }).from(operations)
+      .where(and(eq(operations.actorId, actorId), eq(operations.id, value.operationId)));
     if (previous) {
-      if (previous.request_hash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
+      if (previous.requestHash !== hash) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同请求。', 409);
       return;
     }
     if (row.revision !== value.expectedRevision) throw new DomainError('REVISION_CONFLICT', '项目已更新，请重新打开后再试。', 409);
     const revision = row.revision + 1;
-    await client.query('UPDATE projects SET name=$1,revision=$2,updated_at=now() WHERE id=$3', [value.name, revision, id]);
-    await client.query('INSERT INTO project_revisions(project_id,revision,snapshot,operation_id) VALUES($1,$2,$3,$4)', [id, revision, row.snapshot, value.operationId]);
-    await client.query('INSERT INTO operations(actor_id,id,project_id,request_hash,result) VALUES($1,$2,$3,$4,$5)', [actorId, value.operationId, id, hash, { projectId: id, revision }]);
+    await tx.update(projects).set({ name: value.name, revision, updatedAt: sql`now()` }).where(eq(projects.id, id));
+    await tx.insert(projectRevisions).values({ projectId: id, revision, snapshot: row.snapshot, operationId: value.operationId });
+    await tx.insert(operations).values({ actorId, id: value.operationId, projectId: id, requestHash: hash, result: { projectId: id, revision } });
   });
   return getProject(principal, id);
 }
 /** Every resource consumer supplies its project scope, including workers and direct downloads. */
 export async function getResource(principal: Principal, projectId: string, resourceId: string) {
-  const result = await pool.query(`SELECT r.* FROM resources r WHERE r.id=$1 AND r.project_id=$2 AND ${projectAccess('r.project_id', '$3')}`,
-    [idSchema.parse(resourceId), idSchema.parse(projectId), identity(principal)]);
-  if (!result.rowCount) throw notFound();
-  return result.rows[0] as { id: string; project_id: string; object_key: string; media_type: string; state: string };
+  const [row] = await db.select().from(resources)
+    .where(and(eq(resources.id, idSchema.parse(resourceId)), eq(resources.projectId, idSchema.parse(projectId)), canAccessProject(resources.projectId, identity(principal))));
+  if (!row) throw notFound();
+  // Callers read the row in its column (snake_case) shape.
+  return { id: row.id, project_id: row.projectId, object_key: row.objectKey, media_type: row.mediaType, state: row.state, created_at: row.createdAt };
 }
 /** Reserve a project-owned private resource. Only the upload adapter can mark it ready. */
 export async function reserveResource(principal: Principal, projectId: string, input: unknown) {
   const value = z.object({ id: idSchema, mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']) }).strict().parse(input);
   const actorId = identity(principal), id = idSchema.parse(projectId);
-  return transaction(async client => {
-    const project = await client.query(`SELECT id FROM projects p WHERE p.id=$1 AND ${projectAccess('p.id', '$2')} FOR SHARE`, [id, actorId]);
-    if (!project.rowCount) throw notFound();
-    await client.query('INSERT INTO resources(id,project_id,object_key,media_type,state) VALUES($1,$2,$3,$4,\'pending\') ON CONFLICT(id) DO NOTHING',
-      [value.id, id, `${id}/${randomUUID()}`, value.mediaType]);
-    const resource = (await client.query('SELECT id,project_id,media_type,state FROM resources WHERE id=$1 AND project_id=$2', [value.id, id])).rows[0];
+  return transaction(async (_client, tx) => {
+    const [project] = await tx.select({ id: projects.id }).from(projects).where(and(eq(projects.id, id), canAccessProject(projects.id, actorId))).for('share');
+    if (!project) throw notFound();
+    await tx.insert(resources).values({ id: value.id, projectId: id, objectKey: `${id}/${randomUUID()}`, mediaType: value.mediaType, state: 'pending' })
+      .onConflictDoNothing({ target: resources.id });
+    const [resource] = await tx.select({ id: resources.id, mediaType: resources.mediaType, state: resources.state }).from(resources)
+      .where(and(eq(resources.id, value.id), eq(resources.projectId, id)));
     if (!resource) throw notFound();
-    if (resource.media_type !== value.mediaType) throw new DomainError('IDEMPOTENCY_CONFLICT', '资源标识已用于另一文件类型。', 409);
-    return { id: resource.id, projectId: id, mediaType: resource.media_type, state: resource.state };
+    if (resource.mediaType !== value.mediaType) throw new DomainError('IDEMPOTENCY_CONFLICT', '资源标识已用于另一文件类型。', 409);
+    return { id: resource.id, projectId: id, mediaType: resource.mediaType, state: resource.state };
   });
 }

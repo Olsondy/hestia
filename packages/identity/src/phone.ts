@@ -28,6 +28,13 @@ function sourceHash(headers: Headers, config: OtpConfig) {
   const raw = config.sourceHeader ? headers.get(config.sourceHeader)?.split(',')[0]?.trim() : undefined;
   return hmac(`hestia:otp-source:${raw || 'shared'}`);
 }
+/** Keyed hash of a secret value (share codes); not reversible without the server secret. */
+export const keyedHash = (purpose: string, value: string) => hmac(`hestia:${purpose}:${value}`);
+/** Request source for rate limits, from the trusted proxy header shared with phone codes; one bucket without it. */
+export function requestSource(headers: Headers | null | undefined, purpose: string) {
+  const header = otpConfig().sourceHeader, raw = header && headers ? headers.get(header)?.split(',')[0]?.trim() : undefined;
+  return hmac(`hestia:${purpose}-source:${raw || 'shared'}`);
+}
 const now = sql`clock_timestamp()`, interval = (secs: number) => sql`make_interval(secs => ${secs})`;
 const seconds = (value: number | string | null) => Math.max(1, Math.ceil(Number(value ?? 0)));
 

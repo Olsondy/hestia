@@ -50,7 +50,7 @@ export type DemoVillaPlanView = { levels: { id: string; name: string }[]; rooms:
 export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; demoVilla: { finishes: Finish[]; plan: DemoVillaPlanView } };
 export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; schemeId: string | null; schemeRevision: number | null;
   message: string | null; contactRequested: boolean; preferredTime: string | null; createdAt: string };
-export type ShareView = { id: string; targetPhone: string | null; bindingCode: boolean; expiresAt: string | null; revokedAt: string | null; createdAt: string };
+export type ShareView = { id: string; targetPhone: string | null; usedAt: string | null; expiresAt: string | null; revokedAt: string | null; createdAt: string };
 export type BindingApplicationView = { id: string; shareId: string; applicant: { userId: string; phone: string | null }; note: string | null; status: 'pending' | 'approved' | 'rejected' | 'superseded'; createdAt: string };
 export type BindingEventView = { kind: string; method: string | null; actorId: string; subjectId: string | null; createdAt: string };
 export type LeadView = FinishRequestView & { origin: 'customer' | 'member'; customer: { userId: string; phone: string | null; name: string | null } | null;
@@ -63,11 +63,13 @@ export const createShareSchema = z.object({ operationId: idSchema, phone: z.stri
   expiresInDays: z.number().int().min(1).max(90).default(30) }).strict();
 export const memberOperationSchema = z.object({ operationId: idSchema }).strict();
 export const decideApplicationSchema = z.object({ operationId: idSchema, decision: z.enum(['approve', 'reject']) }).strict();
-export const bindShareSchema = z.object({ operationId: idSchema, code: z.string().trim().min(4).max(12).optional() }).strict();
+export const bindShareSchema = z.object({ operationId: idSchema }).strict();
 export const applyBindingSchema = z.object({ operationId: idSchema, note: z.string().trim().max(200).optional() }).strict();
-export type CreatedShareView = { share: ShareView; url: string | null; token: string | null; bindingCode: string | null; note: string };
+/** `code` (XXXX-XXXX) and `message` (the share message to copy) are returned only by the first call of an operation. */
+export type CreatedShareView = { share: ShareView; code: string | null; message: string | null; note: string };
 /** `viewer` is present when the visitor is signed in: whether the request is theirs and whether they applied. */
-export type SharePreviewView = { workspace: { slug: string; name: string }; request: FinishRequestView; bound: boolean; binding: 'phone' | 'code';
+/** `binding`: `phone` when the member named the customer's phone, otherwise the first signed-in customer binds. */
+export type SharePreviewView = { workspace: { slug: string; name: string }; request: FinishRequestView; bound: boolean; binding: 'phone' | 'open';
   viewer: { boundToMe: boolean; application: 'pending' | 'rejected' | null } | null };
 
 const tileSize = z.object({ length: z.number().finite().positive().max(4), width: z.number().finite().positive().max(4) }).strict();

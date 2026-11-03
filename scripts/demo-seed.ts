@@ -27,12 +27,12 @@ import { createShare, revokeShare, sharePreview } from '../packages/finish-reque
 const DEMO = {
   slug: 'demo-home', name: '演示家装企业', member: { email: 'consultant@demo-home.example', name: '演示方案顾问' },
   // Customers sign in with these numbers during the demo (mock SMS shows the code on the page).
-  phones: { targeted: '13800138000', selfService: '13900139000', withCode: '13700137000' },
+  phones: { targeted: '13800138000', selfService: '13900139000', open: '13700137000' },
 };
 const finishIds = ['finish-f1-living-floor', 'finish-f1-dining-floor', 'finish-f1-hall-floor', 'finish-f1-tv-wall', 'finish-f1-stair'];
 const prepared = [
   { key: 'targeted', name: '临水别墅 · 企业预置方案（演示）', stones: ['demo-white-marble', 'demo-beige-marble', 'demo-grey-woodgrain'], phone: DEMO.phones.targeted },
-  { key: 'code', name: '山景别墅 · 企业预置方案（演示）', stones: ['demo-beige-marble', 'demo-limestone', 'demo-dark-gold'], phone: null },
+  { key: 'open', name: '山景别墅 · 企业预置方案（演示）', stones: ['demo-beige-marble', 'demo-limestone', 'demo-dark-gold'], phone: null },
 ] as const;
 
 const args = new Set(process.argv.slice(2));
@@ -40,7 +40,8 @@ const storage = path.resolve(process.env.PRIVATE_STORAGE_PATH ?? './private-data
 const stateFile = path.join(storage, 'demo', 'seed.json');
 /** Demo member's workbench password; kept across --reset, so a browser that saved it keeps working. */
 const memberFile = path.join(storage, 'demo', 'member.json');
-type SavedShare = { requestId: string; shareId: string; token: string; code: string | null };
+/** `code` is the share code (XXXX-XXXX); it is returned only when shared, so the seed keeps it locally. */
+type SavedShare = { requestId: string; shareId: string; code: string };
 type Saved = Partial<Record<(typeof prepared)[number]['key'], SavedShare>>;
 /** Stable operation IDs so re-running the seed returns the same requests instead of creating new ones. */
 const stableId = (label: string) => {
@@ -91,16 +92,12 @@ async function member() {
   return { id, password };
 }
 
-/** A saved share is reused while its link previews, nobody is bound and (for code shares) the code is unused and valid. */
+/** A saved share is reused while its code still previews and nobody is bound. */
 async function usable(saved: SavedShare | undefined) {
-  if (!saved) return false;
+  if (!saved?.code) return false;
   try {
-    const preview = await sharePreview(saved.token);
-    if (preview.bound || preview.request.id !== saved.requestId) return false;
-    if (!saved.code) return true;
-    const [row] = await db.select({ ok: sql<boolean | null>`${requestShares.codeUsedAt} IS NULL AND ${requestShares.codeExpiresAt} > now() + interval '2 hours' AND ${requestShares.codeAttempts} < 3` })
-      .from(requestShares).where(eq(requestShares.id, saved.shareId));
-    return !!row?.ok;
+    const preview = await sharePreview(saved.code);
+    return !preview.bound && preview.request.id === saved.requestId;
   } catch { return false; }
 }
 
@@ -126,7 +123,7 @@ async function main() {
     for (const share of lead.sharing.shares.filter(s => !s.revokedAt))
       await revokeShare(principal, workspace.id, lead.id, share.id, { operationId: randomUUID() });
     const created = await createShare(principal, workspace.id, lead.id, { operationId: randomUUID(), ...(item.phone ? { phone: item.phone } : {}), expiresInDays: 90 });
-    saved[item.key] = { requestId: lead.id, shareId: created.share.id, token: created.token!, code: created.bindingCode };
+    saved[item.key] = { requestId: lead.id, shareId: created.share.id, code: created.code! };
   }
   await mkdir(path.dirname(stateFile), { recursive: true });
   await writeFile(stateFile, JSON.stringify(saved, null, 2), { mode: 0o600 });
@@ -148,13 +145,14 @@ async function main() {
   log('');
   log('演示数据已就绪（短信为模拟发送，验证码显示在登录页）：');
   log(`  客户自助入口      ${base}/c/${DEMO.slug}        演示手机号 ${DEMO.phones.selfService}`);
-  log(`  定向手机号分享    ${base}/s/${saved.targeted!.token}`);
+  log(`  定向分享码        ${saved.targeted!.code}`);
   log(`                    指定手机号 ${DEMO.phones.targeted}（用其他号码登录会提示不一致，可提交绑定申请）`);
-  log(`  绑定码分享        ${base}/s/${saved.code!.token}`);
-  log(`                    绑定码 ${saved.code!.code}（任一手机号，如 ${DEMO.phones.withCode}；48 小时内有效）`);
+  log(`  分享码            ${saved.open!.code}`);
+  log(`                    任一手机号登录即绑定，如 ${DEMO.phones.open}`);
+  log(`                    在 H5 首页「收到企业的分享码？」输入或粘贴；应用内部地址 ${base}/s/<分享码>`);
   log(`  企业工作台        ${base}/w/${DEMO.slug}        成员 ${DEMO.member.email} / ${password}`);
   if (failed) log(`注意：有 ${failed} 张效果图生成失败，可运行 pnpm demo:seed --reset 重新准备。`);
-  log(`链接、绑定码与成员密码另存于 ${path.relative(process.cwd(), path.dirname(stateFile))}/（不提交仓库）。`);
+  log(`分享码与成员密码另存于 ${path.relative(process.cwd(), path.dirname(stateFile))}/（不提交仓库）。`);
 }
 
 try { await main(); }

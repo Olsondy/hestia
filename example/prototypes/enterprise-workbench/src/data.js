@@ -6,7 +6,7 @@ export const followName = {new: '新线索', contacted: '已联系', active: '�
 export const followOrder = ['new', 'contacted', 'active', 'won', 'parked'];
 export const statusInfo = {
   review: ['待审核', 'review'], assist: ['需辅助转换', 'assist'], converting: ['图纸转换中', 'wait'],
-  published: ['已发布', 'ok'], confirmed: ['客户已确认', 'ok'], generating: ['出图中', 'wait'],
+  published: ['已发布', 'ok'], drafting: ['待出方案', 'wait'], confirmed: ['客户已确认', 'ok'], generating: ['出图中', 'wait'],
 };
 
 const ago = (h, m = 0) => Date.now() - (h * 60 + m) * 60e3;

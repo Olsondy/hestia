@@ -7,4 +7,4 @@
 - 直接用浏览器打开 `index.html`（离线单文件），建议手机或设备模拟（390×844）。右上角虚线「审阅」为**原型审阅导航**，可直达 40 个页面与状态（跳转会重置演示数据），不属于产品界面。
 - 源码在 `src/`；`node scripts/build-client-h5-v2.mjs` 重新生成。效果图为后台出图管线渲染的示例别墅三个方案（示意素材）。
 
-Token、组件与 React 实现的对照，以及与服务端的差异，见 [docs/client-h5-design.md](../../../docs/client-h5-design.md)。
+Token、组件与 React 实现的对照，以及与服务端的差异，见 [docs/design/H5_UI_DESIGN.md](../../../docs/design/H5_UI_DESIGN.md)。

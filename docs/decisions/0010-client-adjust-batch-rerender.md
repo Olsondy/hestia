@@ -18,7 +18,7 @@ H01 的调整页按服务端现有接口实现：客户每点一个选项就调�
 
 - 服务端需要一个批量提交修改的接口（一次请求携带多处修改与 `expectedRevision`、`operationId`，原子地生成一个修订）。现有逐次 `adjust` 可保留给工作台使用。该接口在 H02 实现，不在本次原型改动内。
 - `apps/web/components/client/client-request.tsx` 的 `AdjustView` 需要改为本地累积 + 统一提交；累积中的修改按 H01 的约定存在 sessionStorage。
-- 原型 `example/prototypes/client-h5-v2` 按本决定实现，对照见 `docs/client-h5-design.md`。
+- 原型 `example/prototypes/client-h5-v2` 按本决定实现，对照见 `docs/design/H5_UI_DESIGN.md`。
 
 ## 考虑过的替代方案
 

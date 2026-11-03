@@ -173,6 +173,8 @@ components:
 
 # Design System: Hestia
 
+> **2026-11-03 范围说明**：企业工作台与 H5 客户端已统一改为柔和中性（[ADR-0011](docs/decisions/0011-unified-soft-neutral-for-enterprise.md)），规则以 [docs/design/ENGINEERING_RULES.md](docs/design/ENGINEERING_RULES.md)、[H5_UI_DESIGN.md](docs/design/H5_UI_DESIGN.md)、[WEB_UI_DESIGN.md](docs/design/WEB_UI_DESIGN.md) 为准。本文件下面的家居杂志（editorial）规范只适用于暂停中的个人工作台原型 `example/prototypes/projects`，其中「生产唯一视觉基线」的表述对企业端与客户端不再成立。
+
 ## Overview
 
 **Creative North Star: "家居杂志 · 空间作品刊页"**

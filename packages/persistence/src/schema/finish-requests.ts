@@ -68,6 +68,9 @@ export const finishSchemes = pgTable("finish_schemes", {
 	surfaceDesign: jsonb("surface_design").notNull(),
 	report: jsonb().notNull(),
 	renderId: uuid("render_id"),
+	/** Current soft style (K02) and the 2–3 styles the customer may switch between, as `{ styleId, styleVersion }`. */
+	softStyle: jsonb("soft_style"),
+	softChoices: jsonb("soft_choices").default([]).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => [
@@ -240,6 +243,8 @@ export const finishSchemeRevisions = pgTable("finish_scheme_revisions", {
 	surfaceDesign: jsonb("surface_design").notNull(),
 	report: jsonb().notNull(),
 	renderId: uuid("render_id"),
+	/** Soft style of this revision (K02), `{ styleId, styleVersion }`; null for schemes made before soft styles. */
+	softStyle: jsonb("soft_style"),
 	change: jsonb(),
 	createdBy: text("created_by"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),

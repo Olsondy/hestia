@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
 import { surfaceDesignSchema, type Finish, type StoneSpec, type SurfaceDesign, type Tiling, type TilePattern } from '../../contracts/src/finishes';
-import { adjustSchemeSchema, confirmSchemeSchema, requestMessageSchema, undoSchemeSchema, type FinishRequestView, type SchemeOptionsView } from '../../contracts/src/finish-requests';
+import { adjustSchemeSchema, confirmSchemeSchema, requestMessageSchema, switchSoftStyleSchema, undoSchemeSchema, type FinishRequestView, type SchemeOptionsView } from '../../contracts/src/finish-requests';
 import { and, eq, sql } from 'drizzle-orm';
 import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
 import { finishRequestEvents, finishRequestOperations, finishRequests, finishSchemeRevisions, finishSchemes, projects } from '../../persistence/src/schema';
@@ -10,6 +10,9 @@ import type { Principal } from '../../workspaces/src/access';
 import { workspaceStones } from '../../finishes/src/catalog';
 import { inspectSurfaceDesign, stoneKey } from '../../finishes/src/plan';
 import { enqueueSchemeRender } from '../../renders/src/service';
+import { softStyleVersion } from '../../soft-styles/src/catalog';
+import { styledState } from '../../soft-styles/src/state';
+import type { SoftStyleReference } from '../../contracts/src/soft-styles';
 import { customerRequest, requestColumns, schemeColumns, view, type RequestDeps, type RequestRow, type SchemeRow } from './service';
 
 // D07: option-based adjustment of published schemes. Every change is a new scheme revision checked by the layout engine
@@ -52,14 +55,17 @@ async function projectState(client: PoolClient, projectId: string) {
   const [project] = await orm(client).select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects).where(eq(projects.id, projectId));
   return { revision: project.revision, state: spatialStateSchema.parse(project.snapshot) };
 }
+/** A new revision with this surface design and soft style (K02: the scheme's style unless given). Rendered unless re-using an image. */
 async function saveRevision(client: PoolClient, row: RequestRow, scheme: SchemeRow, design: SurfaceDesign, report: SchemeRow['report'], userId: string,
-  change: unknown, renderId: string | null, deps: RequestDeps) {
+  change: unknown, renderId: string | null, deps: RequestDeps, softStyle: SoftStyleReference | null = scheme.soft_style) {
   const revision = scheme.revision + 1, { revision: projectRevision, state } = await projectState(client, row.project_id);
+  const style = !renderId && softStyle ? (await softStyleVersion(client, row.workspace_id, softStyle)).style : null;
   const render = renderId ?? await enqueueSchemeRender(client, { projectId: row.project_id, actorId: userId, projectRevision,
-    state: spatialStateSchema.parse({ ...state, surfaceDesign: design }), scheme: { schemeId: scheme.id, revision }, label: `方案 ${scheme.name} · 调整 ${revision}` }, deps.renderQueue);
+    state: spatialStateSchema.parse(styledState({ ...state, surfaceDesign: design }, style)), scheme: { schemeId: scheme.id, revision },
+    label: `方案 ${scheme.name} · 调整 ${revision}${style ? ` · ${style.name}` : ''}` }, deps.renderQueue);
   const tx = orm(client);
-  await tx.update(finishSchemes).set({ revision, surfaceDesign: design, report, renderId: render, updatedAt: sql`now()` }).where(eq(finishSchemes.id, scheme.id));
-  await tx.insert(finishSchemeRevisions).values({ schemeId: scheme.id, revision, surfaceDesign: design, report, renderId: render, change, createdBy: userId });
+  await tx.update(finishSchemes).set({ revision, surfaceDesign: design, report, renderId: render, softStyle, updatedAt: sql`now()` }).where(eq(finishSchemes.id, scheme.id));
+  await tx.insert(finishSchemeRevisions).values({ schemeId: scheme.id, revision, surfaceDesign: design, report, renderId: render, softStyle, change, createdBy: userId });
   await tx.update(finishRequests).set({ updatedAt: sql`now()` }).where(eq(finishRequests.id, row.id));
 }
 
@@ -129,12 +135,32 @@ export async function undoSchemeAdjustment(principal: Principal, slug: string, r
     if (scheme.revision !== value.expectedRevision) throw new DomainError('SCHEME_REVISION_CONFLICT', '方案已有新版本，请刷新后再撤回。', 409);
     // Each revision records the revision it was derived from (`parent`); undo returns to that content, so repeated
     // undo keeps stepping back through real adjustments.
-    type Revision = { revision: number; surface_design: SurfaceDesign; report: SchemeRow['report']; render_id: string | null; change: { parent?: number } | null };
+    type Revision = { revision: number; surface_design: SurfaceDesign; report: SchemeRow['report']; render_id: string | null; change: { parent?: number } | null; soft_style: SoftStyleReference | null };
     const revisions = await orm(client).select({ revision: finishSchemeRevisions.revision, surface_design: finishSchemeRevisions.surfaceDesign, report: finishSchemeRevisions.report,
-      render_id: finishSchemeRevisions.renderId, change: finishSchemeRevisions.change }).from(finishSchemeRevisions).where(eq(finishSchemeRevisions.schemeId, scheme.id)) as Revision[];
+      render_id: finishSchemeRevisions.renderId, change: finishSchemeRevisions.change, soft_style: finishSchemeRevisions.softStyle }).from(finishSchemeRevisions).where(eq(finishSchemeRevisions.schemeId, scheme.id)) as Revision[];
     const latest = revisions.find(r => r.revision === scheme.revision), target = revisions.find(r => r.revision === latest?.change?.parent);
     if (!target) throw new DomainError('NOTHING_TO_UNDO', '已经是最初的方案。', 409);
-    await saveRevision(client, row, scheme, target.surface_design, target.report, userId, { parent: target.change?.parent, undoOf: scheme.revision }, target.render_id, deps);
+    await saveRevision(client, row, scheme, target.surface_design, target.report, userId, { parent: target.change?.parent, undoOf: scheme.revision }, target.render_id, deps,
+      target.soft_style);
+    return { schemeId: scheme.id };
+  });
+}
+
+/**
+ * K02: switch the scheme's soft style to one of its choices. Same surface design, new revision rendered in the
+ * background; like any adjustment it needs a new confirmation. Retired or foreign styles are refused.
+ */
+export async function switchSoftStyle(principal: Principal, slug: string, requestId: string, schemeId: string, input: unknown, deps: RequestDeps = {}) {
+  const value = switchSoftStyleSchema.parse(input);
+  return mutate(principal, slug, requestId, 'soft-style', { ...value, schemeId }, async (client, row, userId) => {
+    const scheme = await lockedScheme(client, row, schemeId);
+    if (scheme.revision !== value.expectedRevision) throw new DomainError('SCHEME_REVISION_CONFLICT', '方案已有新版本，请刷新后再调整。', 409);
+    const ref = { styleId: value.styleId, styleVersion: value.styleVersion };
+    if (!(scheme.soft_choices ?? []).some(c => c.styleId === ref.styleId && c.styleVersion === ref.styleVersion))
+      throw new DomainError('SOFT_STYLE_NOT_OFFERED', '这个方案不提供所选的软装风格。', 400);
+    if (scheme.soft_style?.styleId === ref.styleId && scheme.soft_style.styleVersion === ref.styleVersion) throw new DomainError('NO_CHANGE', '方案已经是这个软装风格。');
+    if ((await softStyleVersion(client, row.workspace_id, ref)).status !== 'active') throw new DomainError('SOFT_STYLE_RETIRED', '这个软装风格已下架，请选择其他风格。', 409);
+    await saveRevision(client, row, scheme, scheme.surface_design, scheme.report, userId, { parent: scheme.revision, softStyle: ref }, null, deps, ref);
     return { schemeId: scheme.id };
   });
 }

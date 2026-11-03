@@ -9,10 +9,15 @@ import { createWorkspace } from '../../workspaces/src/service';
 import { addStones } from '../../finishes/src/catalog';
 import { demoStones } from '../../finishes/src/demo-stones';
 import { initializeRenderQueue } from '../../renders/src/queue';
+import { runRender } from '../../renders/src/runner';
+import sharp from 'sharp';
+import { addSoftStyles, retireSoftStyle } from '../../soft-styles/src/catalog';
+import { demoSoftStyles } from '../../soft-styles/src/demo-styles';
 import * as authRoute from '../../../apps/web/app/api/auth/[...all]/route';
 import * as requestsRoute from '../../../apps/web/app/api/client/[entry]/requests/route';
 import * as optionsRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/options/route';
 import * as adjustRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/adjust/route';
+import * as softStyleRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/soft-style/route';
 import * as undoRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/undo/route';
 import * as confirmRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/confirm/route';
 import * as messagesRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/messages/route';
@@ -53,7 +58,7 @@ before(async () => {
   await acceptInvitation(invitation.token, '合成石材企业管理员', password);
   adminCookie = cookieOf(await auth.api.signInEmail({ body: { email: adminEmail, password }, asResponse: true }));
   workspaceId = (await createWorkspace({ kind: 'enterprise', slug, name: '调整验证企业', adminEmail })).workspace.id;
-  await transaction(client => addStones(client, workspaceId, demoStones));
+  await transaction(async client => { await addStones(client, workspaceId, demoStones); await addSoftStyles(client, workspaceId, demoSoftStyles); });
 });
 after(async () => {
   try {
@@ -65,6 +70,7 @@ after(async () => {
       await pool.query(`DELETE FROM ${table} WHERE project_id IN ${projects}`, [workspaces]);
     await pool.query('DELETE FROM projects WHERE workspace_id=ANY($1::uuid[])', [workspaces]);
     await pool.query('DELETE FROM workspace_stones WHERE workspace_id=ANY($1::uuid[])', [workspaces]);
+    await pool.query('DELETE FROM workspace_soft_styles WHERE workspace_id=ANY($1::uuid[])', [workspaces]);
     await pool.query('DELETE FROM workspaces WHERE id=ANY($1::uuid[])', [workspaces]);
     await pool.query('DELETE FROM phone_otp_challenges WHERE phone_number=ANY($1)', [phones]);
     await pool.query('DELETE FROM hestia_invitation WHERE email=$1', [adminEmail]);
@@ -129,4 +135,50 @@ test('confirmation binds a revision, later changes need re-confirming, and both 
   const lead = (await call(leadsRoute.GET, { workspaceId }, adminCookie)).body.leads.find((l: { id: string }) => l.id === request.id);
   assert.deepEqual(lead.events.map((e: { kind: string }) => e.kind), ['confirmation', 'message']);
   assert.equal(lead.events[0].schemeRevision, 1); assert.equal(lead.events[0].preferredTime, '工作日晚上'); assert.equal(lead.events[1].message, '周末方便');
+});
+
+test('K02: whole schemes carry a soft style; switching is a rendered revision, undoable, needs re-confirming, retired styles are refused', async () => {
+  const cookie = await customer(), request = await published(cookie);
+  assert.deepEqual(request.schemes.map((s: { softStyle: { name: string } }) => s.softStyle.name), ['现代简约', '轻奢', '新中式'].slice(0, request.schemes.length));
+  assert.ok(request.schemes.every((s: { softChoices: unknown[] }) => s.softChoices.length === 3));
+  const scheme = request.schemes[0], params = { entry: slug, requestId: request.id, schemeId: scheme.id };
+  const before = await renders(request.projectId), operationId = randomUUID();
+  const toLuxury = { operationId, expectedRevision: 1, styleId: 'demo-luxury', styleVersion: 1 };
+  const switched = await call(softStyleRoute.POST, params, cookie, toLuxury);
+  assert.equal(switched.status, 200, JSON.stringify(switched.body));
+  const revised = switched.body.request.schemes.find((s: { id: string }) => s.id === scheme.id);
+  assert.equal(revised.revision, 2); assert.equal(revised.softStyle.id, 'demo-luxury'); assert.deepEqual(revised.surfaceDesign, scheme.surfaceDesign);
+  assert.equal(revised.render.status, 'queued'); assert.notEqual(revised.render.id, scheme.render.id);
+  assert.equal((await call(softStyleRoute.POST, params, cookie, toLuxury)).body.request.schemes[0].revision, 2, 'retry is idempotent');
+  assert.equal(await renders(request.projectId), before + 1, 'one render for the switch');
+  // The queued render's scene is furnished by the chosen style.
+  const snapshot = (await pool.query('SELECT snapshot FROM project_renders WHERE id=$1', [revised.render.id])).rows[0].snapshot;
+  const objects = snapshot.objects as { name?: string; softStyle?: { styleId: string } }[];
+  assert.ok(objects.some(o => o.softStyle?.styleId === 'demo-luxury') && objects.some(o => o.name === 'curvedSofa'));
+  assert.ok(!objects.some(o => o.softStyle && o.softStyle.styleId !== 'demo-luxury'), 'no furniture of the previous style remains');
+  // Rendering the job twice completes once (re-delivery does not render again).
+  const png = await sharp({ create: { width: 4, height: 3, channels: 3, background: '#ccc' } }).png().toBuffer();
+  let calls = 0; const fake = { render: async () => { calls++; return png; } };
+  await runRender(revised.render.id, fake); await runRender(revised.render.id, fake);
+  assert.equal(calls, 1);
+  // Refusals leave the scheme unchanged.
+  const refuse = async (extra: object, code: string) => assert.equal((await call(softStyleRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 2, ...extra })).body.error?.code, code);
+  await refuse({ styleId: 'no-such', styleVersion: 1 }, 'SOFT_STYLE_NOT_OFFERED');
+  await refuse({ styleId: 'demo-luxury', styleVersion: 1 }, 'NO_CHANGE');
+  assert.equal((await call(softStyleRoute.POST, params, cookie, { ...toLuxury, operationId: randomUUID(), styleId: 'demo-chinese' })).body.error.code, 'SCHEME_REVISION_CONFLICT');
+  // Undo returns to the previous style and its image.
+  const undone = (await call(undoRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 2 })).body.request.schemes.find((s: { id: string }) => s.id === scheme.id);
+  assert.equal(undone.revision, 3); assert.equal(undone.softStyle.id, 'demo-modern'); assert.equal(undone.render.id, scheme.render.id);
+  // Confirming binds the revision with its soft style; switching afterwards needs re-confirming.
+  const confirmed = await call(confirmRoute.POST, { entry: slug, requestId: request.id }, cookie, { operationId: randomUUID(), schemeId: scheme.id, revision: 3 });
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body)); assert.equal(confirmed.body.request.confirmation.current, true);
+  const again = await call(softStyleRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 3, styleId: 'demo-chinese', styleVersion: 1 });
+  assert.equal(again.body.request.confirmation.current, false);
+  // A retired style is no longer offered for switching, but schemes using it still show it.
+  await transaction(client => retireSoftStyle(client, workspaceId, { styleId: 'demo-luxury', styleVersion: 1 }));
+  assert.equal((await call(softStyleRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 4, styleId: 'demo-luxury', styleVersion: 1 })).body.error.code, 'SOFT_STYLE_RETIRED');
+  const lead = (await call(leadsRoute.GET, { workspaceId }, adminCookie)).body.leads.find((l: { id: string }) => l.id === request.id);
+  assert.equal(lead.schemes.find((s: { ordinal: number }) => s.ordinal === 2)?.softStyle?.name, '轻奢');
+  // Another customer cannot switch it.
+  assert.equal((await call(softStyleRoute.POST, params, await customer(), { operationId: randomUUID(), expectedRevision: 4, styleId: 'demo-modern', styleVersion: 1 })).status, 404);
 });

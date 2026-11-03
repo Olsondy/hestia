@@ -17,7 +17,9 @@ import { customerEntry, ensureCustomer } from '../../workspaces/src/customers';
 import { initialState, insertProjectInTransaction, stateFromScene } from '../../projects/src/service';
 import { workspaceStones } from '../../finishes/src/catalog';
 import { stoneKey } from '../../finishes/src/plan';
-import { workspaceSoftStyles } from '../../soft-styles/src/catalog';
+import { softStyleCatalog, workspaceSoftStyles } from '../../soft-styles/src/catalog';
+import { styledState } from '../../soft-styles/src/state';
+import type { SoftStyleReference } from '../../contracts/src/soft-styles';
 import { createFloorplanImport, getFloorplanCandidate, importCandidate } from '../../drawing-imports/src/service';
 import type { PrivateFileStore } from '../../files/src/storage';
 import { enqueueSchemeRender, readRenderImage, renderStatuses } from '../../renders/src/service';
@@ -32,7 +34,8 @@ export type RequestRow = {
   published_at: Date | null; published_by: string | null; created_at: Date; updated_at: Date;
 };
 export type SchemeRow = { id: string; request_id: string; ordinal: number; name: string; summary: string; revision: number;
-  surface_design: FinishSchemeView['surfaceDesign']; report: { adoptable: boolean; issues: FinishSchemeView['issues'] }; render_id: string | null };
+  surface_design: FinishSchemeView['surfaceDesign']; report: { adoptable: boolean; issues: FinishSchemeView['issues'] }; render_id: string | null;
+  soft_style: SoftStyleReference | null; soft_choices: SoftStyleReference[] };
 export type RequestDeps = { renderQueue?: PgBoss; importQueue?: PgBoss; store?: PrivateFileStore };
 /** Drizzle selections in the `RequestRow` / `SchemeRow` (column-named) shape. */
 export const requestColumns = { id: finishRequests.id, workspace_id: finishRequests.workspaceId, customer_id: finishRequests.customerId, created_by: finishRequests.createdBy,
@@ -41,7 +44,8 @@ export const requestColumns = { id: finishRequests.id, workspace_id: finishReque
   preferences: finishRequests.preferences, status: finishRequests.status, review_reason: finishRequests.reviewReason, published_at: finishRequests.publishedAt,
   published_by: finishRequests.publishedBy, created_at: finishRequests.createdAt, updated_at: finishRequests.updatedAt };
 export const schemeColumns = { id: finishSchemes.id, request_id: finishSchemes.requestId, ordinal: finishSchemes.ordinal, name: finishSchemes.name, summary: finishSchemes.summary,
-  revision: finishSchemes.revision, surface_design: finishSchemes.surfaceDesign, report: finishSchemes.report, render_id: finishSchemes.renderId };
+  revision: finishSchemes.revision, surface_design: finishSchemes.surfaceDesign, report: finishSchemes.report, render_id: finishSchemes.renderId,
+  soft_style: finishSchemes.softStyle, soft_choices: finishSchemes.softChoices };
 /** Drizzle over a caller's connection; it only issues `query`. */
 const ormOf = (client: Pick<PoolClient, 'query'>) => orm(client as PoolClient);
 
@@ -108,6 +112,12 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
   const schemes = audience === 'customer' && row.status !== 'published' ? []
     : await tx.select(schemeColumns).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).orderBy(asc(finishSchemes.ordinal)) as SchemeRow[];
   const renders = await renderStatuses(row.project_id, schemes.flatMap(s => s.render_id ? [s.render_id] : []), client);
+  // Soft style names for display; retired versions still resolve so existing schemes keep their labels.
+  const softCatalog = schemes.some(s => s.soft_style || s.soft_choices?.length) ? await softStyleCatalog(client as PoolClient, row.workspace_id) : [];
+  const summary = (ref: SoftStyleReference | null | undefined) => {
+    const style = ref && softCatalog.find(e => e.style.id === ref.styleId && e.style.version === ref.styleVersion)?.style;
+    return style ? { id: style.id, version: style.version, name: style.name, line: style.line, palette: style.palette } : null;
+  };
   return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, source: row.source, status, statusLabel: labels[status], conversionError,
     title: project.name, origin: row.origin, drawingName, finishes: requestFinishes(facts, row.finish_ids), preferences: row.preferences ?? null,
     finishIds: row.finish_ids, stones: row.stones, note: row.note, floorplanImportId: row.floorplan_import_id,
@@ -115,7 +125,8 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
       const render = s.render_id ? renders.get(s.render_id) : undefined;
       const imageHref = render?.status === 'completed' ? (audience === 'customer' ? `/api/client/${slug}/requests/${row.id}/schemes/${s.id}/image` : render.contentHref) : null;
       return { id: s.id, ordinal: s.ordinal, name: s.name, summary: s.summary, revision: s.revision, adoptable: s.report.adoptable, issues: s.report.issues,
-        surfaceDesign: s.surface_design, render: render ? { id: render.id, status: render.status, width: render.width, height: render.height, error: render.error, imageHref } : null };
+        surfaceDesign: s.surface_design, render: render ? { id: render.id, status: render.status, width: render.width, height: render.height, error: render.error, imageHref } : null,
+        softStyle: summary(s.soft_style), softChoices: (s.soft_choices ?? []).map(summary).filter((x): x is NonNullable<typeof x> => !!x) };
     }),
     confirmation: await confirmationOf(client, row.id, schemes),
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(), publishedAt: row.published_at?.toISOString() ?? null };
@@ -148,15 +159,21 @@ async function generate(client: PoolClient, row: RequestRow, state: SpatialState
   const preferred = row.stones.map(ref => catalog.find(stone => stoneKey({ stoneId: stone.id, stoneVersion: stone.version }) === stoneKey(ref)))
     .filter((stone): stone is NonNullable<typeof stone> => !!stone);
   const schemes = generateSchemes(state.fixedFacts, row.finish_ids, preferred, catalog);
+  // K02: whole schemes. The first 2–3 active soft styles of the workspace are the choices; scheme A, B, C take them in turn.
+  const styles = (await workspaceSoftStyles(client, row.workspace_id)).slice(0, 3);
+  const choices = styles.map(style => ({ styleId: style.id, styleVersion: style.version }));
   const tx = orm(client);
   await tx.delete(finishSchemes).where(eq(finishSchemes.requestId, row.id));
   for (const [index, scheme] of schemes.entries()) {
     const id = randomUUID(), report = { adoptable: scheme.adoptable, issues: scheme.issues };
-    await tx.insert(finishSchemes).values({ id, requestId: row.id, ordinal: index + 1, name: scheme.name, summary: scheme.summary, surfaceDesign: scheme.design, report });
+    const style = styles.length ? styles[index % styles.length] : null, softStyle = style ? { styleId: style.id, styleVersion: style.version } : null;
+    await tx.insert(finishSchemes).values({ id, requestId: row.id, ordinal: index + 1, name: scheme.name, summary: scheme.summary, surfaceDesign: scheme.design, report,
+      softStyle, softChoices: choices });
     const renderId = await enqueueSchemeRender(client, { projectId: row.project_id, actorId: row.customer_id ?? row.created_by, projectRevision,
-      state: spatialStateSchema.parse({ ...state, surfaceDesign: scheme.design }), scheme: { schemeId: id, revision: 1 }, label: `方案 ${scheme.name}` }, deps.renderQueue);
+      state: spatialStateSchema.parse(styledState({ ...state, surfaceDesign: scheme.design }, style)), scheme: { schemeId: id, revision: 1 },
+      label: `方案 ${scheme.name}${style ? ` · ${style.name}` : ''}` }, deps.renderQueue);
     await tx.update(finishSchemes).set({ renderId }).where(eq(finishSchemes.id, id));
-    await tx.insert(finishSchemeRevisions).values({ schemeId: id, revision: 1, surfaceDesign: scheme.design, report, renderId });
+    await tx.insert(finishSchemeRevisions).values({ schemeId: id, revision: 1, surfaceDesign: scheme.design, report, renderId, softStyle });
   }
   return { count: schemes.length, adoptable: schemes.length >= 2 && schemes.every(s => s.adoptable) };
 }

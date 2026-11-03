@@ -26,6 +26,9 @@ export type FinishSchemeView = {
   issues: { code: string; objectId: string; message: string }[];
   surfaceDesign: SurfaceDesign;
   render: Pick<RenderView, 'id' | 'status' | 'width' | 'height' | 'error'> & { imageHref: string | null } | null;
+  /** K02: the revision's soft style and the styles the customer may switch to (empty for schemes made before soft styles). */
+  softStyle: SoftStyleSummary | null;
+  softChoices: SoftStyleSummary[];
 };
 /** Display data of one finish in a request: name, kind and owning level (for floor tabs). */
 export type RequestFinishView = { id: string; name: string; kind: 'floor' | 'wall' | 'stair'; levelId: string | null; levelName: string | null };
@@ -107,6 +110,9 @@ export const adjustSchemeSchema = z.object({
   pattern: z.enum(['straight', 'running-bond', 'herringbone', 'diagonal']).optional(), border: z.boolean().optional(),
 }).strict().refine(value => value.stone || value.tile || value.pattern || value.border !== undefined, { message: 'No change requested' });
 export const undoSchemeSchema = z.object({ operationId: idSchema, expectedRevision: z.number().int().positive() }).strict();
+/** K02: switch a scheme to one of its soft style choices; a new revision, rendered in the background. */
+export const switchSoftStyleSchema = z.object({ operationId: idSchema, expectedRevision: z.number().int().positive(),
+  styleId: z.string().min(1).max(60), styleVersion: z.number().int().positive() }).strict();
 export const confirmSchemeSchema = z.object({ operationId: idSchema, schemeId: idSchema, revision: z.number().int().positive(),
   message: z.string().trim().max(500).optional(), contactRequested: z.boolean().optional(), preferredTime: z.string().trim().max(40).optional() }).strict();
 export const requestMessageSchema = z.object({ operationId: idSchema, message: z.string().trim().max(500).optional(),

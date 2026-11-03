@@ -47,10 +47,10 @@ const preferenceText = (lead: LeadView) => {
 // ---------- 线索列表 ----------
 const quickFilters: [string, string, IconName, (lead: LeadView) => boolean][] = [
   ['contact', '请求联系', 'phone', lead => actionsOf(lead).contact],
-  ['todo', '待审核 / 辅助转换', 'file', lead => { const a = actionsOf(lead); return a.review || a.assist; }],
+  ['todo', '待整理图纸', 'file', lead => { const a = actionsOf(lead); return a.review || a.assist; }],
   ['apply', '待批准绑定', 'link', lead => actionsOf(lead).apply],
 ];
-const stages: [string, string][] = [['all', '全部'], ['review', '待审核'], ['published', '已发布'], ['confirmed', '客户已确认']];
+const stages: [string, string][] = [['all', '全部'], ['review', '处理中'], ['published', '已发布'], ['confirmed', '客户已确认']];
 
 export function LeadsView({ query }: { query: URLSearchParams }) {
   const { base, workspace, go } = useWorkbench();
@@ -137,14 +137,19 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
   const levelName = levels.find(([key]) => key === level)?.[1] ?? '';
   const follow = useFollow(lead);
 
-  const media = !scheme ? <div className="stage__plan"><p>{lead.status === 'assisted_conversion' ? '图纸需要辅助转换，导入户型并生成方案后在这里显示' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸' : '方案生成后在这里显示'}</p></div>
+  const media = !scheme ? <div className="stage__plan"><p>{lead.status === 'assisted_conversion' ? '图纸在排队，整理户型并出方案后在这里显示' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸' : lead.status === 'conversion_failed' ? '客户的图纸没能自动识别' : '方案生成后在这里显示'}</p></div>
     : view === '3d' ? <div className="stage__3d"><SchemeViewer scene={scene.data}/></div>
       // eslint-disable-next-line @next/next/no-img-element
       : image ? <img className="stage__img" src={image} alt={`方案 ${letter(scheme)} 效果图（示意）`}/>
         : <div className="stage__plan"><p>{scheme.render?.status === 'failed' ? '效果图生成失败' : '效果图生成中，完成后在这里显示'}</p></div>;
   const reconfirm = lead.confirmation && !lead.confirmation.current;
   const tabs: [Tab, string][] = [['scheme', '方案'], ['client', '客户与跟进'], ['share', '分享与绑定']];
-  const foot = a.contact ? <><span className="hint">客户请求联系{lastPreferred(lead) ? `，方便时间：${lastPreferred(lead)}` : ''}。回电后标记，线索会移出「今日」的请求联系。</span>
+  const publish = usePublish(lead);
+  const foot = lead.status === 'assisted_conversion' ? <><span className="hint">客户的图纸在排队：整理户型后出方案，直接发布给客户。</span>
+    <Link className="btn btn--primary btn--grow" href={`${base}/leads/${lead.id}/assist`}>整理图纸</Link></>
+    : lead.status === 'pending_review' ? <><span className="hint">{publish.error ? (publish.error as Error).message : `${lead.reviewReason ?? '企业设置为全部审核后发布'}。核对方案后发布给客户。`}</span>
+      <button className="btn btn--primary btn--grow" disabled={publish.isPending} onClick={() => { if (window.confirm('发布后客户就能看到这些方案。确认发布？')) publish.mutate(); }}>{publish.isPending ? '正在发布…' : '发布给客户'}</button></>
+    : a.contact ? <><span className="hint">客户请求联系{lastPreferred(lead) ? `，方便时间：${lastPreferred(lead)}` : ''}。回电后标记，线索会移出「今日」的请求联系。</span>
     <button className="btn btn--primary btn--grow" disabled={follow.isPending} onClick={() => follow.mutate('contacted')}>已回电，标记为已联系</button></> : null;
 
   return <Shell nav="leads"><section className={`canvas${left ? ' has-left' : ''}`}>
@@ -183,6 +188,14 @@ function useFollow(lead: LeadView) {
     onSuccess: replace,
   });
 }
+/** Review-all workspaces only (ADR-0013): publish a request that waits for a member. */
+function usePublish(lead: LeadView) {
+  const { workspace } = useWorkbench(), queries = useQueryClient();
+  return useMutation({
+    mutationFn: () => post<{ lead: LeadView }>(`/api/workspaces/${workspace.id}/leads/${lead.id}/publish`, { operationId: operationId() }).then(r => tidy(r.lead)),
+    onSuccess: next => queries.setQueryData<LeadView[]>(['leads', workspace.id], list => list?.map(item => item.id === next.id ? next : item)),
+  });
+}
 function useAddNote(lead: LeadView) {
   const { workspace } = useWorkbench(), queries = useQueryClient();
   return useMutation({
@@ -192,8 +205,9 @@ function useAddNote(lead: LeadView) {
 }
 
 function SchemeTab({ lead, scheme, onPick, level, levelName }: { lead: LeadView; scheme: FinishSchemeView | undefined; onPick: (id: string) => void; level: string; levelName: string }) {
-  if (!scheme) return <p className="muted">{lead.status === 'pending_review' ? '图纸已自动转换，核对后生成待审方案。' : lead.status === 'assisted_conversion' ? '图纸不能自动识别，需要导入整理好的户型。'
-    : lead.status === 'converting' ? '图纸正在自动转换。' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸。' : '还没有方案。'}</p>;
+  if (!scheme) return <p className="muted">{lead.status === 'assisted_conversion' ? '客户的图纸在排队，整理户型后出方案。'
+    : lead.status === 'conversion_failed' ? `图纸没能自动识别：${lead.conversionError ?? ''}客户可以重新上传，或交给企业整理。`
+      : lead.status === 'converting' ? '图纸正在自动识别。' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸。' : '还没有方案。'}</p>;
   const confirmedId = lead.confirmation?.schemeId;
   const here = lead.finishes.filter(f => (f.levelId ?? '') === level);
   return <>

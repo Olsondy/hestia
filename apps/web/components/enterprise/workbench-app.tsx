@@ -10,6 +10,7 @@ import type { WorkspaceView } from '../../../../packages/contracts/src/workspace
 import { ClientError, get, maskPhone, post, session, signOut } from '../client/client-api';
 import { Icon, type IconName } from '../client/client-icons';
 import { LeadDetailView, LeadsView } from './workbench-leads';
+import { AssistView } from './workbench-assist';
 
 // ---------- 上下文 ----------
 type Ctx = { slug: string; base: string; user: SessionUser; workspace: WorkspaceView; go: (path: string, replace?: boolean) => void };
@@ -62,7 +63,7 @@ function Router({ slug }: { slug: string }) {
   if (!ctx) return <p className="page-loading">正在打开…</p>;
 
   const page = !parts[0] ? <TodayView/>
-    : parts[0] === 'leads' ? (parts[1] ? <LeadDetailView id={parts[1]}/> : <LeadsView query={search}/>)
+    : parts[0] === 'leads' ? (parts[1] ? (parts[2] === 'assist' ? <AssistView id={parts[1]}/> : <LeadDetailView id={parts[1]}/>) : <LeadsView query={search}/>)
       : parts[0] === 'new' ? <Pending nav="new" title="预置方案"/>
         : parts[0] === 'stones' ? <Pending nav="stones" title="石材与软装"/>
           : <Shell nav={null}><div className="page"><div className="empty"><b>找不到这个页面</b>请从页头进入需要的页面。</div></div></Shell>;
@@ -240,11 +241,11 @@ function TodayView() {
 
   return <Shell nav="today"><div className="page">
     <header className="page__head"><div><h1 className="page__title">今日</h1>
-      <p className="page__sub">{total ? `${total} 件需要处理：客户请求联系的先回电，自动转换的图纸核对后再发布，绑定申请核对身份后批准。` : '今天没有需要处理的事项。新的需求、联系请求和绑定申请会出现在这里。'}</p></div>
+      <p className="page__sub">{total ? `${total} 件需要处理：客户请求联系的先回电，排队的图纸整理户型后出方案，绑定申请核对身份后批准。` : '今天没有需要处理的事项。新的需求、联系请求和绑定申请会出现在这里。'}</p></div>
       <div className="chips"><Link className="btn btn--secondary" href={`${base}/leads`}>全部线索</Link><Link className="btn btn--primary" href={`${base}/new`}><Icon name="plus" size={16} strokeWidth={1.6}/>预置方案</Link></div></header>
     <div className="page__grid today">
       {column('请求联系', contact, lead => { const event = lastContact(lead); return [who(lead), event.preferredTime, ago(event.createdAt)].filter(Boolean).join(' · '); })}
-      {column('待审核与辅助转换', review, lead => `${lead.status === 'pending_review' ? (lead.reviewReason || '方案已生成，待核对后发布') : '非 DXF 图纸，需辅助导入户型'} · ${ago(lead.createdAt)}`)}
+      {column('待整理图纸', review, lead => `${lead.status === 'pending_review' ? (lead.reviewReason || '方案已生成，待发布') : `${lead.drawingName ?? '图纸'} · 排队中`} · ${ago(lead.createdAt)}`)}
       {column('待批准绑定', apply, lead => { const application = lead.sharing.applications.find(a => a.status === 'pending')!;
         return [maskPhone(application.applicant.phone), application.note, ago(application.createdAt)].filter(Boolean).join(' · '); })}
     </div>

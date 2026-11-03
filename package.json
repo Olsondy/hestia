@@ -23,6 +23,8 @@
     "dev": "node scripts/web.mjs dev",
     "build:web": "node scripts/web.mjs build",
     "start:web": "node scripts/web.mjs start",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
     "setup:local": "node scripts/setup-local.mjs",
     "db:up": "docker compose up -d --wait",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",

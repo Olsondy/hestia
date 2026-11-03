@@ -14,7 +14,7 @@
 - **Agent 设计任务**：候选阶段连续推进，不逐个工具确认；采用初始空间或整套方案时确认，明确局部修改可直接应用并撤销，固定事实变更单独处理。工具与 prompt 草案见 `agent/tool-contract.md`、`agent/system-prompt.md`。
 - **首版流程**：单层图纸 → 设计 → 迭代 → 3D/静态图；room tour 后续扩展。缺尺寸可继续概念设计，确认尺度或判断可放置前须补可靠尺寸。关页后任务在平台上限内继续，可恢复、取消，见 `agent/runtime-design.md`；完整后台运行链路未验收。
 - **模型策略**：复杂设计优先质量、局部修改优先速度，共用执行约束，见 `agent/model-policy.md`；具体模型与预算须业务样本验证，不要求用户凭型号选择。
-- **数据库访问（2026-11-03）**：表结构以 `packages/persistence/src/schema/` 的 Drizzle TS schema 为准，新迁移由 drizzle-kit 生成，旧 SQL 迁移链冻结；新查询默认用 Drizzle，已有手写 SQL 渐进迁移，见 `decisions/0009-drizzle-schema-and-migrations.md`。
+- **数据库访问（2026-11-03）**：表结构以 `packages/persistence/src/schema/` 的 Drizzle TS schema 为准，新迁移由 drizzle-kit 生成，旧 SQL 迁移链冻结；业务查询已于 2026-11-04 全部迁移到 Drizzle，见 `decisions/0009-drizzle-schema-and-migrations.md`。
 - **架构基线**：`web-stack.md` 与 `decisions/0003-modular-monolith-with-durable-workers.md` 已确认，作为首版实施基线；精确版本、模型能力、渲染及恢复仍需验证，部署方案不在定稿范围。
 
 ## 授权记录

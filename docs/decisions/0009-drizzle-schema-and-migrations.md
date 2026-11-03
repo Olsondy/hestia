@@ -12,7 +12,9 @@ ADR-0003 选了「Drizzle 管理数据访问与迁移」，但实现时漂移成
 - **结构来源**：`packages/persistence/src/schema/` 按领域拆分的 TS schema 是表结构的唯一来源，由 `index.ts` 汇总；首版由 `drizzle-kit pull` 从完整重放的旧迁移链反向生成，并与数据库逐项比对（列、约束、索引）一致。
 - **新迁移**：改 schema 后运行 `pnpm db:generate`，提交 `packages/persistence/drizzle/` 下生成的 SQL 和 `meta/`；不手写迁移 SQL，不手改 snapshot。触发器、函数、视图、数据回填这类 drizzle-kit 不表达的内容，用 `drizzle-kit generate --custom` 生成空迁移后填写。
 - **旧迁移链冻结**：`packages/persistence/migrations/0001–0029` 只读，`scripts/migrate.ts` 拒绝新增文件。迁移顺序固定：先在同一会话锁下执行旧链（记录在 `hestia_migrations`），再执行 Drizzle 迁移（记录在 `drizzle.__drizzle_migrations`）。Drizzle 的 `0000_baseline` 是空操作，它的 snapshot 描述旧链执行后的结构。
-- **数据访问**：新代码默认用 Drizzle 查询构建器（`db`、`orm(client)`、`transaction()` 的第二个参数 `tx`），行类型由 schema 推导，不再手写行类型。行锁优先用 `.for('update')`；advisory 锁、`jsonb_set` 等复杂表达式可以用 `` sql`...` `` 或参数化 SQL，但表和列仍引用 schema。已有的手写 SQL 在顺手修改所在模块时逐步迁移，不做一次性重写。参考范例：`packages/finishes/src/catalog.ts`。
+- **数据访问**：新代码默认用 Drizzle 查询构建器（`db`、`orm(client)`、`transaction()` 的第二个参数 `tx`），行类型由 schema 推导，不再手写行类型。行锁优先用 `.for('update')`；advisory 锁、`jsonb_set` 等复杂表达式可以用 `` sql`...` `` 或参数化 SQL，但表和列仍引用 schema。业务查询已于 2026-11-04 全部迁移完毕（用户要求，按模块并行迁移，经独立语义审查和完整 `test:db` 验证）。参考范例：`packages/finishes/src/catalog.ts`、`packages/projects/src/service.ts`。
+- **保留原生 `pg` 的地方**：pg-boss 的 `executeSql` 适配器（`*/queue.ts`）、迁移执行器 `scripts/migrate.ts`，以及 `transaction()`、上传和导入连接上的 `BEGIN`/`COMMIT`/`ROLLBACK`。底图上传和图纸导入的 advisory 锁使用 `hashtextextended(key,0)`，会话级锁和事务级锁要共用同一个锁键，不能换成 `advisoryXactLock` 的 `hashtext`。
+- **驱动错误**：Drizzle 会把 Postgres 错误包装成 `DrizzleQueryError`。`transaction()` 会重新抛出原始错误；在事务回调内部按 `code`/`constraint` 判断错误时，要先调用 `driverError(error)`。
 - **驱动**：继续用 `pg`（`drizzle-orm/node-postgres`），与 pg-boss 共用连接池，不换成 postgres.js。
 
 ## 已知限制
@@ -23,5 +25,5 @@ ADR-0003 选了「Drizzle 管理数据访问与迁移」，但实现时漂移成
 ## 考虑过的替代方案
 
 - **维持手写 SQL，只补 schema 类型**：成本最低，但迁移和类型两套事实会继续分离，正是这次漂移的来源。
-- **一次性把查询全部改写为 Drizzle**：约 2–3 周人力，而且要重新验收 T05/T07/T08/T17/T20 等依赖锁与幂等语义的路径；收益集中在类型安全，改为按模块渐进迁移。
+- **一次性把查询全部改写为 Drizzle**：约 2–3 周人力，而且要重新验收 T05/T07/T08/T17/T20 等依赖锁与幂等语义的路径；当时选择渐进迁移；2026-11-04 用户要求一次完成，改为按模块拆分、由子 Agent 并行迁移，并逐模块验证。
 - **把旧迁移链压缩成 Drizzle 基线**：可以删掉旧目录，但已有的库要人工改写迁移记录，迁移测试也依赖逐段重放；暂不做。

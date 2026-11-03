@@ -18,6 +18,7 @@ import * as requestsRoute from '../../../apps/web/app/api/client/[entry]/request
 import * as optionsRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/options/route';
 import * as adjustRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/adjust/route';
 import * as softStyleRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/soft-style/route';
+import * as batchRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/adjust-batch/route';
 import * as undoRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/undo/route';
 import * as confirmRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/confirm/route';
 import * as messagesRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/messages/route';
@@ -181,4 +182,30 @@ test('K02: whole schemes carry a soft style; switching is a rendered revision, u
   assert.equal(lead.schemes.find((s: { ordinal: number }) => s.ordinal === 2)?.softStyle?.name, '轻奢');
   // Another customer cannot switch it.
   assert.equal((await call(softStyleRoute.POST, params, await customer(), { operationId: randomUUID(), expectedRevision: 4, styleId: 'demo-modern', styleVersion: 1 })).status, 404);
+});
+
+test('ADR-0010: a batch of changes with a soft style is one revision and one render; a conflict refuses the whole batch', async () => {
+  const cookie = await customer(), request = await published(cookie), scheme = request.schemes[0], params = { entry: slug, requestId: request.id, schemeId: scheme.id };
+  const before = await renders(request.projectId);
+  const batch = { operationId: randomUUID(), expectedRevision: 1, softStyle: { styleId: 'demo-chinese', styleVersion: 1 }, changes: [
+    { finishId: 'finish-f1-living-floor', stone: { stoneId: 'demo-limestone', stoneVersion: 1 }, tile: { length: .8, width: .8 } },
+    { finishId: 'finish-f1-living-floor', pattern: 'diagonal' },
+    { finishId: 'finish-f1-tv-wall', stone: { stoneId: 'demo-beige-marble', stoneVersion: 1 } } ] };
+  const done = await call(batchRoute.POST, params, cookie, batch);
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  const revised = done.body.request.schemes.find((s: { id: string }) => s.id === scheme.id);
+  assert.equal(revised.revision, 2, 'one revision for the whole batch'); assert.equal(revised.softStyle.id, 'demo-chinese');
+  const living = revised.surfaceDesign.tilings.find((t: { finishId: string }) => t.finishId === 'finish-f1-living-floor');
+  assert.deepEqual([living.stoneId, living.pattern, living.tile.length], ['demo-limestone', 'diagonal', .8]);
+  assert.equal(revised.surfaceDesign.tilings.find((t: { finishId: string }) => t.finishId === 'finish-f1-tv-wall').stoneId, 'demo-beige-marble');
+  assert.equal(await renders(request.projectId), before + 1, 'one render for the whole batch');
+  assert.equal((await call(batchRoute.POST, params, cookie, batch)).body.request.schemes[0].revision, 2, 'retry is idempotent');
+  // A conflicting change refuses the whole batch: nothing applied, no render.
+  const refused = await call(batchRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 2, changes: [
+    { finishId: 'finish-f1-tv-wall', stone: { stoneId: 'demo-white-marble', stoneVersion: 1 } }, { finishId: 'finish-f1-living-floor', pattern: 'herringbone' } ] });
+  assert.equal(refused.body.error.code, 'ADJUSTMENT_REJECTED', JSON.stringify(refused.body));
+  const after = (await call(batchRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 2, changes: [], softStyle: { styleId: 'demo-chinese', styleVersion: 1 } })).body;
+  assert.equal(after.error.code, 'NO_CHANGE');
+  assert.equal(await renders(request.projectId), before + 1);
+  assert.equal((await call(batchRoute.POST, params, cookie, { operationId: randomUUID(), expectedRevision: 2, changes: [] })).status, 400, 'an empty batch is invalid');
 });

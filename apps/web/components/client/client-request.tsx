@@ -9,7 +9,7 @@ import { AppBar, ErrorLine, Loading, LoadingScreen, NotFound, Screen, StatusScre
 import { Icon, PatternGlyph, patternName } from './client-icons';
 import { Alert, Badge, dateText, Group, Palette, PlanDrawing, Row, RowMain, Section, Segmented, Stepper, StyleOptions, Swatch, SwatchChip, Switch, type BadgeKind } from './client-parts';
 import { SchemeViewer } from './scheme-viewer';
-import { softById, softStyleStore, useSoftStyle } from './soft-styles';
+import { softOf, styleKey } from './soft-styles';
 
 // ---------- 状态 ----------
 const rendering = (s: FinishSchemeView) => !s.render || s.render.status === 'queued' || s.render.status === 'running';
@@ -320,7 +320,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   const { base, entry } = useClient();
   const [ui, setUi] = useStored<ResultUi>(`hestia.client.result.${r.id}`, resultUi);
   const s = pickScheme(r, ui.scheme);
-  const soft = useSoftStyle(r.id, s);
+  const soft = softOf(s);
   const levels = levelsOf(r), level = levels.find(l => l.id === ui.level)?.id ?? levels[0]?.id ?? null;
   const scene = useQuery({ queryKey: ['scene', r.id, s?.id, s?.revision], queryFn: () => (loadScene ?? (id => clientApi(entry).scene(r.id, id)))(s!.id),
     enabled: ui.view === '3d' && !!s, staleTime: Infinity });
@@ -341,7 +341,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
       ? <><Link className="btn btn--secondary" href={`${base}/r/${r.id}/adjust`}>继续调整</Link><Link className="btn btn--primary btn--grow" href={`${base}/r/${r.id}/done`}>查看确认</Link></>
       : <><Link className="btn btn--secondary" href={`${base}/r/${r.id}/adjust`}>调整</Link><Link className="btn btn--primary btn--grow" href={`${base}/r/${r.id}/confirm`}>确认方案 {letter(s)}</Link></>;
   const rows: [string, (x: FinishSchemeView) => string][] = [
-    ['软装', x => softById[softStyleStore.get(r.id, x.id, x.ordinal)]?.name ?? '—'],
+    ['软装', x => x.softStyle?.name ?? '—'],
     ['石材', x => stoneOf(x, compareFinish && tilingOf(x, compareFinish.id))?.name ?? '—'],
     ['规格', x => { const t = compareFinish && tilingOf(x, compareFinish.id); return t ? (compareFinish.kind === 'stair' ? '整板' : tileLabel(t.tile)) : '—'; }],
     ['铺法', x => { const t = compareFinish && tilingOf(x, compareFinish.id); return t ? patternName[t.pattern] ?? t.pattern : '—'; }],
@@ -349,7 +349,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   ];
   const details = <>
     <p className="meta" style={{ marginTop: 12 }}>{s.summary}</p>
-    <Section title={`软装 · ${soft.name}`} aside="演示"><div className="summary"><Palette style={soft}/><RowMain title={soft.name} sub={soft.line}/></div></Section>
+    {soft && <Section title={`软装 · ${soft.name}`} aside="示意素材"><div className="summary"><Palette style={soft}/><RowMain title={soft.name} sub={soft.line}/></div></Section>}
     {levels.length > 1 && <div className="section"><Segmented label="楼层" value={level ?? ''} onChange={v => setUi(u => ({ ...u, level: v }))} options={levels.map(l => [l.id, l.name])}/></div>}
     <Section title="硬装" aside={`${levels.length > 1 ? `${levels.find(l => l.id === level)?.name} · ` : ''}${here.length} 处`}>
       <Group>{here.map(f => <Row key={f.id} label={f.name} value={<><SwatchChip stone={stoneOf(s, tilingOf(s, f.id))}/>{finishLine(s, f)}</>} stack/>)}</Group>
@@ -387,7 +387,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
       <div className="panel__scroll">
         {r.schemes.length > 1 && <Segmented label="切换方案" value={s.id} onChange={id => setUi(u => ({ ...u, scheme: id }))} options={r.schemes.map(x => [x.id, schemeTitle(x)])}/>}
         <div className="panel__head"><div><h1 className="panel__title">方案 {schemeTitle(s)}</h1><p className="meta">修订 {s.revision}{r.schemes.length > 1 ? ' · 左右滑动效果图也可切换' : ''}</p></div>
-          <span className="style-tag"><Palette style={soft} mod="palette--dot"/>{soft.name}</span></div>
+          {soft && <span className="style-tag"><Palette style={soft} mod="palette--dot"/>{soft.name}</span>}</div>
         {!preview && conf && mine && conf.current && <p className="panel__note"><Icon name="check" size={14}/>你已确认这一版</p>}
         {!preview && conf && !conf.current && <Alert kind="hint" title="需要重新确认">你确认的是方案 {letter(r.schemes.find(x => x.id === conf.schemeId) ?? s)} 修订 {conf.revision}，之后又调整过。企业看到的仍是修订 {conf.revision}。</Alert>}
         {main && <div className="summary"><Swatch stone={mainStone} size={104} className="summary__img"/>
@@ -435,8 +435,9 @@ function AdjustView({ request: r }: { request: FinishRequestView }) {
   // Pending changes belong to the revision they were made on; a new revision (re-render, another device) starts over.
   useEffect(() => { if (ui.base !== revisionKey) setUi(u => ({ ...u, pending: [], base: revisionKey })); }, [ui.base, revisionKey, setUi]);
   const pending = ui.base === revisionKey ? ui.pending : [];
-  const savedSoft = useSoftStyle(r.id, s);
-  const soft = [...pending].reverse().find(p => p.soft)?.soft?.after ?? savedSoft.id;
+  const savedSoft = softOf(s), choices = s.softChoices;
+  const soft = [...pending].reverse().find(p => p.soft)?.soft?.after ?? (savedSoft ? styleKey(savedSoft) : '');
+  const styleName = (key: string) => choices.find(c => styleKey(c) === key)?.name ?? '';
   const catalog = useQuery({ queryKey: ['catalog', entry], queryFn: () => clientApi(entry).catalog(), staleTime: 5 * 60_000 });
   const options = useQuery({ queryKey: ['options', r.id, s.id, s.revision], queryFn: () => clientApi(entry).options(r.id, s.id) });
   const [rejected, setRejected] = useState<string | null>(null);
@@ -456,34 +457,33 @@ function AdjustView({ request: r }: { request: FinishRequestView }) {
   const hard = pending.filter(p => p.change).map(p => p.change!);
   const submit = useMutation({
     mutationFn: async () => {
-      const softChange = [...pending].reverse().find(p => p.soft);
-      if (softChange) softStyleStore.set(r.id, s.id, softChange.soft!.after);
-      return hard.length ? adjustBatch(entry, r.id, s.id, s.revision, hard) : null;
+      const target = [...pending].reverse().find(p => p.soft)?.soft?.after;
+      const choice = target && target !== (savedSoft ? styleKey(savedSoft) : '') ? choices.find(c => styleKey(c) === target) : undefined;
+      return adjustBatch(entry, r.id, s.id, s.revision, hard, choice ? { styleId: choice.id, styleVersion: choice.version } : undefined);
     },
     onSuccess: view => {
       setRejected(null);
-      if (view) { queries.setQueryData(['request', entry, r.id], view); queries.invalidateQueries({ queryKey: ['requests', entry] }); }
-      else toast('软装风格已切换（演示，暂不重新出图）');
-      setUi(u => ({ ...u, pending: [], softDone: !view }));
+      queries.setQueryData(['request', entry, r.id], view); queries.invalidateQueries({ queryKey: ['requests', entry] });
+      setUi(u => ({ ...u, pending: [], softDone: false }));
     },
     onError: error => {
-      const e = error as ClientError, view = e.details?.view as FinishRequestView | null | undefined, applied = Number(e.details?.applied ?? 0);
-      if (view) { queries.setQueryData(['request', entry, r.id], view); }
-      if (applied) { const done = new Set([...new Map(hard.map(c => [c.finishId, c])).keys()].slice(0, applied)); setUi(u => ({ ...u, pending: u.pending.filter(p => !p.finishId || !done.has(p.finishId)) })); }
+      const e = error as ClientError;
+      if (e.code === 'NO_CHANGE') { setUi(u => ({ ...u, pending: [] })); toast('方案没有变化'); return; }
       if (e.code === 'ADJUSTMENT_REJECTED' || e.code === 'OPTION_NOT_ALLOWED') setRejected(e.message);
       else { toast(e.message); if (e.code === 'SCHEME_REVISION_CONFLICT') queries.invalidateQueries({ queryKey: ['request', entry, r.id] }); }
     },
   });
   const locked = busy || submit.isPending;
   const count = pending.length;
-  const tag = busy ? '' : count ? `${count} 处修改未出图` : ui.softDone ? '软装风格已切换（演示）' : `当前修订 ${s.revision}`;
+  const tag = busy ? '' : count ? `${count} 处修改未出图` : `当前修订 ${s.revision}`;
   const dock = busy || submit.isPending ? <button className="btn btn--primary btn--block" disabled>重新出图中…</button>
     : !count && s.revision > 1 && !rejected ? <><Link className="btn btn--secondary" href={`${base}/r/${r.id}`}>回到方案</Link><Link className="btn btn--primary btn--grow" href={`${base}/r/${r.id}/confirm`}>确认修订 {s.revision}</Link></>
       : <><button className="icon-btn icon-btn--outline" onClick={undo} disabled={!count} aria-label="撤回上一处修改"><Icon name="undo"/></button>
         <button className="btn btn--primary btn--grow" disabled={!count || !!rejected} onClick={() => submit.mutate()}>
-          {rejected ? '有冲突，暂不能出图' : !count ? '先选择要调整的选项' : hard.length ? `重新出图 · 生成修订 ${s.revision + 1}` : '应用软装风格'}</button></>;
-  const softPanel = <><p className="meta" style={{ marginTop: 12 }}>换风格会改变全屋家具款式、布艺与配色；家具布局由方案确定。软装风格目前为演示，切换后暂不重新出图。</p>
-    <div style={{ marginTop: 12 }}><StyleOptions current={soft} disabled={locked} onPick={id => { if (id !== soft) add({ label: `软装风格：${softById[soft].name} → ${softById[id].name}`, soft: { before: soft, after: id } }); }}/></div></>;
+          {rejected ? '有冲突，暂不能出图' : !count ? '先选择要调整的选项' : `重新出图 · 生成修订 ${s.revision + 1}`}</button></>;
+  const softPanel = choices.length ? <><p className="meta" style={{ marginTop: 12 }}>换风格会改变全屋家具款式、布艺与配色；家具布局由方案确定。和石材修改一起，点「重新出图」后生成新的效果图。</p>
+    <div style={{ marginTop: 12 }}><StyleOptions styles={choices} current={soft} disabled={locked} onPick={key => { if (key !== soft) add({ label: `软装风格：${styleName(soft) || '—'} → ${styleName(key)}`, soft: { before: soft, after: key } }); }}/></div></>
+    : <p className="meta" style={{ marginTop: 12 }}>这个方案没有可切换的软装风格。</p>;
   const hardPanel = <>
     {levels.length > 1 && <div style={{ marginTop: 16 }}><Segmented label="楼层" value={level ?? ''} onChange={v => setUi(u => ({ ...u, level: v, finish: null }))} options={levels.map(l => [l.id, l.name])}/></div>}
     <div className="finish-tabs" role="tablist" aria-label="饰面">{here.map(f =>
@@ -519,8 +519,8 @@ function AdjustView({ request: r }: { request: FinishRequestView }) {
     <AppBar back={`${base}/r/${r.id}`} title={`调整方案 ${letter(s)}`} overlay/>
     <section className="panel" aria-label="调整选项"><span className="panel__grip" aria-hidden="true"/>
       <div className="panel__scroll">
-        <Segmented label="调整内容" value={ui.tab} onChange={tab => setUi(u => ({ ...u, tab }))} options={[['soft', '软装风格'], ['hard', '硬装石材']]}/>
-        <fieldset disabled={locked}>{ui.tab === 'soft' ? softPanel : hardPanel}</fieldset>
+        <Segmented label="调整内容" value={choices.length ? ui.tab : 'hard'} onChange={tab => setUi(u => ({ ...u, tab }))} options={choices.length ? [['soft', '软装风格'], ['hard', '硬装石材']] : [['hard', '硬装石材']]}/>
+        <fieldset disabled={locked}>{ui.tab === 'soft' && choices.length ? softPanel : hardPanel}</fieldset>
         {count > 0 && <Section title="本次修改" aside={`${count} 处`}><ol className="changes">{pending.map((p, i) => <li key={i}>{p.label}</li>)}</ol></Section>}
       </div>
       {rejected && !locked && <div className="panel__notice"><Alert kind="danger" title="冲突 · 不能出图">{rejected} 方案保持不变，可以撤回最后一处修改或换一个选项。</Alert></div>}
@@ -538,7 +538,7 @@ function ConfirmView({ request: r }: { request: FinishRequestView }) {
   const [c, setC] = useStored<ConfirmDraft>(`hestia.client.confirm.${r.id}`, { message: '', contact: true, time: '下午' });
   const [op] = useState(operationId);
   const s = pickScheme(r, result.scheme);
-  const soft = useSoftStyle(r.id, s);
+  const soft = softOf(s);
   const confirm = useMutation({
     mutationFn: () => clientApi(entry).confirm(r.id, { operationId: op, schemeId: s.id, revision: s.revision, message: c.message.trim() || undefined,
       contactRequested: c.contact, preferredTime: c.contact ? c.time : undefined }),
@@ -552,9 +552,9 @@ function ConfirmView({ request: r }: { request: FinishRequestView }) {
     <main className="screen__body">
       <h1 className="page-title">确认方案 {letter(s)} · 修订 {s.revision}</h1>
       <div className="confirm-hero"><div className="confirm-hero__img"><SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`} className="confirm-hero__photo"/></div>
-        <RowMain title={`${s.name} · ${soft.name}`} sub={`确认后，${workspaceName}会收到这一版整体方案。之后再调整，需要重新确认。`}/></div>
+        <RowMain title={`${s.name}${soft ? ` · ${soft.name}` : ''}`} sub={`确认后，${workspaceName}会收到这一版整体方案。之后再调整，需要重新确认。`}/></div>
       <Section title="方案内容" aside={`${r.finishes.length} 处饰面`}><Group>
-        <Row label="软装风格" value={`${soft.name}（演示）`}/>
+        {soft && <Row label="软装风格" value={soft.name}/>}
         {(levels.length ? levels : [{ id: '', name: '' }]).map(l => <div key={l.id || 'all'}>
           {levels.length > 1 && <span className="row__level">{l.name}</span>}
           {r.finishes.filter(f => !l.id || f.levelId === l.id).map(f => <Row key={f.id} label={f.name} value={finishLine(s, f)} stack/>)}</div>)}

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/project';
 import { surfaceDesignSchema, type Finish, type StoneSpec, type SurfaceDesign, type Tiling, type TilePattern } from '../../contracts/src/finishes';
-import { adjustSchemeSchema, confirmSchemeSchema, requestMessageSchema, switchSoftStyleSchema, undoSchemeSchema, type FinishRequestView, type SchemeOptionsView } from '../../contracts/src/finish-requests';
+import { adjustSchemeBatchSchema, adjustSchemeSchema, confirmSchemeSchema, requestMessageSchema, switchSoftStyleSchema, undoSchemeSchema, type FinishRequestView, type SchemeOptionsView } from '../../contracts/src/finish-requests';
 import { and, eq, sql } from 'drizzle-orm';
 import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
 import { finishRequestEvents, finishRequestOperations, finishRequests, finishSchemeRevisions, finishSchemes, projects } from '../../persistence/src/schema';
@@ -87,42 +87,81 @@ export async function schemeOptions(principal: Principal, slug: string, requestI
   });
 }
 
+type Change = { finishId: string; stone?: { stoneId: string; stoneVersion: number }; tile?: { length: number; width: number }; pattern?: TilePattern; border?: boolean };
+/** Applies one option change to a surface design (no layout check yet); throws for options the finish does not offer. */
+function applyChange(design: SurfaceDesign, finish: Finish, catalog: StoneSpec[], value: Change) {
+  const current = design.tilings.find(t => t.finishId === value.finishId);
+  const ref = value.stone ?? (current ? { stoneId: current.stoneId, stoneVersion: current.stoneVersion } : undefined);
+  const stone = ref && catalog.find(item => stoneKey({ stoneId: item.id, stoneVersion: item.version }) === stoneKey(ref));
+  if (!stone) throw new DomainError('STONE_NOT_AVAILABLE', '所选石材不在企业石材库中或已下架。', 409);
+  const pattern = value.pattern ?? current?.pattern ?? 'straight';
+  if (!PATTERNS[finish.kind].includes(pattern)) throw new DomainError('OPTION_NOT_ALLOWED', '该部位不提供这种铺法。', 400);
+  const sizes = sizesFor(stone, finish.kind), requested = value.tile ?? current?.tile;
+  const size = requested && sizes.find(([l, w]) => Math.abs(l - requested.length) < 1e-9 && Math.abs(w - requested.width) < 1e-9);
+  const tile = size ?? (value.tile ? undefined : sizes[0]);
+  if (!tile) throw new DomainError('OPTION_NOT_ALLOWED', '这款石材不提供所选规格。', 400);
+  const wantsBorder = value.border ?? !!current?.border;
+  if (wantsBorder && finish.kind !== 'floor') throw new DomainError('OPTION_NOT_ALLOWED', '只有地面可以加波打线。', 400);
+  const borderStone = [...catalog].sort((a, b) => brightness(a) - brightness(b)).find(item => item.id !== stone.id);
+  const tiling: Tiling = { finishId: finish.id, stoneId: stone.id, stoneVersion: stone.version, tile: { length: tile[0], width: tile[1] }, pattern,
+    joint: current?.joint ?? { width: .002, color: stone.texture.cloud }, origin: current?.origin ?? (finish.kind === 'stair' ? 'edge' : 'center'), angle: current?.angle ?? 0,
+    ...(wantsBorder && borderStone ? { border: { stoneId: borderStone.id, stoneVersion: borderStone.version, width: current?.border?.width ?? .18, pieceLength: current?.border?.pieceLength ?? .6 } } : {}) };
+  const tilings = [...design.tilings.filter(t => t.finishId !== finish.id), tiling].sort((a, b) => a.finishId.localeCompare(b.finishId));
+  const used = new Set(tilings.flatMap(t => [stoneKey(t), ...t.border ? [stoneKey(t.border)] : []]));
+  const stones = [...new Map([...design.stones, ...catalog].map(s => [stoneKey({ stoneId: s.id, stoneVersion: s.version }), s])).values()]
+    .filter(s => used.has(stoneKey({ stoneId: s.id, stoneVersion: s.version }))).sort((a, b) => a.id.localeCompare(b.id));
+  return { design: surfaceDesignSchema.parse({ version: 1, stones, tilings }), record: { finishId: finish.id, stone: ref, tile: tiling.tile, pattern, border: wantsBorder } };
+}
+/**
+ * Applies option changes (and optionally a soft style) as ONE new revision with ONE render (ADR-0010). The layout engine
+ * checks the finished design; a conflict refuses the whole set and leaves the scheme unchanged.
+ */
+async function applyChanges(client: PoolClient, row: RequestRow, scheme: SchemeRow, changes: Change[], softStyle: SoftStyleReference | null, userId: string, deps: RequestDeps) {
+  const { state } = await projectState(client, row.project_id), catalog = await workspaceStones(client, row.workspace_id);
+  let design = scheme.surface_design;
+  const records = [];
+  for (const change of changes) {
+    if (!row.finish_ids.includes(change.finishId)) throw new DomainError('FINISH_NOT_FOUND', '该部位不在这个方案需求中。', 404);
+    const finish = state.fixedFacts.finishes!.find(f => f.id === change.finishId)!, applied = applyChange(design, finish, catalog, change);
+    design = applied.design; records.push(applied.record);
+  }
+  const styleChanged = !!softStyle && !(scheme.soft_style?.styleId === softStyle.styleId && scheme.soft_style.styleVersion === softStyle.styleVersion);
+  if (JSON.stringify(design) === JSON.stringify(scheme.surface_design) && !styleChanged) throw new DomainError('NO_CHANGE', '方案没有变化。');
+  if (styleChanged) await offeredStyle(client, row, scheme, softStyle!);
+  const changed = [...new Set(changes.map(c => c.finishId))];
+  const report = changed.length ? inspectSurfaceDesign(state.fixedFacts, design, r => { const s = catalog.find(c => c.id === r.stoneId && c.version === r.stoneVersion); return s ? { status: 'active', spec: s } : undefined; },
+    { changedFinishIds: changed }) : { adoptable: true, issues: scheme.report.issues.map(i => ({ ...i, severity: 'hint' as const })) };
+  if (!report.adoptable) throw new DomainError('ADJUSTMENT_REJECTED', report.issues.find(i => i.severity === 'conflict')?.message ?? '这个组合无法排版。', 409,
+    { issues: report.issues });
+  const change = changes.length === 1 && !styleChanged ? { parent: scheme.revision, ...records[0] } : { parent: scheme.revision, changes: records, ...(styleChanged ? { softStyle } : {}) };
+  await saveRevision(client, row, scheme, design, { adoptable: true, issues: report.issues.map(i => ({ code: i.code, objectId: i.objectId, message: i.message })) },
+    userId, change, null, deps, styleChanged ? softStyle : scheme.soft_style);
+}
+/** A soft style the scheme offers and that is still on sale. */
+async function offeredStyle(client: PoolClient, row: RequestRow, scheme: SchemeRow, ref: SoftStyleReference) {
+  if (!(scheme.soft_choices ?? []).some(c => c.styleId === ref.styleId && c.styleVersion === ref.styleVersion))
+    throw new DomainError('SOFT_STYLE_NOT_OFFERED', '这个方案不提供所选的软装风格。', 400);
+  if ((await softStyleVersion(client, row.workspace_id, ref)).status !== 'active') throw new DomainError('SOFT_STYLE_RETIRED', '这个软装风格已下架，请选择其他风格。', 409);
+}
+
 /** One option change. Rejected choices return the layout engine's reasons and leave the scheme unchanged. */
 export async function adjustScheme(principal: Principal, slug: string, requestId: string, schemeId: string, input: unknown, deps: RequestDeps = {}): Promise<FinishRequestView> {
   const value = adjustSchemeSchema.parse(input);
   return mutate(principal, slug, requestId, 'adjust', { ...value, schemeId }, async (client, row, userId) => {
     const scheme = await lockedScheme(client, row, schemeId);
     if (scheme.revision !== value.expectedRevision) throw new DomainError('SCHEME_REVISION_CONFLICT', '方案已有新版本，请刷新后再调整。', 409);
-    if (!row.finish_ids.includes(value.finishId)) throw new DomainError('FINISH_NOT_FOUND', '该部位不在这个方案需求中。', 404);
-    const { state } = await projectState(client, row.project_id), finish = state.fixedFacts.finishes!.find(f => f.id === value.finishId)!;
-    const catalog = await workspaceStones(client, row.workspace_id), current = scheme.surface_design.tilings.find(t => t.finishId === value.finishId);
-    const ref = value.stone ?? (current ? { stoneId: current.stoneId, stoneVersion: current.stoneVersion } : undefined);
-    const stone = ref && catalog.find(item => stoneKey({ stoneId: item.id, stoneVersion: item.version }) === stoneKey(ref));
-    if (!stone) throw new DomainError('STONE_NOT_AVAILABLE', '所选石材不在企业石材库中或已下架。', 409);
-    const pattern = value.pattern ?? current?.pattern ?? 'straight';
-    if (!PATTERNS[finish.kind].includes(pattern)) throw new DomainError('OPTION_NOT_ALLOWED', '该部位不提供这种铺法。', 400);
-    const sizes = sizesFor(stone, finish.kind), requested = value.tile ?? current?.tile;
-    const size = requested && sizes.find(([l, w]) => Math.abs(l - requested.length) < 1e-9 && Math.abs(w - requested.width) < 1e-9);
-    const tile = size ?? (value.tile ? undefined : sizes[0]);
-    if (!tile) throw new DomainError('OPTION_NOT_ALLOWED', '这款石材不提供所选规格。', 400);
-    const wantsBorder = value.border ?? !!current?.border;
-    if (wantsBorder && finish.kind !== 'floor') throw new DomainError('OPTION_NOT_ALLOWED', '只有地面可以加波打线。', 400);
-    const borderStone = [...catalog].sort((a, b) => brightness(a) - brightness(b)).find(item => item.id !== stone.id);
-    const tiling: Tiling = { finishId: finish.id, stoneId: stone.id, stoneVersion: stone.version, tile: { length: tile[0], width: tile[1] }, pattern,
-      joint: current?.joint ?? { width: .002, color: stone.texture.cloud }, origin: current?.origin ?? (finish.kind === 'stair' ? 'edge' : 'center'), angle: current?.angle ?? 0,
-      ...(wantsBorder && borderStone ? { border: { stoneId: borderStone.id, stoneVersion: borderStone.version, width: current?.border?.width ?? .18, pieceLength: current?.border?.pieceLength ?? .6 } } : {}) };
-    const tilings = [...scheme.surface_design.tilings.filter(t => t.finishId !== finish.id), tiling].sort((a, b) => a.finishId.localeCompare(b.finishId));
-    const used = new Set(tilings.flatMap(t => [stoneKey(t), ...t.border ? [stoneKey(t.border)] : []]));
-    const stones = [...new Map([...scheme.surface_design.stones, ...catalog].map(s => [stoneKey({ stoneId: s.id, stoneVersion: s.version }), s])).values()]
-      .filter(s => used.has(stoneKey({ stoneId: s.id, stoneVersion: s.version }))).sort((a, b) => a.id.localeCompare(b.id));
-    const design = surfaceDesignSchema.parse({ version: 1, stones, tilings });
-    if (JSON.stringify(design) === JSON.stringify(scheme.surface_design)) throw new DomainError('NO_CHANGE', '方案没有变化。');
-    const report = inspectSurfaceDesign(state.fixedFacts, design, r => { const s = catalog.find(c => c.id === r.stoneId && c.version === r.stoneVersion); return s ? { status: 'active', spec: s } : undefined; },
-      { changedFinishIds: [finish.id] });
-    if (!report.adoptable) throw new DomainError('ADJUSTMENT_REJECTED', report.issues.find(i => i.severity === 'conflict')?.message ?? '这个组合无法排版。', 409,
-      { issues: report.issues });
-    await saveRevision(client, row, scheme, design, { adoptable: true, issues: report.issues.map(i => ({ code: i.code, objectId: i.objectId, message: i.message })) },
-      userId, { parent: scheme.revision, finishId: finish.id, stone: ref, tile: tiling.tile, pattern, border: wantsBorder }, null, deps);
+    const { operationId: _op, expectedRevision: _rev, ...change } = value;
+    await applyChanges(client, row, scheme, [change], null, userId, deps);
+    return { schemeId: scheme.id };
+  });
+}
+/** ADR-0010 / H02: all pending changes of the adjust page, with an optional soft style, as one revision and one render. */
+export async function adjustSchemeBatch(principal: Principal, slug: string, requestId: string, schemeId: string, input: unknown, deps: RequestDeps = {}): Promise<FinishRequestView> {
+  const value = adjustSchemeBatchSchema.parse(input);
+  return mutate(principal, slug, requestId, 'adjust-batch', { ...value, schemeId }, async (client, row, userId) => {
+    const scheme = await lockedScheme(client, row, schemeId);
+    if (scheme.revision !== value.expectedRevision) throw new DomainError('SCHEME_REVISION_CONFLICT', '方案已有新版本，请刷新后再调整。', 409);
+    await applyChanges(client, row, scheme, value.changes, value.softStyle ?? null, userId, deps);
     return { schemeId: scheme.id };
   });
 }
@@ -156,10 +195,10 @@ export async function switchSoftStyle(principal: Principal, slug: string, reques
     const scheme = await lockedScheme(client, row, schemeId);
     if (scheme.revision !== value.expectedRevision) throw new DomainError('SCHEME_REVISION_CONFLICT', '方案已有新版本，请刷新后再调整。', 409);
     const ref = { styleId: value.styleId, styleVersion: value.styleVersion };
-    if (!(scheme.soft_choices ?? []).some(c => c.styleId === ref.styleId && c.styleVersion === ref.styleVersion))
-      throw new DomainError('SOFT_STYLE_NOT_OFFERED', '这个方案不提供所选的软装风格。', 400);
-    if (scheme.soft_style?.styleId === ref.styleId && scheme.soft_style.styleVersion === ref.styleVersion) throw new DomainError('NO_CHANGE', '方案已经是这个软装风格。');
-    if ((await softStyleVersion(client, row.workspace_id, ref)).status !== 'active') throw new DomainError('SOFT_STYLE_RETIRED', '这个软装风格已下架，请选择其他风格。', 409);
+    if (scheme.soft_style?.styleId === ref.styleId && scheme.soft_style.styleVersion === ref.styleVersion) {
+      await offeredStyle(client, row, scheme, ref); throw new DomainError('NO_CHANGE', '方案已经是这个软装风格。');
+    }
+    await offeredStyle(client, row, scheme, ref);
     await saveRevision(client, row, scheme, scheme.surface_design, scheme.report, userId, { parent: scheme.revision, softStyle: ref }, null, deps, ref);
     return { schemeId: scheme.id };
   });

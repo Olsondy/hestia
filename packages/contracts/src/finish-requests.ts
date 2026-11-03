@@ -19,7 +19,8 @@ export const createFinishRequestSchema = z.discriminatedUnion('source', [
     note: z.string().trim().max(500).optional(), preferences: requestPreferencesSchema.optional() }).strict(),
 ]);
 export const publishFinishRequestSchema = z.object({ operationId: idSchema }).strict();
-export type FinishRequestStatus = 'awaiting_drawing' | 'converting' | 'assisted_conversion' | 'pending_review' | 'published';
+/** `conversion_failed` and `assisted_conversion` are derived from the drawing import (ADR-0013). */
+export type FinishRequestStatus = 'awaiting_drawing' | 'converting' | 'conversion_failed' | 'assisted_conversion' | 'pending_review' | 'published';
 export type FinishSchemeView = {
   id: string; ordinal: number; name: string; summary: string; revision: number; adoptable: boolean;
   issues: { code: string; objectId: string; message: string }[];
@@ -35,6 +36,8 @@ export type FinishRequestView = {
   finishes: RequestFinishView[]; preferences: RequestPreferences | null;
   /** Customer-facing explanation of the state; never claims recognition for assisted drawings. */
   statusLabel: string;
+  /** Why the drawing could not be converted automatically (customer-readable); null otherwise. */
+  conversionError: string | null;
   finishIds: string[]; stones: { stoneId: string; stoneVersion: number }[]; note: string | null;
   floorplanImportId: string | null;
   /** Published schemes only for customers; members also see schemes waiting for review. */
@@ -60,7 +63,7 @@ export const followStatusNames: Record<FollowStatus, string> = { new: '新线索
 export const setFollowStatusSchema = z.object({ operationId: idSchema, status: z.enum(followStatuses) }).strict();
 export const addLeadNoteSchema = z.object({ operationId: idSchema, note: z.string().trim().min(1).max(500) }).strict();
 export const leadFilterSchema = z.object({
-  status: z.enum(['awaiting_drawing', 'converting', 'assisted_conversion', 'pending_review', 'published']).optional(),
+  status: z.enum(['awaiting_drawing', 'converting', 'conversion_failed', 'assisted_conversion', 'pending_review', 'published']).optional(),
   follow: z.enum(followStatuses).optional(),
   contact: z.enum(['1', 'true']).transform(() => true).optional(),
 }).strict();

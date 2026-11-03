@@ -16,7 +16,7 @@ import { actionsOf, ago, leadsOf, Note, Shell, tidy, useWorkbench, who } from '.
 type Stage = 'review' | 'published' | 'confirmed';
 const stageOf = (lead: LeadView): Stage => lead.status !== 'published' ? 'review' : lead.confirmation ? 'confirmed' : 'published';
 const statusText: Record<LeadView['status'], string> = {
-  awaiting_drawing: '待上传图纸', converting: '图纸转换中', assisted_conversion: '需辅助转换', pending_review: '待审核', published: '已发布',
+  awaiting_drawing: '待上传图纸', converting: '图纸识别中', conversion_failed: '图纸未识别', assisted_conversion: '排队待整理', pending_review: '待审核', published: '已发布',
 };
 function StatusTag({ lead }: { lead: LeadView }) {
   const reconfirm = lead.confirmation && !lead.confirmation.current;

@@ -14,6 +14,7 @@ import { initializeRenderQueue } from '../../renders/src/queue';
 import { initializeImportQueue } from '../../drawing-imports/src/queue';
 import { runRender } from '../../renders/src/runner';
 import { runImport } from '../../drawing-imports/src/runner';
+import { generateForImport } from './service';
 import * as authRoute from '../../../apps/web/app/api/auth/[...all]/route';
 import * as catalogRoute from '../../../apps/web/app/api/client/[entry]/catalog/route';
 import * as requestsRoute from '../../../apps/web/app/api/client/[entry]/requests/route';
@@ -21,6 +22,7 @@ import * as requestRoute from '../../../apps/web/app/api/client/[entry]/requests
 import * as drawingRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/drawing/route';
 import * as imageRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/schemes/[schemeId]/image/route';
 import * as leadsRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/leads/route';
+import * as handOverRoute from '../../../apps/web/app/api/client/[entry]/requests/[requestId]/hand-over/route';
 import * as publishRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/leads/[requestId]/publish/route';
 
 // HTTP route handlers + real PostgreSQL + real pg-boss producers. Renders run through the real runner with an injected
@@ -126,7 +128,7 @@ test('review-all workspaces hold schemes until a member publishes them', async (
   const created = await call(requestsRoute.POST, { entry: reviewSlug }, { cookie, json: { source: 'demo-villa', operationId: randomUUID(),
     finishIds: ['finish-f1-living-floor', 'finish-f1-stair'], stones: [{ stoneId: 'demo-limestone', stoneVersion: 1 }] } });
   const request = created.body.request;
-  assert.equal(request.status, 'pending_review'); assert.match(request.statusLabel, /审核/); assert.deepEqual(request.schemes, []);
+  assert.equal(request.status, 'pending_review'); assert.match(request.statusLabel, /确认/); assert.deepEqual(request.schemes, []);
   const lead = (await call(leadsRoute.GET, { workspaceId: reviewWorkspaceId }, { cookie: adminCookie })).body.leads.find((item: { id: string }) => item.id === request.id);
   assert.ok(lead.schemes.length >= 2, 'members see schemes waiting for review'); assert.match(lead.reviewReason, /全部审核/);
   assert.equal((await call(publishRoute.POST, { workspaceId: reviewWorkspaceId, requestId: request.id }, { cookie, json: { operationId: randomUUID() } })).status, 404, 'customers cannot publish');
@@ -136,24 +138,70 @@ test('review-all workspaces hold schemes until a member publishes them', async (
   assert.equal(seen.status, 'published'); assert.equal(seen.schemes.length, lead.schemes.length);
 });
 
-test('a DXF drawing request converts in the background, waits for review, and is published with derived floor finishes', async () => {
-  const cookie = await customer();
+const fixture = (name: string) => readFile(new URL(`../../floorplan-import/fixtures/dxf/${name}`, import.meta.url));
+async function drawingRequest(cookie: string) {
   const created = (await call(requestsRoute.POST, { entry: slug }, { cookie, json: { source: 'drawing', operationId: randomUUID(),
     stones: [{ stoneId: 'demo-white-marble', stoneVersion: 1 }, { stoneId: 'demo-beige-marble', stoneVersion: 1 }] } })).body.request;
   assert.equal(created.status, 'awaiting_drawing');
+  return created;
+}
+const upload = (cookie: string, requestId: string, bytes: Uint8Array, name: string) => {
   const form = new FormData();
-  form.set('file', new File([await readFile(new URL('../../floorplan-import/fixtures/dxf/synthetic-flat.dxf', import.meta.url))], 'synthetic-flat.dxf'));
-  form.set('metadata', JSON.stringify({ operationId: randomUUID() }));
-  const uploaded = await call(drawingRoute.POST, { entry: slug, requestId: created.id }, { cookie, form });
+  form.set('file', new File([bytes as Uint8Array<ArrayBuffer>], name)); form.set('metadata', JSON.stringify({ operationId: randomUUID() }));
+  return call(drawingRoute.POST, { entry: slug, requestId }, { cookie, form });
+};
+/** What the import Worker does per job: convert, then generate the request's schemes (ADR-0013). */
+const convert = async (importId: string) => { await runImport(importId); await generateForImport(importId); await generateForImport(importId); };
+
+test('a DXF drawing request converts and is published right away with derived floor finishes, no member review', async () => {
+  const cookie = await customer(), created = await drawingRequest(cookie);
+  const uploaded = await upload(cookie, created.id, await fixture('synthetic-flat.dxf'), 'synthetic-flat.dxf');
   assert.equal(uploaded.status, 202, JSON.stringify(uploaded.body)); assert.equal(uploaded.body.request.status, 'converting');
   await runImport(uploaded.body.request.floorplanImportId);
-  const waiting = (await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request;
-  assert.equal(waiting.status, 'pending_review'); assert.deepEqual(waiting.schemes, []);
-  const published = await call(publishRoute.POST, { workspaceId, requestId: created.id }, { cookie: adminCookie, json: { operationId: randomUUID() } });
-  assert.equal(published.status, 200, JSON.stringify(published.body));
+  assert.equal((await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request.status, 'converting', 'converted, schemes not yet generated');
+  await generateForImport(uploaded.body.request.floorplanImportId); await generateForImport(uploaded.body.request.floorplanImportId);
   const seen = (await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request;
-  assert.equal(seen.status, 'published'); assert.ok(seen.schemes.length >= 2);
+  assert.equal(seen.status, 'published'); assert.ok(seen.schemes.length >= 1 && seen.schemes.every((s: { adoptable: boolean }) => s.adoptable));
   assert.ok(seen.finishIds.length >= 3 && seen.finishIds.every((id: string) => id.startsWith('finish-floor-')), 'one floor finish per converted room');
+  assert.equal(seen.conversionError, null);
+  assert.equal(new Set(seen.schemes.map((s: { ordinal: number }) => s.ordinal)).size, seen.schemes.length, 'generating twice does not duplicate');
+});
+
+test('a drawing that cannot be converted is explained to the customer, can be uploaded again or handed to the enterprise', async () => {
+  const cookie = await customer(), created = await drawingRequest(cookie);
+  const bad = await upload(cookie, created.id, new TextEncoder().encode('0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n'), 'empty.dxf');
+  assert.equal(bad.status, 202, JSON.stringify(bad.body));
+  await convert(bad.body.request.floorplanImportId);
+  const failed = (await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request;
+  assert.equal(failed.status, 'conversion_failed', JSON.stringify(failed)); assert.ok(failed.conversionError.length > 4, failed.conversionError);
+  // Upload again: the new import replaces the failed one and converts.
+  const again = await upload(cookie, created.id, await fixture('synthetic-flat.dxf'), 'synthetic-flat.dxf');
+  assert.equal(again.status, 202, JSON.stringify(again.body)); assert.notEqual(again.body.request.floorplanImportId, bad.body.request.floorplanImportId);
+  await convert(again.body.request.floorplanImportId);
+  assert.equal((await call(requestRoute.GET, { entry: slug, requestId: created.id }, { cookie })).body.request.status, 'published');
+  // Hand over instead: the request joins the enterprise's queue.
+  const other = await drawingRequest(cookie), broken = await upload(cookie, other.id, new TextEncoder().encode('0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n'), 'broken.dxf');
+  assert.equal(broken.status, 202, JSON.stringify(broken.body));
+  await convert(broken.body.request.floorplanImportId);
+  assert.equal((await call(handOverRoute.POST, { entry: slug, requestId: created.id }, { cookie, json: {} })).body.error.code, 'DRAWING_NOT_FAILED');
+  const handed = await call(handOverRoute.POST, { entry: slug, requestId: other.id }, { cookie, json: {} });
+  assert.equal(handed.status, 200, JSON.stringify(handed.body)); assert.equal(handed.body.request.status, 'assisted_conversion');
+  assert.match(handed.body.request.statusLabel, /排队/);
+});
+
+test('images and PDFs queue for the enterprise; uploads are limited to 3 per customer per day', async () => {
+  const cookie = await customer(), created = await drawingRequest(cookie);
+  const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#fff' } }).png().toBuffer();
+  const queued = await upload(cookie, created.id, png, '户型图.png');
+  assert.equal(queued.status, 202, JSON.stringify(queued.body)); assert.equal(queued.body.request.status, 'assisted_conversion');
+  assert.match(queued.body.request.statusLabel, /排队/);
+  // Two more uploads today are allowed (failures count), the fourth is refused.
+  for (let i = 0; i < 2; i++) { const r = await drawingRequest(cookie); assert.equal((await upload(cookie, r.id, png, `第${i}张.png`)).status, 202); }
+  const fourth = await upload(cookie, (await drawingRequest(cookie)).id, png, '第四张.png');
+  assert.equal(fourth.status, 429); assert.equal(fourth.body.error.code, 'DRAWING_DAILY_LIMIT');
+  // Another customer has their own allowance.
+  const neighbour = await customer();
+  assert.equal((await upload(neighbour, (await drawingRequest(neighbour)).id, png, '邻居.png')).status, 202);
 });
 
 test('invalid submissions are rejected without leaving a lead', async () => {

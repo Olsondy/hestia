@@ -161,6 +161,11 @@ export async function listFloorplanImports(principal: Principal, projectId: stri
   return Promise.all(rows.map(async row => importView(row, await latestCandidate(db, row.id))));
 }
 /** Full latest candidate for review: HouseSpec, import candidate, preview scene and issues. */
+/** Latest candidate of an import for the trusted request pipeline (ADR-0013); no principal, callers own the request. */
+export async function importCandidate(importId: string) {
+  const row = await latestCandidate(db, idSchema.parse(importId));
+  return row ? { ...candidateView(row), scene: row.scene, issues: row.issues as FloorplanIssue[] } : null;
+}
 export async function getFloorplanCandidate(principal: Principal, projectId: string, importId: string) {
   const view = await getFloorplanImport(principal, projectId, importId);
   const row = await latestCandidate(db, view.id);

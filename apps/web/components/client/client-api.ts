@@ -46,6 +46,7 @@ export const clientApi = (entry: string) => {
     requests: () => get<{ requests: FinishRequestView[] }>(`${base}/requests`).then(r => r.requests.map(tidyRequest)),
     request: (id: string) => get<{ request: FinishRequestView }>(`${base}/requests/${id}`).then(r => tidyRequest(r.request)),
     create: (input: unknown) => post<{ request: FinishRequestView }>(`${base}/requests`, input).then(r => tidyRequest(r.request)),
+    handOver: (id: string) => post<{ request: FinishRequestView }>(`${base}/requests/${id}/hand-over`, {}).then(r => tidyRequest(r.request)),
     drawing: (id: string, file: File, op: string) => upload<{ request: FinishRequestView }>(`${base}/requests/${id}/drawing`, file, { operationId: op }).then(r => tidyRequest(r.request)),
     options: (id: string, schemeId: string) => get<{ options: SchemeOptionsView }>(`${base}/requests/${id}/schemes/${schemeId}/options`).then(r => ({ ...r.options, finishes: r.options.finishes.map(f => ({ ...f, stones: tidyStones(f.stones) })) })),
     adjust: (id: string, schemeId: string, input: unknown) => post<{ request: FinishRequestView }>(`${base}/requests/${id}/schemes/${schemeId}/adjust`, input).then(r => tidyRequest(r.request)),

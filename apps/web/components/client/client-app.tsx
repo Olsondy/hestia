@@ -1,5 +1,5 @@
 'use client';
-// H5 客户端：企业入口 /c/{entry}/… 与分享链接 /s/{token}/…。按定稿原型 client-h5-v2（P03）实现，只调用公开接口。
+// H5 客户端：企业入口 /c/{entry}/… 与分享码页面 /s/{分享码}/…（应用内部打开，ADR-0012）。按定稿原型 client-h5-v2（P03）实现，只调用公开接口。
 import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -8,7 +8,7 @@ import { clientApi, ClientError, maskPhone, safeNext, session, signOut, type Cli
 import { Icon } from './client-icons';
 import { Alert, Badge, Group, PlanDrawing, Row, RowMain, Section, Segmented, StyleOptions, Swatch, Timeline } from './client-parts';
 import { NewRequestView, RequestRoute, requestStatus } from './client-request';
-import { ShareRoute, rememberedShares } from './client-share';
+import { ShareCodeEntry, ShareRoute, rememberedShares } from './client-share';
 
 // ---------- 上下文 ----------
 type Ctx = {
@@ -140,7 +140,7 @@ function HomeView() {
           <figure key={`${stone.id}:${stone.version}`}><Swatch stone={stone} size={176}/><figcaption>{stone.name}</figcaption></figure>)}</div>}
         <ErrorLine error={catalog.error}/>
       </Section>
-      <div className="section"><Group><div className="row"><RowMain icon="link" title="收到企业分享的链接？" sub="直接打开即可预览；调整和确认需手机号登录并绑定"/></div></Group></div>
+      <div className="section"><Group><ShareCodeEntry title="收到企业的分享码？" sub="输入或粘贴即可预览；调整和确认时再用手机号登录"/></Group></div>
       <p className="fine-print">演示环境 · 数据、尺寸与效果图均为示意</p>
     </div>
   </Screen>;
@@ -234,14 +234,16 @@ function ProjectsView() {
       <h1 className="page-title">我的项目</h1>
       <ErrorLine error={list.error}/>
       {list.isLoading ? <Loading/> : empty ? <div className="empty"><span className="seal seal--quiet" aria-hidden="true"><Icon name="folder" size={26}/></span><h2>还没有项目</h2>
-        <p>点下方 + 按钮提交户型和石材偏好，得到第一份整体方案；或打开企业发给你的分享链接。</p></div> : <>
+        <p>点下方 + 按钮提交户型和石材偏好，得到第一份整体方案；或输入企业发给你的分享码。</p>
+        <Group><ShareCodeEntry/></Group></div> : <>
         <Section title="我提交的" aside={String(mine.length)}>
           {mine.length ? mine.map(r => <ProjectCard key={r.id} request={r}/>) : <p className="meta">还没有自己提交的方案需求。</p>}
         </Section>
         <Section title="企业分享给我的" aside={String(shared.length + pending.length)}>
           {shared.map(r => <ProjectCard key={r.id} request={r}/>)}
           {pending.map(token => <PendingCard key={token} token={token}/>)}
-          {!shared.length && !pending.length && <p className="meta">打开企业分享的链接并完成绑定后，方案会出现在这里。</p>}
+          {!shared.length && !pending.length && <p className="meta">输入企业的分享码并完成绑定后，方案会出现在这里。</p>}
+          <Group><ShareCodeEntry/></Group>
         </Section>
       </>}
     </main>

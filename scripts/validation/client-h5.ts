@@ -11,7 +11,8 @@ import { chromium, type Browser, type Page } from '@playwright/test';
 const base = (process.env.BETTER_AUTH_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
 const out = path.resolve(process.argv[2] ?? path.join(os.tmpdir(), 'hestia-client-h5'));
 const seed = JSON.parse(await readFile(path.resolve(process.env.PRIVATE_STORAGE_PATH ?? './private-data', 'demo', 'seed.json'), 'utf8'));
-const phones = { targeted: '13800138000', selfService: '13900139000', withCode: '13700137000' };
+const phones = { targeted: '13800138000', selfService: '13900139000', open: '13700137000' };
+const canonical = (code: string) => code.replace('-', '');
 const external = new Set<string>(), pageErrors: string[] = [], results: [string, boolean, string][] = [];
 await mkdir(out, { recursive: true });
 
@@ -47,11 +48,18 @@ try {
     if (process.env.HESTIA_HOME_ENTRY && !/\/c\//.test(visitor.url())) throw new Error(`未跳转：${visitor.url()}`);
   });
 
-  // Targeted share: anonymous preview with pre-rendered images, gate, sign-in with the targeted phone, automatic binding.
+  // Targeted share code (ADR-0012): pasted as the member's share message on the H5 home, anonymous preview, gate,
+  // sign-in with the targeted phone, automatic binding.
   const owner = await phone(browser);
-  await step('定向分享：未登录预览（效果图已预生成）', async () => {
-    await owner.goto(`${base}/s/${seed.targeted.token}`);
-    await owner.locator('img.stage__img').waitFor({ timeout: 30000 });
+  await step('定向分享码：首页粘贴分享口令 → 未登录预览', async () => {
+    await owner.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
+    await owner.goto(`${base}/c/demo-home`);
+    await owner.evaluate(text => navigator.clipboard.writeText(text), `【演示家装企业】方案分享码 ${seed.targeted.code}，在企业的小程序或 H5 首页输入即可查看。`);
+    await owner.getByRole('button', { name: /收到企业的分享码/ }).click();
+    await shot(owner, '00-code-sheet');
+    await owner.locator('dialog[open]').getByRole('button', { name: '粘贴', exact: true }).click();
+    await owner.waitForURL(new RegExp(`/s/${canonical(seed.targeted.code)}$`), { timeout: 30000 });
+    await owner.locator('.stage').first().waitFor({ timeout: 30000 });
     await shot(owner, '01-share-preview');
   });
   await step('定向分享：调整需登录 → 指定手机号登录 → 自动绑定', async () => {
@@ -85,18 +93,21 @@ try {
     await owner.getByText('需要重新确认').waitFor({ timeout: 30000 });
   });
 
-  // Another phone on the targeted link, then the code share.
+  // Another phone on the used targeted code, then the open share code typed by hand.
   const other = await phone(browser);
-  await step('另一手机号打开已绑定的定向分享 → 只能预览', async () => {
-    await other.goto(`${base}/c/demo-home/login?next=${encodeURIComponent(`/s/${seed.targeted.token}/bind`)}`);
-    await login(other, phones.withCode);
-    await other.getByText('其他客户').waitFor({ timeout: 30000 }); await shot(other, '06-already-bound');
+  await step('另一手机号打开已绑定的定向分享码 → 已使用', async () => {
+    await other.goto(`${base}/c/demo-home/login?next=${encodeURIComponent(`/s/${canonical(seed.targeted.code)}/bind`)}`);
+    await login(other, phones.open);
+    await other.getByRole('heading', { name: '这个分享码已使用' }).waitFor({ timeout: 30000 }); await shot(other, '06-code-used');
   });
-  await step('绑定码分享：错误码提示剩余次数 → 正确码绑定', async () => {
-    await other.goto(`${base}/s/${seed.code.token}/bind`);
-    await other.getByPlaceholder('6 位绑定码').fill('AAAAAA'); await other.getByRole('button', { name: '绑定到我的账号' }).click();
-    await other.getByText(/还可尝试 4 次/).waitFor({ timeout: 30000 });
-    await other.getByPlaceholder('6 位绑定码').fill(seed.code.code); await other.getByRole('button', { name: '绑定到我的账号' }).click();
+  await step('分享码：错误码提示 → 手动输入正确码 → 登录即绑定', async () => {
+    await other.goto(`${base}/c/demo-home/projects`);
+    await other.getByRole('button', { name: /输入分享码/ }).first().click();
+    await other.getByPlaceholder('例如 HX7K-9QP2').fill('ABCD-EFGH'); await other.getByRole('button', { name: '打开方案' }).click();
+    await other.getByText('分享码不正确或已失效').waitFor({ timeout: 30000 });
+    await other.getByPlaceholder('例如 HX7K-9QP2').fill(seed.open.code.toLowerCase()); await other.getByRole('button', { name: '打开方案' }).click();
+    await other.waitForURL(/\/s\/[A-Z0-9]{8}$/, { timeout: 30000 });
+    await other.getByRole('button', { name: /调整/ }).first().click();
     await other.getByRole('heading', { name: '已绑定到你的账号' }).waitFor({ timeout: 30000 }); await shot(other, '07-code-bound');
   });
 
@@ -118,8 +129,8 @@ try {
     await other.goto(`${base}/c/demo-home/projects`); await other.getByText('企业分享给我的').waitFor();
     await other.locator('.project').first().waitFor(); await shot(other, '10-projects');
   });
-  await step('伪造链接 → 已失效', async () => {
-    await visitor.goto(`${base}/s/${'x'.repeat(32)}`); await visitor.getByText('这个分享链接').waitFor();
+  await step('不存在的分享码 → 不正确或已失效', async () => {
+    await visitor.goto(`${base}/s/ABCDEFGH`); await visitor.getByRole('heading', { name: '分享码不正确或已失效' }).waitFor();
   });
 } finally { await browser.close(); }
 

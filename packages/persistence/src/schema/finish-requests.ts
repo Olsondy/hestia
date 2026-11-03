@@ -140,11 +140,10 @@ export const bindingApplications = pgTable("binding_applications", {
 export const requestShares = pgTable("request_shares", {
 	id: uuid().primaryKey().notNull(),
 	requestId: uuid("request_id").notNull(),
+	/** HMAC of the share code (ADR-0012); the code itself is returned once and never stored. */
 	tokenHash: text("token_hash").notNull(),
 	targetPhone: text("target_phone"),
-	codeHash: text("code_hash"),
-	codeExpiresAt: timestamp("code_expires_at", { withTimezone: true, mode: 'date' }),
-	codeAttempts: integer("code_attempts").default(0).notNull(),
+	/** Set when the request is bound through this share; the code no longer opens. */
 	codeUsedAt: timestamp("code_used_at", { withTimezone: true, mode: 'date' }),
 	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'date' }),
 	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'date' }),
@@ -159,6 +158,15 @@ export const requestShares = pgTable("request_shares", {
 			name: "request_shares_request_id_fkey"
 		}).onDelete("cascade"),
 	unique("request_shares_token_hash_key").on(table.tokenHash),
+]);
+
+/** Wrong share codes per request source (keyed HMAC), for the guessing limit (ADR-0012). */
+export const shareCodeFailures = pgTable("share_code_failures", {
+	id: uuid().primaryKey().notNull(),
+	sourceHash: text("source_hash").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+	index("share_code_failures_source").on(table.sourceHash, table.createdAt.desc().nullsFirst()),
 ]);
 
 export const bindingEvents = pgTable("binding_events", {

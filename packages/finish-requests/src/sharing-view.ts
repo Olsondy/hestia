@@ -13,7 +13,7 @@ export async function sharingOf(client: Pick<PoolClient, 'query'>, requestId: st
     .leftJoin(hestiaAuthUser, eq(hestiaAuthUser.id, bindingApplications.applicantId)).where(eq(bindingApplications.requestId, requestId)).orderBy(asc(bindingApplications.createdAt));
   const history = await tx.select().from(bindingEvents).where(eq(bindingEvents.requestId, requestId)).orderBy(asc(bindingEvents.createdAt));
   return {
-    shares: shares.map(s => ({ id: s.id, targetPhone: masked(s.targetPhone), bindingCode: !!s.codeHash, expiresAt: s.expiresAt?.toISOString() ?? null,
+    shares: shares.map(s => ({ id: s.id, targetPhone: masked(s.targetPhone), usedAt: s.codeUsedAt?.toISOString() ?? null, expiresAt: s.expiresAt?.toISOString() ?? null,
       revokedAt: s.revokedAt?.toISOString() ?? null, createdAt: s.createdAt.toISOString() })),
     applications: applications.map(a => ({ id: a.id, shareId: a.shareId, applicant: { userId: a.applicantId, phone: a.phoneNumber }, note: a.note, status: a.status as LeadView['sharing']['applications'][number]['status'],
       createdAt: a.createdAt.toISOString() })),

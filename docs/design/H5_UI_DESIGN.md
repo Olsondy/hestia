@@ -45,7 +45,7 @@
 | `.btn` `--primary` `--secondary` `--block` `--grow` `--sm` | `Button` | 所有主操作同一样式：文字居中、不带箭头；每屏最多一个 primary |
 | `.section` | `Section` | 标题 + 右侧说明（示意、计数、单位） |
 | `.group` `.row` `--stack` | `Group` `Row` `LinkRow` | 长数值（饰面清单）用 stack，避免右对齐折行 |
-| `.field` `--code` | `Field` | 放在 Group 内；验证码、绑定码的发送 / 填入按钮在同一行 |
+| `.field` `--code` | `Field` | 放在 Group 内；验证码的发送 / 填入、分享码的粘贴按钮在同一行 |
 | `.alert` `--hint` `--danger` `--info` | `Alert` | danger 带 `role="alert"` |
 | `.badge` `--ok` `--warn` | `StatusBadge` | 项目状态 |
 | `.chip` | `ChoiceChip` | `aria-pressed`；单选和多选共用 |
@@ -69,6 +69,8 @@
 ## 页面与状态
 
 路由与 H01 一致（原型用 hash）：首页、登录、提交需求（三步）、项目状态（图纸转换中 / 出图中 / 待审核 / 需协助转换）、方案、调整、确认、已确认、分享预览、绑定（自动 / 不一致 / 绑定码 / 申请 / 待批准 / 已绑定）、链接失效（撤销 / 过期）、我的项目、我的。原型右上角「审阅」可直达 40 个状态。
+
+生产已按 [ADR-0012](../decisions/0012-share-code-instead-of-link.md) 把分享链接改为分享码：首页与「我的项目」增加「输入分享码」弹层（手动输入或粘贴，整段分享口令也能识别），去掉绑定码页（到达绑定页即自动绑定），失效页增加“已使用”。原型保持不变。
 
 ## 与服务端（H01）的对齐
 

@@ -11,6 +11,7 @@ import { finishLine, letter } from '../client/client-request';
 import { SchemeViewer } from '../client/scheme-viewer';
 import type { SceneSnapshot } from '../client/client-api';
 import { actionsOf, ago, leadsOf, Note, Shell, tidy, useWorkbench, who } from './workbench-app';
+import { ShareDialog, useBindingActions } from './workbench-share';
 
 // ---------- 共用 ----------
 type Stage = 'review' | 'published' | 'confirmed';
@@ -144,11 +145,14 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
         : <div className="stage__plan"><p>{scheme.render?.status === 'failed' ? '效果图生成失败' : '效果图生成中，完成后在这里显示'}</p></div>;
   const reconfirm = lead.confirmation && !lead.confirmation.current;
   const tabs: [Tab, string][] = [['scheme', '方案'], ['client', '客户与跟进'], ['share', '分享与绑定']];
-  const publish = usePublish(lead);
+  const publish = usePublish(lead), [sharing, setSharing] = useState(false);
+  const shareable = lead.origin === 'member' && lead.status === 'published' && !lead.customer;
   const foot = lead.status === 'assisted_conversion' ? <><span className="hint">客户的图纸在排队：整理户型后出方案，直接发布给客户。</span>
     <Link className="btn btn--primary btn--grow" href={`${base}/leads/${lead.id}/assist`}>整理图纸</Link></>
     : lead.status === 'pending_review' ? <><span className="hint">{publish.error ? (publish.error as Error).message : `${lead.reviewReason ?? '企业设置为全部审核后发布'}。核对方案后发布给客户。`}</span>
       <button className="btn btn--primary btn--grow" disabled={publish.isPending} onClick={() => { if (window.confirm('发布后客户就能看到这些方案。确认发布？')) publish.mutate(); }}>{publish.isPending ? '正在发布…' : '发布给客户'}</button></>
+    : shareable && !a.contact ? <><span className="hint">{lead.sharing.shares.some(s => !s.revokedAt && !s.usedAt) ? '已有有效的分享码；可以再新建一个，发给另一个联系方式。' : '还没有绑定客户。生成分享码发给客户。'}</span>
+      <button className="btn btn--primary btn--grow" onClick={() => setSharing(true)}><Icon name="link" size={16} strokeWidth={1.6}/>分享给客户</button></>
     : a.contact ? <><span className="hint">客户请求联系{lastPreferred(lead) ? `，方便时间：${lastPreferred(lead)}` : ''}。回电后标记，线索会移出「今日」的请求联系。</span>
     <button className="btn btn--primary btn--grow" disabled={follow.isPending} onClick={() => follow.mutate('contacted')}>已回电，标记为已联系</button></> : null;
 
@@ -164,9 +168,10 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
         <div className="segmented" role="tablist">{tabs.map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
       </header>
       <div className="float__body">{tab === 'scheme' ? <SchemeTab lead={lead} scheme={scheme} onPick={setSchemeId} level={level} levelName={levelName}/>
-        : tab === 'client' ? <ClientTab lead={lead} follow={follow}/> : <ShareTab lead={lead}/>}</div>
+        : tab === 'client' ? <ClientTab lead={lead} follow={follow}/> : <ShareTab lead={lead} onShare={() => setSharing(true)}/>}</div>
       {foot && <footer className="float__foot">{foot}</footer>}
     </aside>}
+    <ShareDialog lead={lead} open={sharing} onClose={() => setSharing(false)}/>
     <div className="toolbar" role="toolbar" aria-label="画面">
       <button className="tool" aria-pressed={left} onClick={() => setLeft(!left)} aria-label={left ? '收起方案面板' : '打开方案面板'}><Icon name="panel" size={18} strokeWidth={1.6}/></button>
       {levels.length > 1 && <><span className="toolbar__sep"/><div className="segmented segmented--bare" role="group" aria-label="楼层">{levels.map(([key, name]) =>
@@ -270,21 +275,27 @@ function ClientTab({ lead, follow }: { lead: LeadView; follow: ReturnType<typeof
 
 const historyText: Record<string, string> = { share: '分享', bind: '绑定客户', unbind: '解绑客户', revoke: '撤销分享码', apply: '提交绑定申请', approve: '批准绑定', reject: '拒绝绑定' };
 const methodText: Record<string, string> = { phone: '指定手机号', code: '分享码', approval: '成员批准' };
-function ShareTab({ lead }: { lead: LeadView }) {
+function ShareTab({ lead, onShare }: { lead: LeadView; onShare: () => void }) {
+  const { ask, dialog } = useBindingActions(lead);
   if (lead.origin === 'customer') return <p className="muted">客户自助提交的项目属于客户本人，不需要分享与绑定。</p>;
   const { shares, applications, history } = lead.sharing, now = Date.now();
   const shareState = (s: LeadView['sharing']['shares'][number]) => s.revokedAt ? '已撤销' : s.usedAt ? '已使用' : s.expiresAt && Date.parse(s.expiresAt) < now ? '已过期' : '有效';
   return <>
-    {lead.customer && <div className="share"><div className="share__head"><b>主客户 · {lead.customer.name && !lead.customer.name.startsWith('手机用户') ? lead.customer.name : '客户'}</b></div>
-      <p className="num">{spacedPhone(lead.customer.phone)}</p></div>}
-    {applications.filter(x => x.status === 'pending').map(x => <div key={x.id} className="share"><div className="share__head"><b>绑定申请 · <span className="num">{maskPhone(x.applicant.phone)}</span></b><span className="tag tag--act">待批准</span></div>
-      <p>{x.note ?? '未填写说明'} · {ago(x.createdAt)}</p></div>)}
+    {dialog}
+    {lead.customer && <div className="share"><div className="share__head"><b>主客户 · {lead.customer.name && !lead.customer.name.startsWith('手机用户') ? lead.customer.name : '客户'}</b>
+      <button className="btn btn--danger btn--sm" onClick={() => ask({ kind: 'unbind' })}>解绑</button></div>
+      <p className="num">{spacedPhone(lead.customer.phone)} · 解绑后客户不能再打开这个方案，可以重新分享给其他人。</p></div>}
+    {applications.filter(x => x.status === 'pending').map(x => <div key={x.id} className="share"><div className="share__head"><b>绑定申请 · <span className="num">{spacedPhone(x.applicant.phone)}</span></b><span className="tag tag--act">待批准</span></div>
+      <p>{x.note ?? '未填写说明'} · {ago(x.createdAt)}</p>
+      <div className="row-actions"><button className="btn btn--primary btn--sm" onClick={() => ask({ kind: 'approve', applicationId: x.id, phone: x.applicant.phone })}>核对无误，批准绑定</button>
+        <button className="btn btn--danger btn--sm" onClick={() => ask({ kind: 'reject', applicationId: x.id, phone: x.applicant.phone })}>拒绝</button></div></div>)}
     {shares.map(s => <div key={s.id} className="share"><div className="share__head"><b>{s.targetPhone ? <>指定手机号 · <span className="num">{s.targetPhone.replace(/^\+86/, '').replace(/\*+/, ' **** ')}</span></> : '分享码 · 不指定手机号'}</b>
       <span className="tag">{shareState(s)}</span></div>
-      <p>{s.targetPhone ? '客户用该手机号登录即自动绑定；其他号码只能预览或提交申请。' : '第一位登录的客户绑定。'}{s.expiresAt && <>有效至 <span className="num">{day(s.expiresAt)}</span>。</>}</p></div>)}
+      <p>{s.targetPhone ? '客户用该手机号登录即自动绑定；其他号码只能预览或提交申请。' : '第一位登录的客户绑定。'}{s.expiresAt && <>有效至 <span className="num">{day(s.expiresAt)}</span>。</>}</p>
+      {shareState(s) === '有效' && <div className="row-actions"><button className="btn btn--secondary btn--sm" onClick={() => ask({ kind: 'revoke', shareId: s.id })}>撤销分享码</button></div>}</div>)}
     {!shares.length && !lead.customer && <p className="muted small">还没有分享。</p>}
+    {lead.status === 'published' && !lead.customer && <div style={{ marginTop: 12 }}><button className="btn btn--secondary btn--sm" onClick={onShare}><Icon name="plus" size={14}/>新建分享</button></div>}
     {history.length > 0 && <section className="sect"><h3 className="sect__title">记录</h3><ol className="feed">{[...history].reverse().map((h, i) =>
       <li key={i}><time dateTime={h.createdAt}>{when(h.createdAt)}</time><span>{historyText[h.kind] ?? h.kind}{h.method ? ` · ${methodText[h.method] ?? h.method}` : ''}</span></li>)}</ol></section>}
-    <p className="muted small" style={{ marginTop: 14 }}>新建分享、批准或拒绝申请、撤销与解绑稍后在这里开放。</p>
   </>;
 }

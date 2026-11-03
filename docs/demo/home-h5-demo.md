@@ -8,9 +8,8 @@
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec playwright install chromium   # 后台出图用的无头浏览器
-pnpm setup:local                        # 生成 .env（已存在则保留）
-pnpm db:up && pnpm db:migrate && pnpm render:setup
+pnpm db:up        # 本地 PostgreSQL（Docker）；已有数据库可跳过
+pnpm bootstrap    # .env、迁移、队列、出图浏览器、DXF 环境；每步可重复执行
 ```
 
 在 `.env` 中加入演示部署配置：
@@ -36,14 +35,13 @@ pnpm demo:seed --reset    # 复位演示数据，并预生成预置方案的效�
 
 命令会输出入口地址、两个分享码（一个指定手机号，一个不指定）、演示手机号，以及企业工作台 `/w/demo-home` 的演示成员邮箱和密码（另存于 `private-data/demo/`，不提交仓库）。预生成 6 张效果图：无显卡的电脑每张约 1.5–2 分钟，请提前完成。不带 `--reset` 重复运行不会产生重复数据，只在分享码失效（已绑定、过期或撤销）时重新分享。
 
-然后启动两个进程（各开一个终端）：
+然后在一个终端启动全部服务（Web、出图 Worker、图纸转换 Worker，Ctrl+C 一起停止）：
 
 ```sh
-pnpm dev               # 或 pnpm build:web && pnpm start:web
-pnpm worker:render     # 客户现场提交或调整后的出图
+pnpm dev:all
 ```
 
-图纸导入（DXF）另需 `pnpm setup:dxf` 与 `pnpm worker:import`，不在基本演示流程内。
+需要单独运行时仍可分别使用 `pnpm dev`、`pnpm worker:render`、`pnpm worker:import`。
 
 ## 演示账号
 

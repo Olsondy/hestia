@@ -11,4 +11,6 @@ const args = [fileURLToPath(new URL('../node_modules/next/dist/bin/next', import
 if (action !== 'build') args.push('--hostname', process.env.HESTIA_WEB_HOST || '127.0.0.1');
 const child = spawn(process.execPath, args, { cwd: root, env: process.env, stdio: 'inherit' });
 child.on('exit', code => { process.exitCode = code ?? 1; });
+// Stop Next with us (Ctrl+C, or `pnpm dev:all` stopping its services), so no dev server is left behind.
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { if (child.exitCode === null) child.kill(signal); });
 child.on('error', () => { process.exitCode = 1; });

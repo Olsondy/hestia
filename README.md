@@ -21,8 +21,11 @@ docs/                            产品范围、架构、工单、验收与决�
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm preview   # 原型：http://127.0.0.1:4173/example/prototypes/projects/
-pnpm dev       # Web 应用：http://127.0.0.1:3000
+pnpm db:up               # 本地 PostgreSQL（Docker）；已有数据库可跳过
+pnpm bootstrap           # .env、数据库迁移、后台队列、出图浏览器、DXF 环境；拉代码后重跑即可
+pnpm demo:seed --reset   # 演示数据（可选）
+pnpm dev:all             # Web 应用与两个 Worker：http://127.0.0.1:3000
+pnpm preview             # 原型：http://127.0.0.1:4173/example/prototypes/projects/
 ```
 
 本地数据库、完整命令与验证方式见 [开发与验证](docs/development.md)。

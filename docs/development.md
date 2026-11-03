@@ -15,6 +15,8 @@
 | `pnpm fonts` | 从仓库本地 TTF 重建完整 WOFF2；需要 Python fontTools/Brotli，普通构建不需要 |
 | `pnpm typecheck` | TypeScript 类型检查 |
 | `pnpm test:core` | 共享模块与验证模块的行为检查 |
+| `pnpm bootstrap` | 一次准备本地环境：`.env`（已有保留）、数据库迁移、三个后台队列、出图用的 Chromium、DXF 转换环境；每步可重复执行，拉代码后重跑即可 |
+| `pnpm dev:all` | 同一终端启动 Web 与出图、图纸转换两个 Worker（日志带前缀，Ctrl+C 一起停止，启动前检查队列） |
 | `pnpm dev` | 启动 `apps/web` Next.js 开发入口，端口 3000 |
 | `pnpm build:web` / `pnpm start:web` | 构建 / 启动 Web 应用 |
 | `pnpm setup:local` | 创建本地 `.env`；已有配置保留，不配置模型密钥 |
@@ -26,7 +28,7 @@
 | `pnpm invite <email> [hours]` | 创建指定邮箱邀请，默认 24 小时、最长 720 小时；仅显示链接，不自动发邮件 |
 | `pnpm test:db` | 使用真实本地数据库验证持久化与隔离 |
 
-先安装依赖，再运行 `pnpm setup:local`、`pnpm db:up`、`pnpm db:migrate`，最后启动 Web。Docker 服务须可用；本地 Compose 只用于联调，不代表部署厂商或生产拓扑已确定。环境文件、数据库内容和私有文件不提交。数据库仅绑定 `127.0.0.1:54329`；邀请由管理员通过现有渠道交给指定收件人，不把生成链接视为邮件服务已接通。
+先安装依赖，再运行 `pnpm db:up`（已有数据库可跳过）与 `pnpm bootstrap`，最后 `pnpm dev:all`。单独的 `pnpm setup:local`、`pnpm db:migrate`、`pnpm worker:setup`、`pnpm render:setup`、`pnpm worker:import:setup`、`pnpm setup:dxf` 仍可分别使用。Docker 服务须可用；本地 Compose 只用于联调，不代表部署厂商或生产拓扑已确定。环境文件、数据库内容和私有文件不提交。数据库仅绑定 `127.0.0.1:54329`；邀请由管理员通过现有渠道交给指定收件人，不把生成链接视为邮件服务已接通。
 
 ## 数据库结构与迁移
 

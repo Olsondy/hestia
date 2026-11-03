@@ -11,6 +11,7 @@ import { reserveResource } from '../../projects/src/service';
 import { createRender } from '../../renders/src/service';
 import { initializeRenderQueue } from '../../renders/src/queue';
 import * as workspacesRoute from '../../../apps/web/app/api/workspaces/route';
+import * as bySlugRoute from '../../../apps/web/app/api/workspaces/by-slug/[slug]/route';
 import * as workspaceProjectsRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/projects/route';
 import * as membersRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/members/route';
 import * as memberRoute from '../../../apps/web/app/api/workspaces/[workspaceId]/members/[userId]/route';
@@ -86,6 +87,15 @@ test('workspace members share projects and their records; non-members and other 
   const listed = await call(workspacesRoute.GET, actors.member);
   assert.deepEqual(listed.body.workspaces.map((w: { kind: string; role: string; personal: boolean; usagePolicy: string }) => [w.kind, w.role, w.personal, w.usagePolicy]),
     [['personal', 'admin', true, 'member_credits'], ['enterprise', 'member', false, 'unmetered']]);
+
+  // Workbench entry /w/{slug}: members only; another enterprise's member, an account with no enterprise and an unknown
+  // slug get the same refusal.
+  const entry = await call(bySlugRoute.GET, actors.member, { slug: slugs[0] });
+  assert.deepEqual([entry.status, entry.body.workspace.id, entry.body.workspace.role], [200, first.workspace.id, 'member']);
+  for (const [actor, slug] of [[actors.outsider, slugs[0]], [actors.solo, slugs[0]], [actors.member, `none-${run.slice(0, 8)}`], [actors.member, 'Bad Slug']] as const) {
+    const refused = await call(bySlugRoute.GET, actor, { slug }); assert.deepEqual([refused.status, refused.body.error.code], [403, 'NOT_A_MEMBER']);
+  }
+  assert.equal((await call(bySlugRoute.GET, undefined, { slug: slugs[0] })).status, 401);
 
   // A project created by the admin in the enterprise workspace is fully usable by the member.
   const created = await call(workspaceProjectsRoute.POST, actors.admin, ws, 'POST', { name: '企业合成项目', template: 'courtyard', operationId: randomUUID() });

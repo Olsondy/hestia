@@ -1,9 +1,9 @@
 import type { PoolClient } from 'pg';
 import { and, asc, count, eq, ne, sql } from 'drizzle-orm';
-import { advisoryXactLock, orm, transaction, type Database } from '../../persistence/src/client';
+import { advisoryXactLock, db, orm, transaction, type Database } from '../../persistence/src/client';
 import { hestiaAuthUser, workspaceMembers, workspaces, workspaceTypes } from '../../persistence/src/schema';
 import { DomainError, idSchema } from '../../contracts/src/project';
-import { createWorkspaceSchema, setMemberSchema, updateMemberSchema,
+import { createWorkspaceSchema, setMemberSchema, updateMemberSchema, workspaceSlugSchema,
   type WorkspaceMember, type WorkspaceView } from '../../contracts/src/workspaces';
 import { actorOf, type Principal } from './access';
 
@@ -64,6 +64,19 @@ async function membership(tx: Database, principal: Principal, workspaceId: strin
 
 export async function getWorkspace(principal: Principal, workspaceId: string): Promise<WorkspaceView> {
   return view(await transaction((_client, tx) => membership(tx, principal, workspaceId)));
+}
+
+/**
+ * Enterprise workbench entry (/w/{slug}): the caller's membership in the enterprise workspace with this slug.
+ * A missing workspace and a non-member get the same answer, and nothing is created (customers have no personal space).
+ */
+export async function memberWorkspaceBySlug(principal: Principal, slug: string): Promise<WorkspaceView> {
+  const userId = actorOf(principal), parsed = workspaceSlugSchema.safeParse(slug);
+  const denied = () => new DomainError('NOT_A_MEMBER', '这个账号不是本企业的成员。', 403);
+  if (!parsed.success) throw denied();
+  const [row] = await selectWorkspace(db).where(and(eq(workspaces.slug, parsed.data), eq(workspaceMembers.userId, userId)));
+  if (!row) throw denied();
+  return view(row);
 }
 
 export async function listMembers(principal: Principal, workspaceId: string): Promise<WorkspaceMember[]> {

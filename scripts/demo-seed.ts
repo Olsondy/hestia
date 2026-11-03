@@ -12,7 +12,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
 import { db, pool, transaction } from '../packages/persistence/src/client';
-import { finishRequests, floorplanImports, hestiaAuthSession, hestiaAuthUser, operations, phoneOtpChallenges, projectRenders, projectRevisions,
+import { hashPassword } from 'better-auth/crypto';
+import { finishRequests, floorplanImports, hestiaAuthAccount, hestiaAuthSession, hestiaAuthUser, operations, phoneOtpChallenges, projectRenders, projectRevisions,
   projects, requestShares, resources, workspaceCustomers, workspaces } from '../packages/persistence/src/schema';
 import { acceptInvitation, createInvitation } from '../packages/identity/src/service';
 import { createWorkspace } from '../packages/workspaces/src/service';
@@ -37,6 +38,8 @@ const prepared = [
 const args = new Set(process.argv.slice(2));
 const storage = path.resolve(process.env.PRIVATE_STORAGE_PATH ?? './private-data');
 const stateFile = path.join(storage, 'demo', 'seed.json');
+/** Demo member's workbench password; kept across --reset, so a browser that saved it keeps working. */
+const memberFile = path.join(storage, 'demo', 'member.json');
 type SavedShare = { requestId: string; shareId: string; token: string; code: string | null };
 type Saved = Partial<Record<(typeof prepared)[number]['key'], SavedShare>>;
 /** Stable operation IDs so re-running the seed returns the same requests instead of creating new ones. */
@@ -71,12 +74,21 @@ async function reset() {
 
 async function member() {
   const userId = async () => (await db.select({ id: hestiaAuthUser.id }).from(hestiaAuthUser).where(eq(hestiaAuthUser.email, DEMO.member.email)))[0]?.id;
-  const existing = await userId();
-  if (existing) return existing;
-  // The member never signs in during the client demo; the password is random and not shown.
-  const invitation = await createInvitation(DEMO.member.email);
-  await acceptInvitation(invitation.token, DEMO.member.name, randomBytes(18).toString('base64url'));
-  return (await userId())!;
+  const saved: { password?: string } = JSON.parse(await readFile(memberFile, 'utf8').catch(() => '{}'));
+  const password = saved.password ?? randomBytes(9).toString('base64url');
+  let id = await userId();
+  if (!id) {
+    const invitation = await createInvitation(DEMO.member.email);
+    await acceptInvitation(invitation.token, DEMO.member.name, password);
+    id = (await userId())!;
+  } else if (!saved.password) {
+    // Accounts from earlier seeds had a random, unshown password: set the one printed below.
+    await db.update(hestiaAuthAccount).set({ password: await hashPassword(password), updatedAt: new Date() })
+      .where(and(eq(hestiaAuthAccount.userId, id), eq(hestiaAuthAccount.providerId, 'credential')));
+  }
+  await mkdir(path.dirname(memberFile), { recursive: true });
+  await writeFile(memberFile, JSON.stringify({ email: DEMO.member.email, password }, null, 2), { mode: 0o600 });
+  return { id, password };
 }
 
 /** A saved share is reused while its link previews, nobody is bound and (for code shares) the code is unused and valid. */
@@ -95,7 +107,7 @@ async function usable(saved: SavedShare | undefined) {
 async function main() {
   await initializeRenderQueue();
   if (args.has('--reset')) await reset();
-  const userId = await member(), principal = { userId };
+  const { id: userId, password } = await member(), principal = { userId };
   const workspace = (await createWorkspace({ kind: 'enterprise', slug: DEMO.slug, name: DEMO.name, adminEmail: DEMO.member.email })).workspace;
   await transaction(client => addStones(client, workspace.id, demoStones));
   log(`企业入口：${DEMO.name}（${DEMO.slug}），石材库 ${demoStones.length} 款示意素材。`);
@@ -140,8 +152,9 @@ async function main() {
   log(`                    指定手机号 ${DEMO.phones.targeted}（用其他号码登录会提示不一致，可提交绑定申请）`);
   log(`  绑定码分享        ${base}/s/${saved.code!.token}`);
   log(`                    绑定码 ${saved.code!.code}（任一手机号，如 ${DEMO.phones.withCode}；48 小时内有效）`);
+  log(`  企业工作台        ${base}/w/${DEMO.slug}        成员 ${DEMO.member.email} / ${password}`);
   if (failed) log(`注意：有 ${failed} 张效果图生成失败，可运行 pnpm demo:seed --reset 重新准备。`);
-  log(`链接与绑定码另存于 ${path.relative(process.cwd(), stateFile)}（不提交仓库）。`);
+  log(`链接、绑定码与成员密码另存于 ${path.relative(process.cwd(), path.dirname(stateFile))}/（不提交仓库）。`);
 }
 
 try { await main(); }

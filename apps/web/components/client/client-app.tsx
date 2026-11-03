@@ -1,12 +1,12 @@
 'use client';
-// H5 客户端：企业入口 /c/{entry}/… 与分享链接 /s/{token}/…。按获批原型（P01）实现，只调用公开接口。
+// H5 客户端：企业入口 /c/{entry}/… 与分享链接 /s/{token}/…。按定稿原型 client-h5-v2（P03）实现，只调用公开接口。
 import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { clientApi, ClientError, maskPhone, safeNext, session, signOut, type ClientUser, type FinishRequestView, type SendCodeResult } from './client-api';
 import { Icon } from './client-icons';
-import { Swatch, PlanDrawing, StatusChip } from './client-parts';
+import { Alert, Badge, Group, PlanDrawing, Row, RowMain, Section, Segmented, StyleOptions, Swatch, Timeline } from './client-parts';
 import { NewRequestView, RequestRoute, requestStatus } from './client-request';
 import { ShareRoute, rememberedShares } from './client-share';
 
@@ -39,7 +39,7 @@ function Router({ entry: entryProp, share }: { entry?: string; share?: string })
 
   // Page title and scroll position follow route changes.
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
-  useEffect(() => { const h1 = document.querySelector('main h1')?.textContent; document.title = `${workspaceName || '方案客户端'}${h1 ? ` · ${h1}` : ''}`; });
+  useEffect(() => { const h1 = document.querySelector('main h1, .panel__title')?.textContent; document.title = `${workspaceName || '方案客户端'}${h1 ? ` · ${h1}` : ''}`; });
 
   let page: React.ReactNode;
   if (share) page = <ShareRoute token={share} sub={pathname.split('/')[3]} query={search} onWorkspace={setShareEntry}/>;
@@ -48,45 +48,57 @@ function Router({ entry: entryProp, share }: { entry?: string; share?: string })
     page = parts[0] === 'login' ? <LoginView next={search.get('next')}/>
       : parts[0] === 'new' ? <NewRequestView/>
       : parts[0] === 'projects' ? <ProjectsView/>
+      : parts[0] === 'me' ? <MeView/>
       : parts[0] === 'r' && parts[1] ? <RequestRoute id={parts[1]} sub={parts[2]}/>
       : <HomeView/>;
   }
   return <ClientContext.Provider value={ctx}>
     <div className="client-app">
-      {catalog.error instanceof ClientError && catalog.error.status === 404 && !share ? <Shell><NotFound title="这个企业入口" text="入口不存在或已停用。请确认链接是否完整。"/></Shell> : page}
-      <div className={`toast${toastText ? ' on' : ''}`} role="status" aria-live="polite">{toastText}</div>
+      {catalog.error instanceof ClientError && catalog.error.status === 404 && !share ? <NotFound title="找不到这个企业入口" text="入口不存在或已停用。请确认链接是否完整。"/> : page}
+      <div className={`toast${toastText ? ' is-on' : ''}`} role="status" aria-live="polite">{toastText}</div>
     </div>
   </ClientContext.Provider>;
 }
 
-// ---------- 外壳 ----------
-export function Shell({ children, back, dock, title }: { children: React.ReactNode; back?: string; dock?: React.ReactNode; title?: string }) {
-  const { base, user, workspaceName, entry } = useClient();
-  return <>
-    <header className="bar">
-      {back && <Link className="bar-back" href={back} aria-label="返回"><Icon name="back" size={20}/></Link>}
-      <Link className="brand" href={entry ? base : '#'} aria-label={`${workspaceName}首页`}>
-        <span className="brand-mark" aria-hidden="true">标志</span><span className="brand-name">{title ?? workspaceName}</span>
-      </Link>
-      {entry && (user
-        ? <Link className="bar-link" href={`${base}/projects`}><Icon name="folder" size={17}/><span>我的项目</span></Link>
-        : <Link className="bar-link" href={`${base}/login?next=${encodeURIComponent(`${base}/projects`)}`}><Icon name="user" size={17}/><span>登录</span></Link>)}
-    </header>
-    <main className="page" id="page">{children}</main>
-    {dock && <div className="dock">{dock}</div>}
-    <footer className="colophon"><span>演示环境 · 数据、尺寸与效果图均为示意</span></footer>
-  </>;
+// ---------- 外壳：Screen / AppBar / TabBar ----------
+export function Screen({ children, bar, dock, tabs, className = '' }: { children: React.ReactNode; bar?: React.ReactNode; dock?: React.ReactNode; tabs?: 'home' | 'projects' | 'me'; className?: string }) {
+  return <div className={`screen${tabs ? ' screen--tabs' : ''}${dock ? ' screen--dock' : ''} ${className}`}>
+    {bar}{children}{dock && <div className="dock">{dock}</div>}{tabs && <TabBar active={tabs}/>}
+  </div>;
 }
-export const Title = ({ a, b, small = false }: { a: string; b?: string; small?: boolean }) => <h1 className={`title${small ? ' small' : ''}`}>{a}{b && <em>{b}</em>}</h1>;
+export function AppBar({ back, onBack, title = '', overlay = false, brand = false, end }: { back?: string; onBack?: () => void; title?: string; overlay?: boolean; brand?: boolean; end?: React.ReactNode }) {
+  const { workspaceName } = useClient();
+  const cls = `icon-btn${overlay ? ' icon-btn--media' : ''}`;
+  const start = onBack ? <button className={cls} onClick={onBack} aria-label="上一步"><Icon name="back"/></button>
+    : back ? <Link className={cls} href={back} aria-label="返回"><Icon name="back"/></Link>
+      : brand ? <span className="brand-mark" aria-label={`${workspaceName}标志（占位）`}>标志</span> : <span/>;
+  return <header className={`appbar${overlay ? ' appbar--overlay' : ''}`}>{start}<b className="appbar__title">{title}</b><span className="appbar__end">{end}</span></header>;
+}
+function TabBar({ active }: { active: 'home' | 'projects' | 'me' }) {
+  const { base, user, go } = useClient();
+  const items = [['home', base, '首页'], ['folder', `${base}/projects`, '项目'], ['user', `${base}/me`, '我的']] as const;
+  const keys = { home: 0, projects: 1, me: 2 };
+  return <nav className="tabbar" aria-label="主菜单">
+    {items.map(([icon, href, text], i) => <Link key={href} className="tabbar__item" href={href} aria-current={keys[active] === i ? 'page' : undefined}>
+      <Icon name={icon} size={22} strokeWidth={keys[active] === i ? 2.1 : 1.7}/><span>{text}</span></Link>)}
+    <button className="tabbar__action" aria-label="提交方案需求" onClick={() => go(user ? `${base}/new` : `${base}/login?next=${encodeURIComponent(`${base}/new`)}`)}><i><Icon name="plus" size={26}/></i></button>
+  </nav>;
+}
+/** Title + explanation + optional timeline and actions: waiting, review, results, failures. */
+export function StatusScreen({ back, seal, title, sub, items, children }: { back?: string; seal?: React.ReactNode; title: string; sub: React.ReactNode; items?: [string, 'done' | 'now' | '', React.ReactNode?][]; children?: React.ReactNode }) {
+  return <Screen bar={<AppBar back={back}/>}><main className="screen__body">{seal}<h1 className="page-title">{title}</h1><p className="lede">{sub}</p>
+    {items && <Timeline items={items}/>}{children}</main></Screen>;
+}
 export function NotFound({ title, text }: { title: string; text: string }) {
   const { base, entry } = useClient();
-  return <section className="status-page"><Title a="找不到" b={title}/><p className="lede">{text}</p>
-    {entry && <div className="stack"><Link className="btn primary wide" href={`${base}/projects`}>我的项目</Link></div>}</section>;
+  return <StatusScreen back={entry ? base : undefined} seal={<span className="seal seal--quiet" aria-hidden="true"><Icon name="info" size={26}/></span>} title={title} sub={text}>
+    {entry && <div className="btn-stack"><Link className="btn btn--secondary btn--block" href={`${base}/projects`}>查看我的项目</Link></div>}</StatusScreen>;
 }
 export function Loading({ text = '正在读取…' }: { text?: string }) { return <p className="page-loading" role="status">{text}</p>; }
+export function LoadingScreen({ back, text }: { back?: string; text?: string }) { return <Screen bar={<AppBar back={back}/>}><Loading text={text}/></Screen>; }
 export function ErrorLine({ error }: { error: unknown }) {
   if (!error) return null;
-  return <div className="alert danger error-line" role="alert"><Icon name="alert" size={18}/><span>{error instanceof Error ? error.message : '请求未完成，请稍后重试。'}</span></div>;
+  return <Alert kind="danger">{error instanceof Error ? error.message : '请求未完成，请稍后重试。'}</Alert>;
 }
 /** Redirects to the entry login when signed out; renders nothing until the session is known. */
 export function useSignedIn(next: string) {
@@ -108,49 +120,36 @@ export function useStored<T>(key: string, initial: T): [T, (value: T | ((old: T)
   return [value, set];
 }
 
-// ---------- 企业入口首页 ----------
+// ---------- 首页 ----------
 function HomeView() {
-  const { entry, base, user, workspaceName, go } = useClient();
+  const { entry, workspaceName } = useClient();
   const catalog = useQuery({ queryKey: ['catalog', entry], queryFn: () => clientApi(entry).catalog(), staleTime: 5 * 60_000 });
-  const start = () => go(user ? `${base}/new` : `${base}/login?next=${encodeURIComponent(`${base}/new`)}`);
-  return <Shell>
-    <section className="cover">
-      <figure className="cover-plate">
-        <img src="/client/demo-villa-cover.jpg" alt="示例别墅一层客厅铺贴效果图（示意）"/>
-        <figcaption><span>示例别墅 · 一层客厅</span><span>效果图 · 示意素材</span></figcaption>
-      </figure>
-      <h1 className="display">为你的空间，<em>先铺一遍石材。</em></h1>
-      <p className="lede">提交户型与石材偏好，得到 2–3 个铺贴方案的效果图。{workspaceName || '企业'}核对后发布，你可以在给定选项内调整，再确认。</p>
-      <div className="cover-actions">
-        <button className="design-row" onClick={start}>提交方案需求<span><Icon name="arrow" size={22}/></span></button>
-        <Link className="text-link" href={`${base}/projects`}>查看我的项目 <Icon name="chevron" size={14}/></Link>
-      </div>
+  return <Screen tabs="home">
+    <section className="home-hero">
+      <img src="/client/demo-villa-cover.jpg" alt="示例别墅一层客厅效果图（示意）"/>
+      <AppBar brand overlay title={workspaceName}/>
+      <div className="home-hero__copy"><h1>为你的家，<br/>先做一遍硬装与软装</h1><p className="home-hero__caption">示例别墅一层客厅 · 效果图示意</p></div>
     </section>
-    <section className="section">
-      <h2 className="h2">从图纸到铺贴方案</h2>
-      <ol className="flow">
-        <li><b>示例别墅或上传图纸</b><span>DXF 自动转换；其他格式由企业协助转换。</span></li>
-        <li><b>勾选要铺石材的饰面</b><span>地面、背景墙、楼梯踏面。</span></li>
-        <li><b>挑选石材，得到 2–3 个方案</b><span>换石材、规格、铺法后重新出图，满意再确认。</span></li>
-      </ol>
-    </section>
-    <section className="section">
-      <div className="label-row"><h2 className="h2">企业石材库</h2><span className="tag">示意素材</span></div>
-      {catalog.isLoading ? <Loading/> : <div className="peek">{catalog.data?.stones.map(stone =>
-        <figure key={`${stone.id}:${stone.version}`}><Swatch stone={stone} size={192}/><figcaption>{stone.name}</figcaption></figure>)}</div>}
-      <ErrorLine error={catalog.error}/>
-    </section>
-    <section className="section share-hint">
-      <h2 className="h2">收到企业分享的链接？</h2>
-      <p>直接打开即可预览企业为你做好的方案。调整和确认需要手机号登录，并把项目绑定到你的账号。</p>
-    </section>
-  </Shell>;
+    <div className="home-body screen__body">
+      <p className="lede">提交户型与石材偏好，得到 3 个整体方案的效果图。{workspaceName || '企业'}核对后发布，你可以换软装风格、换石材铺法，满意再确认。</p>
+      <ol className="flow" aria-label="流程">{[['选户型', '示例或你的图纸'], ['选饰面与石材', '最多 3 款'], ['看 3 个方案', '可调整再确认']].map(([t, s]) =>
+        <li key={t}>{t}<small>{s}</small></li>)}</ol>
+      <Section title="三套软装风格" aside="演示"><StyleOptions/></Section>
+      <Section title="企业石材库" aside="示意素材">
+        {catalog.isLoading ? <Loading/> : <div className="stone-rail">{catalog.data?.stones.map(stone =>
+          <figure key={`${stone.id}:${stone.version}`}><Swatch stone={stone} size={176}/><figcaption>{stone.name}</figcaption></figure>)}</div>}
+        <ErrorLine error={catalog.error}/>
+      </Section>
+      <div className="section"><Group><div className="row"><RowMain icon="link" title="收到企业分享的链接？" sub="直接打开即可预览；调整和确认需手机号登录并绑定"/></div></Group></div>
+      <p className="fine-print">演示环境 · 数据、尺寸与效果图均为示意</p>
+    </div>
+  </Screen>;
 }
 
 // ---------- 手机号登录 ----------
 const codeMessages: Record<string, string> = {
   INVALID_PHONE: '请输入 11 位中国大陆手机号。', OTP_NOT_REQUESTED: '请先获取验证码。',
-  OTP_EXPIRED: '验证码已过期（5 分钟内有效）。请重新获取。', OTP_LOCKED: '错误次数过多，此验证码已失效。请重新获取验证码。',
+  OTP_EXPIRED: '验证码已过期（5 分钟内有效）。请重新获取。', OTP_LOCKED: '错误次数过多，此验证码已失效。请重新获取。',
 };
 type LoginState = { phone: string; code: string; demoCode: string | null; expiresAt: number; cooldownUntil: number; sent: boolean };
 function LoginView({ next }: { next: string | null }) {
@@ -192,86 +191,109 @@ function LoginView({ next }: { next: string | null }) {
       if (err.code === 'OTP_LOCKED' || err.code === 'OTP_EXPIRED') setState(s => ({ ...s, demoCode: null }));
     } finally { setBusy(false); }
   };
-  const fieldError = error && ['INVALID_PHONE', 'OTP_NOT_REQUESTED', 'FORMAT'].includes(error.code);
+  const fieldError = !!error && ['INVALID_PHONE', 'OTP_NOT_REQUESTED', 'FORMAT'].includes(error.code);
   const locked = error?.code === 'OTP_LOCKED';
-  const sendLabel = rate ? '暂不可获取' : cooldown ? `${cooldown} 秒后重新获取` : state.sent ? '重新获取' : '获取验证码';
+  const sendLabel = rate ? '暂不可获取' : cooldown ? `${cooldown} 秒后重发` : state.sent ? '重新获取' : '获取验证码';
   const showDemo = state.sent && state.demoCode && state.expiresAt > now && !locked;
-  return <Shell back={fromShare ? target.replace(/\/bind$/, '') : base}>
-    <section className="form-page">
-      <Title a="手机号" b="登录"/>
-      <p className="lede">验证手机号即可登录，无需密码。首次登录会关联{workspaceName || '企业'}，你提交和绑定的方案都保存在这个账号下。</p>
-      {fromShare && <p className="note"><Icon name="link" size={16}/><span>登录后，分享给你的项目会按企业设定的方式绑定到你的账号。</span></p>}
-      <label className="field"><span>手机号</span><span className="field-row"><span className="prefix">+86</span>
-        <input inputMode="numeric" autoComplete="tel" maxLength={11} placeholder="11 位手机号" value={state.phone}
-          onChange={e => { const phone = e.target.value.replace(/\D/g, ''); setState(s => ({ ...s, phone })); }}/></span></label>
-      {fieldError && error.code === 'INVALID_PHONE' && <p className="field-error">{error.message}</p>}
-      <label className="field"><span>验证码</span><span className="field-row">
-        <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 位验证码" value={state.code}
-          onChange={e => { const code = e.target.value.replace(/\D/g, ''); setState(s => ({ ...s, code })); }}
-          onKeyDown={e => { if (e.key === 'Enter') login(); }}/>
-        <button className="send" onClick={send} disabled={busy || !!cooldown || rate}>{sendLabel}</button></span></label>
-      {fieldError && error.code !== 'INVALID_PHONE' && <p className="field-error">{error.message}</p>}
-      {showDemo && <div className="demo-code" role="status"><div><span>演示验证码</span><strong>{state.demoCode}</strong></div>
-        <small>演示环境不发送短信，验证码只显示在这里 · 5 分钟内有效</small>
-        <button onClick={() => setState(s => ({ ...s, code: s.demoCode ?? '' }))}>填入</button></div>}
-      {error && !fieldError && <div className="alert danger" role="alert"><Icon name="alert" size={18}/><span>{error.message}</span></div>}
-      <button className="btn primary wide" onClick={login} disabled={busy || locked || rate}>{busy ? '请稍候…' : '登录'}</button>
-      <p className="fine">登录即表示同意《用户协议》与《隐私政策》（演示占位）。</p>
-    </section>
-  </Shell>;
+  return <Screen bar={<AppBar back={fromShare ? target.replace(/\/bind$/, '') : base}/>}>
+    <main className="screen__body">
+      <h1 className="page-title">手机号登录</h1>
+      <p className="lede">验证手机号即可，无需密码。首次登录会关联{workspaceName || '企业'}，你提交和绑定的方案都保存在这个账号下。</p>
+      {fromShare && <Alert kind="info">登录后，分享给你的方案会按企业设定的方式绑定到你的账号。</Alert>}
+      <Group>
+        <label className="field"><span className="field__label">手机号</span><span className="field__control"><span className="field__prefix">+86</span>
+          <input inputMode="numeric" autoComplete="tel-national" maxLength={11} placeholder="11 位手机号" value={state.phone}
+            onChange={e => { const phone = e.target.value.replace(/\D/g, ''); setState(s => ({ ...s, phone })); }}/></span></label>
+        <label className="field"><span className="field__label">验证码</span><span className="field__control">
+          <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 位验证码" value={state.code}
+            onChange={e => { const code = e.target.value.replace(/\D/g, ''); setState(s => ({ ...s, code })); }}
+            onKeyDown={e => { if (e.key === 'Enter') login(); }}/>
+          <button className="field__action" onClick={send} disabled={busy || !!cooldown || rate}>{sendLabel}</button></span></label>
+      </Group>
+      {showDemo && <div className="demo-code" role="status"><div><span>演示验证码 · 不发送短信 · 5 分钟内有效</span><strong>{state.demoCode}</strong></div>
+        <button className="btn btn--secondary btn--sm" onClick={() => setState(s => ({ ...s, code: s.demoCode ?? '' }))}>填入</button></div>}
+      {error && <Alert kind={fieldError ? 'hint' : 'danger'}>{error.message}</Alert>}
+      <div className="btn-stack"><button className="btn btn--primary btn--block" onClick={login} disabled={busy || locked || rate}>{busy ? '请稍候…' : '登录'}</button></div>
+      <p className="fine-print">登录即表示同意《用户协议》《隐私政策》（演示占位）</p>
+    </main>
+  </Screen>;
 }
 
 // ---------- 我的项目 ----------
 function ProjectsView() {
-  const { entry, base, go, refreshSession, toast } = useClient();
+  const { entry, base } = useClient();
   const user = useSignedIn(`${base}/projects`);
-  const queries = useQueryClient();
   const list = useQuery({ queryKey: ['requests', entry], queryFn: () => clientApi(entry).requests(), enabled: !!user,
     refetchInterval: query => (query.state.data ?? []).some(r => requestStatus(r).polling) ? 4000 : false });
   const pending = rememberedShares(entry);
-  if (!user) return <Shell back={base}><Loading/></Shell>;
+  if (!user) return <Screen tabs="projects" bar={<AppBar brand/>}><Loading/></Screen>;
   const mine = (list.data ?? []).filter(r => r.origin === 'customer'), shared = (list.data ?? []).filter(r => r.origin === 'member');
-  const logout = async () => { await signOut().catch(() => {}); queries.clear(); await refreshSession(); toast('已退出登录'); go(base, true); };
-  const start = () => go(`${base}/new`);
   const empty = !list.isLoading && !mine.length && !shared.length && !pending.length;
-  return <Shell back={base} dock={mine.length || shared.length ? <button className="btn primary wide" onClick={start}><Icon name="plus" size={18}/> 提交新的方案需求</button> : undefined}>
-    <section className="projects">
-      <Title a="我的" b="项目"/>
-      <p className="account"><Icon name="phone" size={16}/><span>{maskPhone(user.phoneNumber)}</span><button onClick={logout}>退出登录</button></p>
-      <p className="lede small">只显示你自己提交的，以及已绑定到你账号的项目。</p>
+  return <Screen tabs="projects" bar={<AppBar brand/>}>
+    <main className="screen__body">
+      <h1 className="page-title">我的项目</h1>
       <ErrorLine error={list.error}/>
-      {list.isLoading ? <Loading/> : empty ? <div className="empty"><h2 className="h2">还没有项目</h2>
-        <p>提交户型和石材偏好，得到第一份铺贴方案；或打开企业发给你的分享链接。</p>
-        <button className="btn primary" onClick={start}>提交方案需求</button></div> : <>
-        <h2 className="h3 group">我提交的 <small>{mine.length}</small></h2>
-        {mine.length ? <ul className="proj-list">{mine.map(r => <ProjectRow key={r.id} request={r}/>)}</ul> : <p className="muted small none">还没有自己提交的方案需求。</p>}
-        <h2 className="h3 group">企业分享给我的 <small>{shared.length + pending.length}</small></h2>
-        <ul className="proj-list">{shared.map(r => <ProjectRow key={r.id} request={r}/>)}
-          {pending.map(token => <PendingRow key={token} token={token}/>)}</ul>
-        {!shared.length && !pending.length && <p className="muted small none">打开企业分享的链接并完成绑定后，项目会出现在这里。</p>}
+      {list.isLoading ? <Loading/> : empty ? <div className="empty"><span className="seal seal--quiet" aria-hidden="true"><Icon name="folder" size={26}/></span><h2>还没有项目</h2>
+        <p>点下方 + 按钮提交户型和石材偏好，得到第一份整体方案；或打开企业发给你的分享链接。</p></div> : <>
+        <Section title="我提交的" aside={String(mine.length)}>
+          {mine.length ? mine.map(r => <ProjectCard key={r.id} request={r}/>) : <p className="meta">还没有自己提交的方案需求。</p>}
+        </Section>
+        <Section title="企业分享给我的" aside={String(shared.length + pending.length)}>
+          {shared.map(r => <ProjectCard key={r.id} request={r}/>)}
+          {pending.map(token => <PendingCard key={token} token={token}/>)}
+          {!shared.length && !pending.length && <p className="meta">打开企业分享的链接并完成绑定后，方案会出现在这里。</p>}
+        </Section>
       </>}
-    </section>
-  </Shell>;
+    </main>
+  </Screen>;
 }
-function ProjectRow({ request }: { request: FinishRequestView }) {
+function ProjectCard({ request }: { request: FinishRequestView }) {
   const { base, entry } = useClient();
   const status = requestStatus(request), image = request.schemes.find(s => s.render?.imageHref)?.render?.imageHref;
   const catalog = useQuery({ queryKey: ['catalog', entry], queryFn: () => clientApi(entry).catalog(), staleTime: 5 * 60_000 });
   const plan = catalog.data?.demoVilla.plan;
-  return <li><Link className="proj" href={`${base}/r/${request.id}`}>
-    <span className="proj-thumb">{image ? <img src={image} alt=""/> : request.source === 'demo-villa' && plan
+  return <Link className="project" href={`${base}/r/${request.id}`}>
+    <span className="project__thumb">{image ? <img src={image} alt=""/> : request.source === 'demo-villa' && plan
       ? <PlanDrawing plan={plan} finishes={catalog.data!.demoVilla.finishes} levelId={plan.levels[0].id} selected={request.finishIds} small/>
-      : <Icon name="file" size={22}/>}</span>
-    <span className="proj-text"><b>{request.title}</b><StatusChip kind={status.kind}>{status.label}</StatusChip><small>{status.line}</small></span>
-    <Icon name="chevron" size={16}/></Link></li>;
+      : <Icon name={status.kind === 'act' ? 'upload' : request.status === 'assisted_conversion' ? 'file' : 'clock'} size={24}/>}</span>
+    <span className="project__main"><b>{request.title}</b><Badge kind={status.kind}>{status.label}</Badge><span className="meta">{status.line}</span></span>
+    <span className="row__chev"><Icon name="right" size={16}/></span></Link>;
 }
-function PendingRow({ token }: { token: string }) {
+function PendingCard({ token }: { token: string }) {
   const preview = useQuery({ queryKey: ['share', token], queryFn: () => import('./client-api').then(m => m.shareApi(token).preview()), retry: false });
   const viewer = preview.data?.viewer;
   if (!preview.data || viewer?.boundToMe || !viewer?.application) return null;
-  return <li><Link className="proj" href={`/s/${encodeURIComponent(token)}/bind`}><span className="proj-thumb lock"><Icon name="lock" size={22}/></span>
-    <span className="proj-text"><b>{preview.data.request.title}</b>
-      <StatusChip kind={viewer.application === 'pending' ? 'review' : 'assist'}>{viewer.application === 'pending' ? '等待企业批准' : '未获批准'}</StatusChip>
-      <small>{viewer.application === 'pending' ? '绑定申请已提交，批准后可调整和确认' : '企业未批准这次绑定申请，可联系企业成员'}</small></span>
-    <Icon name="chevron" size={16}/></Link></li>;
+  const waiting = viewer.application === 'pending';
+  return <Link className="project" href={`/s/${encodeURIComponent(token)}/bind`}><span className="project__thumb"><Icon name="lock" size={24}/></span>
+    <span className="project__main"><b>{preview.data.request.title}</b><Badge kind={waiting ? 'wait' : 'act'}>{waiting ? '待企业批准' : '未获批准'}</Badge>
+      <span className="meta">{waiting ? '绑定申请已提交，批准后可调整和确认' : '企业未批准这次绑定申请，可联系企业成员'}</span></span>
+    <span className="row__chev"><Icon name="right" size={16}/></span></Link>;
+}
+
+// ---------- 我的：账号与主题 ----------
+export type Theme = 'system' | 'light' | 'dark';
+export const THEME_KEY = 'hestia.client.theme';
+function applyTheme(theme: Theme) {
+  if (theme === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+}
+function MeView() {
+  const { base, user, workspaceName, go, refreshSession, toast } = useClient();
+  const queries = useQueryClient();
+  const [theme, setTheme] = useState<Theme>('system');
+  // Read after mount: the server render cannot know the stored choice.
+  useEffect(() => { try { const saved = localStorage.getItem(THEME_KEY) as Theme | null; if (saved) setTheme(saved); } catch { /* memory only */ } }, []);
+  const pick = (value: Theme) => { setTheme(value); try { localStorage.setItem(THEME_KEY, value); } catch { /* memory only */ } applyTheme(value); };
+  const logout = async () => { await signOut().catch(() => {}); queries.clear(); await refreshSession(); toast('已退出登录'); go(base, true); };
+  return <Screen tabs="me" bar={<AppBar brand/>}>
+    <main className="screen__body">
+      <h1 className="page-title">我的</h1>
+      <div className="section"><Group><div className="row">
+        <RowMain icon="user" title={<span className="num">{user ? maskPhone(user.phoneNumber) : '未登录'}</span>} sub={user ? `已关联 ${workspaceName}` : '登录后可提交需求、调整和确认方案'}/>
+        {user === null && <Link className="btn btn--primary btn--sm" href={`${base}/login?next=${encodeURIComponent(`${base}/me`)}`}>登录</Link>}
+      </div></Group></div>
+      <Section title="显示"><Segmented label="显示主题" value={theme} onChange={pick} options={[['system', '跟随系统', 'system'], ['light', '浅色', 'sun'], ['dark', '深色', 'moon']]}/></Section>
+      <Section title="关于"><Group><Row label="企业" value={workspaceName}/><Row label="说明" value="效果图与石材为示意素材"/><Row label="协议" value="《用户协议》《隐私政策》（占位）"/></Group></Section>
+      {user && <div className="btn-stack"><button className="btn btn--secondary btn--block" onClick={logout}><Icon name="logout" size={17}/>退出登录</button></div>}
+    </main>
+  </Screen>;
 }

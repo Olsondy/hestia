@@ -59,6 +59,27 @@ export const clientApi = (entry: string) => {
     signIn: (phoneNumber: string, code: string) => post<{ user: { id: string; phoneNumber: string } }>('/api/auth/phone/sign-in', { phoneNumber, code, entry }),
   };
 };
+/** One pending option change on the adjust page; omitted fields keep their value. */
+export type SchemeChange = { finishId: string; stone?: { stoneId: string; stoneVersion: number }; tile?: { length: number; width: number }; pattern?: string; border?: boolean };
+/**
+ * Re-render once with all pending changes (ADR-0010). Reserved interface: until the batch endpoint exists (H02), changes
+ * are merged per finish and sent as one adjustment per finish, chained by revision. A rejection keeps the changes that
+ * were already applied and reports how many finishes went through.
+ */
+export async function adjustBatch(entry: string, requestId: string, schemeId: string, expectedRevision: number, changes: SchemeChange[]) {
+  const merged = new Map<string, SchemeChange>();
+  for (const change of changes) merged.set(change.finishId, { ...merged.get(change.finishId), ...change });
+  const api = clientApi(entry);
+  let revision = expectedRevision, view: FinishRequestView | null = null, applied = 0;
+  for (const change of merged.values()) {
+    try { view = await api.adjust(requestId, schemeId, { operationId: operationId(), expectedRevision: revision, ...change }); }
+    catch (error) { if (error instanceof ClientError) error.details = { ...error.details, applied, view }; throw error; }
+    applied++;
+    revision = view.schemes.find(s => s.id === schemeId)?.revision ?? revision + 1;
+  }
+  return view;
+}
+
 export const shareApi = (token: string) => ({
   preview: () => get<{ preview: SharePreviewView }>(`/api/share/${encodeURIComponent(token)}`).then(r => ({ ...r.preview, request: tidyRequest(r.preview.request) })),
   scene: (schemeId: string) => get<{ scene: SceneSnapshot }>(`/api/share/${encodeURIComponent(token)}/schemes/${schemeId}/scene`).then(r => r.scene),

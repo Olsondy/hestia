@@ -1,35 +1,42 @@
 'use client';
-// 方案需求：提交、状态（出图、待审核、辅助转换）、方案结果、选项式调整、确认与留言。
+// 方案需求：提交、状态（出图、待审核、协助转换）、沉浸方案页、选项式调整（统一出图）、确认与留言。
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { StoneSpec } from '../../../../packages/contracts/src/finishes';
-import { clientApi, ClientError, maskPhone, operationId, type FinishRequestView, type FinishSchemeView, type RequestFinishView, type SceneSnapshot } from './client-api';
-import { ErrorLine, Loading, NotFound, Shell, Title, useClient, useSignedIn, useStored } from './client-app';
+import { adjustBatch, clientApi, ClientError, maskPhone, operationId, type FinishRequestView, type FinishSchemeView, type RequestFinishView, type SceneSnapshot, type SchemeChange } from './client-api';
+import { AppBar, ErrorLine, Loading, LoadingScreen, NotFound, Screen, StatusScreen, useClient, useSignedIn, useStored } from './client-app';
 import { Icon, PatternGlyph, patternName } from './client-icons';
-import { dateText, PlanDrawing, StatusChip, Swatch, SwatchChip, Timeline, type StatusKind } from './client-parts';
+import { Alert, Badge, dateText, Group, Palette, PlanDrawing, Row, RowMain, Section, Segmented, Stepper, StyleOptions, Swatch, SwatchChip, Switch, type BadgeKind } from './client-parts';
 import { SchemeViewer } from './scheme-viewer';
+import { softById, softStyleStore, useSoftStyle } from './soft-styles';
 
 // ---------- 状态 ----------
 const rendering = (s: FinishSchemeView) => !s.render || s.render.status === 'queued' || s.render.status === 'running';
-export function requestStatus(r: FinishRequestView): { kind: StatusKind; label: string; line: string; polling: boolean } {
+export function requestStatus(r: FinishRequestView): { kind: BadgeKind; label: string; line: string; polling: boolean } {
   const done = r.schemes.filter(s => s.render?.status === 'completed').length;
   switch (r.status) {
-    case 'awaiting_drawing': return { kind: 'assist', label: '待上传图纸', line: '请上传户型图纸', polling: false };
-    case 'converting': return { kind: 'wait', label: '图纸转换中', line: 'DXF 自动转换中', polling: true };
-    case 'assisted_conversion': return { kind: 'assist', label: '需辅助转换', line: '等待企业转换图纸', polling: true };
-    case 'pending_review': return { kind: 'review', label: '待审核', line: '企业审核后发布', polling: true };
-    default:
-      if (r.confirmation?.current) {
-        const s = r.schemes.find(x => x.id === r.confirmation!.schemeId);
-        return { kind: 'ok', label: '已确认', line: `已确认 方案 ${s?.name ?? ''} · 修订 ${r.confirmation.revision}`, polling: r.schemes.some(rendering) };
+    case 'awaiting_drawing': return { kind: 'act', label: '待上传图纸', line: '请重新上传户型图纸', polling: false };
+    case 'converting': return { kind: 'wait', label: '图纸转换中', line: '正在读取图层、墙体与楼层', polling: true };
+    case 'assisted_conversion': return { kind: 'wait', label: '需协助转换', line: '等待企业转换图纸', polling: true };
+    case 'pending_review': return { kind: 'wait', label: '待审核', line: '企业核对后发布', polling: true };
+    default: {
+      const polling = r.schemes.some(rendering), c = r.confirmation;
+      if (c) {
+        const s = r.schemes.find(x => x.id === c.schemeId);
+        return c.current ? { kind: 'ok', label: '已确认', line: `已确认 方案 ${s ? letter(s) : ''} · 修订 ${c.revision}`, polling }
+          : { kind: 'act', label: '需重新确认', line: `确认后又调整过 · 已确认修订 ${c.revision}`, polling };
       }
-      if (!done && r.schemes.some(rendering)) return { kind: 'wait', label: '出图中', line: '正在排版出图', polling: true };
-      return { kind: 'ok', label: '已发布', line: `${r.schemes.length} 个方案 · ${r.finishes.length} 处饰面`, polling: r.schemes.some(rendering) };
+      if (!done && polling) return { kind: 'wait', label: '出图中', line: '正在排版出图', polling: true };
+      return { kind: 'ok', label: '已发布', line: `${r.schemes.length} 个整体方案 · ${r.finishes.length} 处饰面`, polling };
+    }
   }
 }
+export const letter = (s: { ordinal: number }) => String.fromCharCode(64 + s.ordinal);
+const schemeTitle = (s: FinishSchemeView) => `${letter(s)} · ${s.name}`;
 const mm = (m: number) => Math.round(m * 1000);
 export const tileLabel = (t: { length: number; width: number }) => `${mm(t.length)}×${mm(t.width)}`;
+const sameTile = (a: { length: number; width: number }, b: { length: number; width: number }) => Math.abs(a.length - b.length) < 1e-9 && Math.abs(a.width - b.width) < 1e-9;
 const stoneOf = (scheme: FinishSchemeView, ref: { stoneId: string; stoneVersion: number } | undefined) =>
   ref && scheme.surfaceDesign.stones.find(s => s.id === ref.stoneId && s.version === ref.stoneVersion);
 const tilingOf = (scheme: FinishSchemeView, finishId: string) => scheme.surfaceDesign.tilings.find(t => t.finishId === finishId);
@@ -47,7 +54,8 @@ function levelsOf(r: FinishRequestView) {
   for (const f of r.finishes) if (f.levelId && !seen.has(f.levelId)) seen.set(f.levelId, f.levelName ?? f.levelId);
   return [...seen].map(([id, name]) => ({ id, name }));
 }
-const splitTitle = (title: string) => { const i = title.indexOf(' · '); return i > 0 ? [title.slice(0, i + 3), title.slice(i + 3)] : [title, '']; };
+const shortName = (title: string) => title.split(' · ')[0];
+const pickScheme = (r: FinishRequestView, id: string | null) => r.schemes.find(x => x.id === id) ?? r.schemes.find(x => x.id === r.confirmation?.schemeId) ?? r.schemes[0];
 
 // ---------- 提交方案需求 ----------
 type Draft = { step: 1 | 2 | 3; source: 'demo-villa' | 'drawing' | null; fileName: string | null; level: string | null; finishIds: string[] | null;
@@ -55,7 +63,7 @@ type Draft = { step: 1 | 2 | 3; source: 'demo-villa' | 'drawing' | null; fileNam
 const freshDraft = (): Draft => ({ step: 1, source: null, fileName: null, level: null, finishIds: null, kinds: ['floor', 'wall', 'stair'], stones: [], tone: null, patterns: [],
   border: 'auto', note: '', op: operationId(), uploadOp: operationId(), requestId: null });
 const toneValue: Record<string, 'light' | 'warm' | 'dark' | 'unsure'> = { 浅色: 'light', 暖色: 'warm', 深色: 'dark', 不确定: 'unsure' };
-const kindName: Record<string, string> = { floor: '地面', wall: '墙面', stair: '楼梯踏面' };
+const kindName: Record<string, string> = { floor: '地面', wall: '墙面', stair: '楼梯' };
 const kindChoice: Record<string, string> = { floor: '各层地面', wall: '背景墙', stair: '楼梯踏面' };
 const stoneKey = (s: { id: string; version: number }) => `${s.id}:${s.version}`;
 function finishSize(finish: { kind: string; outline?: { x: number; z: number }[]; start?: number; end?: number }) {
@@ -66,6 +74,7 @@ function finishSize(finish: { kind: string; outline?: { x: number; z: number }[]
   if (finish.kind === 'wall' && finish.end !== undefined) return `宽 ${(finish.end - (finish.start ?? 0)).toFixed(1)} m`;
   return finish.kind === 'stair' ? '踏步与平台' : '整间';
 }
+const toggle = (list: string[], value: string) => list.includes(value) ? list.filter(v => v !== value) : [...list, value];
 
 export function NewRequestView() {
   const { entry, base, workspaceName, go, toast } = useClient();
@@ -94,8 +103,9 @@ export function NewRequestView() {
     onSuccess: request => { setDraft(freshDraft()); queries.invalidateQueries({ queryKey: ['requests', entry] }); queries.setQueryData(['request', entry, request.id], request); go(`${base}/r/${request.id}`, true); },
     onError: error => toast(error instanceof Error ? error.message : '提交未完成，请重试'),
   });
-  if (!user || catalog.isLoading) return <Shell back={base}><Loading/></Shell>;
-  if (!catalog.data) return <Shell back={base}><ErrorLine error={catalog.error}/></Shell>;
+  const bar = (step: number) => step > 1 ? <AppBar onBack={() => set({ step: (step - 1) as 1 | 2 })} title="提交方案需求"/> : <AppBar back={base} title="提交方案需求"/>;
+  if (!user || catalog.isLoading) return <LoadingScreen back={base}/>;
+  if (!catalog.data) return <Screen bar={bar(1)}><main className="screen__body"><ErrorLine error={catalog.error}/></main></Screen>;
   const { stones, demoVilla } = catalog.data, plan = demoVilla.plan;
   const finishIds = d.finishIds ?? demoVilla.finishes.map(f => f.id);
   const levels = plan.levels.filter(l => demoVilla.finishes.some(f => finishLevel(f, plan) === l.id));
@@ -104,76 +114,67 @@ export function NewRequestView() {
   const fileMissing = drawing && !file.current;
   const ready = d.source === 'demo-villa' || (drawing && !!file.current);
   const pick = (f: File | undefined) => { if (!f) return; file.current = f; set({ source: 'drawing', fileName: f.name }); force(n => n + 1); };
-  const toggle = (list: string[], value: string) => list.includes(value) ? list.filter(v => v !== value) : [...list, value];
-  const stepper = <ol className="stepper" aria-label="提交步骤">{['图纸', '饰面', '石材与偏好'].map((n, i) =>
-    <li key={n} className={i + 1 === d.step ? 'on' : i + 1 < d.step ? 'done' : ''} aria-current={i + 1 === d.step ? 'step' : undefined}><i>{i + 1}</i>{n}</li>)}</ol>;
+  const step = (n: 1 | 2 | 3) => { set({ step: n }); window.scrollTo(0, 0); };
   let body: React.ReactNode, dock: React.ReactNode;
   if (d.step === 1) {
-    body = <>{stepper}<Title a="先选择" b="户型来源"/>
-      <div className="choices" role="radiogroup" aria-label="户型来源">
-        <button className="choice" role="radio" aria-checked={d.source === 'demo-villa'} onClick={() => { file.current = null; set({ source: 'demo-villa', fileName: null }); }}>
-          <span className="choice-plan">{levels[0] && <PlanDrawing plan={plan} finishes={demoVilla.finishes} levelId={levels[0].id} selected={[]} small/>}</span>
-          <span className="choice-text"><b>示例别墅（演示）</b><small>三层 · {demoVilla.finishes.length} 处可铺贴饰面 · 尺寸为示意</small></span><span className="radio" aria-hidden="true"/>
-        </button>
-        <div className={`choice upload${drawing ? ' is-on' : ''}`}>
-          <label className="choice-main"><input type="file" className="sr-only" accept=".dxf,.dwg,.pdf,.png,.jpg,.jpeg" onChange={e => pick(e.target.files?.[0])}/>
-            <span className="choice-icon"><Icon name="upload" size={22}/></span>
-            <span className="choice-text"><b>上传我的图纸</b><small>DXF 自动转换；PDF、图片、DWG 等需企业辅助转换</small></span><span className="radio" aria-hidden="true"/></label>
-          {drawing && d.fileName && (fileMissing
-            ? <div className="upload-state assist" role="status"><div className="file-line"><Icon name="file" size={18}/><b>{d.fileName}</b></div><p>页面刷新后需要重新选择这个文件。</p></div>
-            : dxf ? <div className="upload-state ok" role="status"><div className="file-line"><Icon name="file" size={18}/><b>{d.fileName}</b><span className="status ok">DXF</span></div>
-                <p>提交后在后台自动转换，读取图层、墙体与楼层。</p><p className="small">自动转换的结果需企业核对后才会发布方案。</p></div>
-              : <div className="upload-state assist" role="status"><div className="file-line"><Icon name="file" size={18}/><b>{d.fileName}</b><span className="status assist">需辅助转换</span></div>
-                <p><b>需辅助转换，企业将协助处理。</b>这个格式不能自动识别，{workspaceName}会协助转换图纸，确认楼层和饰面后再出方案。</p><p className="small">你可以继续提交石材偏好。</p></div>)}
+    body = <><h1 className="page-title">先选择户型</h1><p className="lede">用示例别墅体验完整流程，或上传你家的图纸。</p>
+      <div className="section" role="radiogroup" aria-label="户型来源">
+        <button className="option" role="radio" aria-checked={d.source === 'demo-villa'} onClick={() => { file.current = null; set({ source: 'demo-villa', fileName: null }); }}>
+          <span className="option__media">{levels[0] && <PlanDrawing plan={plan} finishes={demoVilla.finishes} levelId={levels[0].id} selected={[]} small/>}</span>
+          <span className="option__body"><b>示例别墅（演示）</b><small>{plan.levels.length} 层 · {demoVilla.finishes.length} 处可铺贴饰面 · 尺寸为示意</small></span>
+          <span className="radio"><Icon name="check" size={14}/></span></button>
+        <div className="upload" data-on={drawing ? '' : undefined}>
+          <label className="option" role="radio" aria-checked={drawing}><input type="file" className="sr-only" accept=".dxf,.dwg,.pdf,.png,.jpg,.jpeg" onChange={e => pick(e.target.files?.[0])}/>
+            <span className="option__media"><Icon name="upload" size={22}/></span>
+            <span className="option__body"><b>上传我的图纸</b><small>DXF 提交后自动转换；PDF、图片、DWG 由企业协助转换</small></span>
+            <span className="radio"><Icon name="check" size={14}/></span></label>
+          {drawing && d.fileName && <>
+            <div className="upload__file"><Icon name="file" size={16}/><b>{d.fileName}</b>{fileMissing ? <Badge kind="act">需重新选择</Badge> : dxf ? <Badge>提交后自动转换</Badge> : <Badge>需企业协助转换</Badge>}</div>
+            <p className="meta">{fileMissing ? '页面刷新后需要重新选择这个文件。' : dxf ? '自动转换的结果需企业核对后才会发布。' : `这个格式不能自动识别，${workspaceName}会协助转换后再出方案。可以继续提交偏好。`}</p>
+          </>}
         </div>
       </div></>;
-    dock = <button className="btn primary wide" disabled={!ready} onClick={() => set({ step: 2 })}>下一步：选择饰面 <Icon name="arrow" size={18}/></button>;
+    dock = <button className="btn btn--primary btn--block" disabled={!ready} onClick={() => step(2)}>下一步：选择饰面</button>;
   } else if (d.step === 2) {
     if (drawing) {
-      body = <>{stepper}<Title a="想铺石材的" b="部位"/>
-        <p className="lede">图纸转换后，企业会和你确认具体楼层与饰面。先告诉我们大致范围。</p>
-        <div className="chips big" role="group" aria-label="饰面类型">{['floor', 'wall', 'stair'].map(k =>
-          <button key={k} className="chip" aria-pressed={d.kinds.includes(k)} onClick={() => set({ kinds: toggle(d.kinds, k) })}>{kindChoice[k]}</button>)}</div>
-        <div className="alert assist"><Icon name="info" size={18}/><span>楼层与饰面将在图纸转换后确认。</span></div></>;
+      body = <><h1 className="page-title">想铺石材的部位</h1><p className="lede">图纸转换后，企业会和你确认具体楼层与饰面。先告诉我们大致范围。</p>
+        <div className="section chips" role="group" aria-label="饰面范围">{['floor', 'wall', 'stair'].map(k =>
+          <button key={k} className="chip" aria-pressed={d.kinds.includes(k)} onClick={() => set({ kinds: toggle(d.kinds, k) })}>{kindChoice[k]}</button>)}</div></>;
     } else {
       const here = demoVilla.finishes.filter(f => finishLevel(f, plan) === level);
       const count = (id: string) => finishIds.filter(fid => finishLevel(demoVilla.finishes.find(f => f.id === fid)!, plan) === id).length;
-      body = <>{stepper}<Title a="选择要铺石材的" b="饰面"/>
-        <p className="lede">饰面是建筑的一部分，不随家具移动。只为勾选的部位出方案。</p>
-        {levels.length > 1 && <div className="seg" role="tablist" aria-label="楼层">{levels.map(l =>
-          <button key={l.id} role="tab" aria-selected={l.id === level} onClick={() => set({ level: l.id })}>{l.name}<small>{count(l.id)}</small></button>)}</div>}
-        {level && <figure className="plan"><PlanDrawing plan={plan} finishes={demoVilla.finishes} levelId={level} selected={finishIds}/>
-          <figcaption>{plan.levels.find(l => l.id === level)?.name}平面 · 示例尺寸</figcaption></figure>}
-        <ul className="facet-list">{here.map(f => <li key={f.id}><button className="facet" aria-pressed={finishIds.includes(f.id)} onClick={() => set({ finishIds: toggle(finishIds, f.id) })}>
-          <span className="check"><Icon name="check" size={14}/></span>
-          <span className="facet-text"><b>{f.name}</b><small>{kindName[f.kind]} · {finishSize(f as never)}</small></span></button></li>)}</ul>
-        <p className="tally">已选 {finishIds.length} 处饰面{levels.length > 1 ? ` · ${levels.map(l => `${l.name} ${count(l.id)}`).join(' / ')}` : ''}</p></>;
+      body = <><h1 className="page-title">选择要铺石材的饰面</h1><p className="lede">饰面是建筑的一部分，不随家具移动。只为勾选的部位出方案。</p>
+        <Section title="示例别墅" aside={`已选 ${finishIds.length} 处`}>
+          {levels.length > 1 && <Segmented label="楼层" value={level ?? ''} onChange={v => set({ level: v })} options={levels.map(l => [l.id, `${l.name} · ${count(l.id)}`])}/>}
+          {level && <figure className="plan"><PlanDrawing plan={plan} finishes={demoVilla.finishes} levelId={level} selected={finishIds}/>
+            <figcaption>{plan.levels.find(l => l.id === level)?.name}平面 · 示例尺寸</figcaption></figure>}
+          <Group>{here.map(f => <button key={f.id} className="check" aria-pressed={finishIds.includes(f.id)} onClick={() => set({ finishIds: toggle(finishIds, f.id) })}>
+            <span className="check__box"><Icon name="check" size={14}/></span>
+            <RowMain title={f.name} sub={`${kindName[f.kind]} · ${finishSize(f as never)}`}/></button>)}</Group>
+        </Section></>;
     }
-    dock = <><button className="btn ghost" onClick={() => set({ step: 1 })}>上一步</button>
-      <button className="btn primary grow" disabled={drawing ? !d.kinds.length : !finishIds.length} onClick={() => set({ step: 3 })}>下一步：挑选石材 <Icon name="arrow" size={18}/></button></>;
+    dock = <><button className="btn btn--secondary" onClick={() => step(1)}>上一步</button>
+      <button className="btn btn--primary btn--grow" disabled={drawing ? !d.kinds.length : !finishIds.length} onClick={() => step(3)}>下一步：挑选石材</button></>;
   } else {
-    body = <>{stepper}<Title a="挑选石材与" b="偏好"/>
-      <p className="lede">来自{workspaceName}的石材库。最多选 3 款，方案会按选择顺序优先使用。</p>
-      <div className="label-row"><h2 className="h3">石材库</h2><span className="tag">示意素材</span></div>
-      <div className="stone-grid">{stones.map(s => { const n = d.stones.indexOf(stoneKey(s)) + 1; return <button key={stoneKey(s)} className="stone" aria-pressed={n > 0}
-        onClick={() => { if (n) set({ stones: d.stones.filter(k => k !== stoneKey(s)) }); else if (d.stones.length < 3) set({ stones: [...d.stones, stoneKey(s)] }); else toast('最多选择 3 款石材'); }}>
-        <Swatch stone={s} size={180}/><span className="stone-name">{s.name}</span><small>{s.surface === 'polished' ? '抛光' : '哑光'} · 示意</small>{n ? <i className="order">{n}</i> : null}</button>; })}</div>
-      <p className="tally">{d.stones.length ? `已选 ${d.stones.map(k => stones.find(s => stoneKey(s) === k)?.name).join('、')}` : '未选择时，按企业石材库的推荐款出方案'}</p>
-      <h2 className="h3">整体色调</h2>
-      <div className="chips" role="radiogroup" aria-label="整体色调">{Object.keys(toneValue).map(t =>
-        <button key={t} className="chip" role="radio" aria-checked={d.tone === t} onClick={() => set({ tone: t })}>{t}</button>)}</div>
-      <h2 className="h3">铺法偏好 <small>可多选</small></h2>
-      <div className="chips glyphs" role="group" aria-label="铺法偏好">{Object.keys(patternName).map(p =>
-        <button key={p} className="chip" aria-pressed={d.patterns.includes(p)} onClick={() => set({ patterns: toggle(d.patterns, p) })}><PatternGlyph pattern={p}/>{patternName[p]}</button>)}</div>
-      <h2 className="h3">波打线</h2>
-      <div className="chips" role="radiogroup" aria-label="波打线">{([['yes', '要'], ['no', '不要'], ['auto', '由方案决定']] as const).map(([v, t]) =>
-        <button key={v} className="chip" role="radio" aria-checked={d.border === v} onClick={() => set({ border: v })}>{t}</button>)}</div>
-      <label className="field"><span>补充说明（选填）</span><textarea rows={3} maxLength={300} placeholder="例如：客厅想更大气；家里有老人，楼梯要防滑。" value={d.note} onChange={e => set({ note: e.target.value })}/></label>
-      <p className="small muted">偏好会随需求一起交给企业；自动方案按空间与所选石材的规则生成。</p></>;
-    dock = <><button className="btn ghost" onClick={() => set({ step: 2 })}>上一步</button>
-      <button className="btn primary grow" disabled={submit.isPending || fileMissing} onClick={() => submit.mutate()}>{submit.isPending ? '正在提交…' : '提交方案需求'}</button></>;
+    body = <><h1 className="page-title">挑选石材与偏好</h1><p className="lede">来自{workspaceName}的石材库，最多 3 款，方案按选择顺序优先使用。软装风格出方案后可以切换。</p>
+      <Section title="石材" aside={d.stones.length ? `已选 ${d.stones.length} / 3` : '未选时按企业推荐'}>
+        <div className="swatches">{stones.map(s => { const n = d.stones.indexOf(stoneKey(s)) + 1; return <button key={stoneKey(s)} className="swatch" aria-pressed={n > 0}
+          onClick={() => { if (n) set({ stones: d.stones.filter(k => k !== stoneKey(s)) }); else if (d.stones.length < 3) set({ stones: [...d.stones, stoneKey(s)] }); else toast('最多选择 3 款石材'); }}>
+          <Swatch stone={s} size={180}/>{n ? <i className="swatch__order">{n}</i> : null}{s.name}<small>{s.surface === 'polished' ? '抛光' : '哑光'}</small></button>; })}</div>
+      </Section>
+      <Section title="整体色调"><div className="chips" role="radiogroup" aria-label="整体色调">{Object.keys(toneValue).map(t =>
+        <button key={t} className="chip" role="radio" aria-checked={d.tone === t} onClick={() => set({ tone: t })}>{t}</button>)}</div></Section>
+      <Section title="铺法偏好" aside="可多选"><div className="chips" role="group" aria-label="铺法偏好">{Object.keys(patternName).map(p =>
+        <button key={p} className="chip" aria-pressed={d.patterns.includes(p)} onClick={() => set({ patterns: toggle(d.patterns, p) })}><PatternGlyph pattern={p} size={18}/>{patternName[p]}</button>)}</div></Section>
+      <Section title="波打线"><div className="chips" role="radiogroup" aria-label="波打线">{([['yes', '要'], ['no', '不要'], ['auto', '由方案决定']] as const).map(([v, t]) =>
+        <button key={v} className="chip" role="radio" aria-checked={d.border === v} onClick={() => set({ border: v })}>{t}</button>)}</div></Section>
+      <Section title="补充说明" aside="选填"><Group><label className="field"><span className="sr-only">补充说明（选填）</span>
+        <textarea rows={3} maxLength={300} placeholder="例如：客厅想更大气；家里有老人，楼梯要防滑。" value={d.note} onChange={e => set({ note: e.target.value })}/></label></Group></Section>
+      <p className="fine-print">石材为示意素材；偏好会随需求一起交给企业</p></>;
+    dock = <><button className="btn btn--secondary" onClick={() => step(2)}>上一步</button>
+      <button className="btn btn--primary btn--grow" disabled={submit.isPending || fileMissing} onClick={() => submit.mutate()}>{submit.isPending ? '正在提交…' : '提交方案需求'}</button></>;
   }
-  return <Shell back={base} dock={dock}><section className="wizard">{body}</section></Shell>;
+  return <Screen bar={bar(d.step)} dock={dock}><main className="screen__body"><Stepper step={d.step} names={['户型', '饰面', '石材与偏好']}/>{body}</main></Screen>;
 }
 function finishLevel(f: { kind: string; levelId?: string; roomId?: string; wallId?: string; stairId?: string }, plan: { rooms: { id: string; levelId: string }[]; walls: { id: string; levelId: string }[]; stairs: { id: string; levelId: string }[] }) {
   if (f.kind === 'floor') return f.levelId ?? plan.rooms.find(r => r.id === f.roomId)?.levelId;
@@ -200,15 +201,15 @@ export function RequestRoute({ id, sub }: { id: string; sub?: string }) {
   const user = useSignedIn(`${base}/r/${id}${sub ? `/${sub}` : ''}`);
   const request = useQuery({ queryKey: ['request', entry, id], queryFn: () => clientApi(entry).request(id), enabled: !!user,
     refetchInterval: query => query.state.data && requestStatus(query.state.data).polling ? 3000 : false });
-  if (!user || request.isLoading) return <Shell back={`${base}/projects`}><Loading/></Shell>;
-  if (request.error instanceof ClientError && request.error.status === 404) return <Shell back={`${base}/projects`}><NotFound title="这个项目" text="项目不存在，或没有绑定到你的账号。"/></Shell>;
-  if (!request.data) return <Shell back={`${base}/projects`}><ErrorLine error={request.error}/></Shell>;
+  if (!user || request.isLoading) return <LoadingScreen back={`${base}/projects`}/>;
+  if (request.error instanceof ClientError && request.error.status === 404) return <NotFound title="找不到这个项目" text="项目不存在，或没有绑定到你的账号。"/>;
+  if (!request.data) return <Screen bar={<AppBar back={`${base}/projects`}/>}><main className="screen__body"><ErrorLine error={request.error}/></main></Screen>;
   const r = request.data;
   if (r.status === 'awaiting_drawing') return <UploadAgainView request={r}/>;
   if (r.status === 'converting') return <WaitView request={r} converting/>;
   if (r.status === 'assisted_conversion') return <AssistView request={r}/>;
   if (r.status === 'pending_review') return <ReviewView request={r}/>;
-  // First generation only: once a scheme has been adjusted, re-renders show inside the result and adjust pages.
+  // First generation only: once a scheme has been adjusted, re-renders show inside the scheme and adjust pages.
   if (!sub && r.schemes.every(s => s.revision === 1) && !r.schemes.some(s => s.render?.status === 'completed') && r.schemes.some(rendering)) return <WaitView request={r}/>;
   if (sub === 'adjust') return <AdjustView request={r}/>;
   if (sub === 'confirm') return <ConfirmView request={r}/>;
@@ -222,151 +223,159 @@ function RequestSummary({ request: r }: { request: FinishRequestView }) {
   const names = r.stones.map(ref => catalog.data?.stones.find(s => s.id === ref.stoneId && s.version === ref.stoneVersion)?.name).filter(Boolean);
   const p = r.preferences;
   const tone = p?.tone && Object.entries(toneValue).find(([, v]) => v === p.tone)?.[0];
-  const rows: [string, string][] = [
-    ['户型', r.source === 'demo-villa' ? '示例别墅（演示）' : r.drawingName ?? '户型图纸'],
-    ['饰面', r.finishes.length ? `${r.finishes.length} 处` : '图纸转换后确认'],
-    ['石材', names.join('、') || '—'],
-    ['偏好', [tone, p?.patterns?.map(x => patternName[x]).join('、'), p?.border === 'yes' ? '要波打线' : p?.border === 'no' ? '不要波打线' : ''].filter(Boolean).join(' · ') || '未填写'],
-  ];
-  if (r.note) rows.push(['说明', r.note]);
-  return <dl className="summary">{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>;
+  return <Section title="你的方案需求"><Group>
+    <Row label="户型" value={r.source === 'demo-villa' ? '示例别墅（演示）' : r.drawingName ?? '户型图纸'}/>
+    <Row label="饰面" value={r.finishes.length ? `${r.finishes.length} 处` : '图纸转换后确认'}/>
+    <Row label="石材" value={names.join('、') || '—'}/>
+    <Row label="偏好" value={[tone, p?.patterns?.map(x => patternName[x]).join('、'), p?.border === 'yes' ? '要波打线' : p?.border === 'no' ? '不要波打线' : ''].filter(Boolean).join(' · ') || '未填写'}/>
+    {r.note && <Row label="说明" value={r.note} stack/>}
+  </Group></Section>;
 }
 function WaitView({ request: r, converting = false }: { request: FinishRequestView; converting?: boolean }) {
   const { base } = useClient();
   const total = r.schemes.length || 3, done = r.schemes.filter(s => s.render && !rendering(s)).length;
-  const k = converting ? .15 : (1 + done) / (total + 1);
-  const steps = converting ? ['读取图层、墙体与楼层', '识别房间与饰面', '计算铺贴排版与切块', '提交企业审核'] : ['读取空间与饰面', '计算铺贴排版与切块', `渲染效果图（${done}/${total}）`, '整理方案'];
-  const at = converting ? 0 : 2;
-  return <Shell back={`${base}/projects`}>
-    <section className="status-page">
-      <StatusChip kind="wait">{converting ? '图纸转换中' : '出图中'}</StatusChip>
-      <Title a={converting ? '正在' : '正在'} b={converting ? '转换图纸' : '排版出图'}/>
-      <p className="lede">{converting ? `「${r.drawingName ?? '图纸'}」正在自动转换。转换完成后按房间生成铺贴方案，由企业核对后发布。` : `按你选择的 ${r.finishes.length} 处饰面和石材，计算整块与切块，再渲染效果图。每张效果图通常需要 1–2 分钟。`}可以离开此页，完成后在「我的项目」查看。</p>
-      <figure className="loom" aria-hidden="true"><svg viewBox="0 0 320 200">
-        {Array.from({ length: 9 }, (_, i) => <line key={`v${i}`} className="lv" style={{ ['--d' as string]: `${i * 90}ms` }} x1={i * 40} y1={0} x2={i * 40} y2={200}/>)}
-        {Array.from({ length: 6 }, (_, i) => <line key={`h${i}`} className="lh" style={{ ['--d' as string]: `${300 + i * 110}ms` }} x1={0} y1={i * 40} x2={320} y2={i * 40}/>)}
-      </svg><span className="loom-pct">{Math.round(k * 100)}%</span></figure>
-      <div className="bar-progress determinate"><i style={{ width: `${k * 100}%` }}/></div>
-      <ol className="steps-live">{steps.map((t, i) => <li key={t} className={i < at ? 'done' : i === at ? 'now' : ''}>{t}</li>)}</ol>
-      <Link className="btn ghost wide" href={`${base}/projects`}>去我的项目</Link>
-    </section>
-  </Shell>;
+  const k = converting ? .12 : (1 + done) / (total + 1);
+  const steps = [...(r.source === 'drawing' ? ['转换图纸'] : []), '读取空间与饰面', '计算铺贴排版与切块', `渲染 ${total} 张效果图`, r.source === 'drawing' ? '提交企业审核' : '整理方案'];
+  const at = converting ? 0 : steps.length - 2;
+  const slots = r.schemes.length ? r.schemes : [1, 2, 3].map(ordinal => ({ id: String(ordinal), ordinal, render: null } as unknown as FinishSchemeView));
+  return <Screen bar={<AppBar back={`${base}/projects`}/>}>
+    <main className="screen__body">
+      <h1 className="page-title">{converting ? '正在转换图纸' : '正在排版出图'}</h1>
+      <p className="lede">{converting ? `正在读取「${r.drawingName ?? '图纸'}」的图层、墙体与楼层。` : `按你选择的 ${r.finishes.length} 处饰面和石材计算整块与切块，再渲染效果图。`}每张约 1–2 分钟，可以离开此页，完成后在「项目」里查看。</p>
+      <div className="renders">{slots.map(s => { const href = s.render?.status === 'completed' ? s.render.imageHref : null;
+        return <div key={s.id} className="render-slot" data-state={href ? 'done' : converting ? 'todo' : 'now'}>{href && <img src={href} alt=""/>}<span>方案 {letter(s)}</span></div>; })}</div>
+      <div className="bar" role="progressbar" aria-label="出图进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(k * 100)}><i style={{ width: `${k * 100}%` }}/></div>
+      <p className="meta num" style={{ marginTop: 8 }}>{converting ? '转换中' : `已完成 ${done} / ${total}`}</p>
+      <ol className="timeline">{steps.map((t, i) => <li key={t} data-state={i < at ? 'done' : i === at ? 'now' : 'todo'}><i aria-hidden="true">{i < at ? <Icon name="check" size={13}/> : null}</i><div><b>{t}</b></div></li>)}</ol>
+      <div className="btn-stack"><Link className="btn btn--secondary btn--block" href={`${base}/projects`}>去我的项目</Link></div>
+    </main>
+  </Screen>;
 }
 function ReviewView({ request: r }: { request: FinishRequestView }) {
   const { base, workspaceName } = useClient();
   const drawing = r.source === 'drawing';
-  return <Shell back={`${base}/projects`}>
-    <section className="status-page">
-      <StatusChip kind="review">待审核</StatusChip>
-      <Title a="方案已生成，" b="企业审核后发布"/>
-      <p className="lede">{drawing ? `你的图纸由系统自动转换。为避免尺寸或饰面边界不准确的方案误导你，${workspaceName}会先核对，再发布给你。` : `${workspaceName}会先核对方案，再发布给你。`}发布后可以在「我的项目」查看。</p>
-      <Timeline items={[['提交方案需求', 'done', dateText(r.createdAt)], [drawing ? '图纸转换与排版出图' : '排版出图', 'done'], ['企业审核', 'now', '核对尺寸与饰面边界'], ['发布方案', '']]}/>
-      <h2 className="h3">你的方案需求</h2><RequestSummary request={r}/>
-    </section>
-  </Shell>;
+  return <StatusScreen back={`${base}/projects`} title="方案已生成，企业审核后发布"
+    sub={`${drawing ? `你的图纸由系统自动转换。为避免尺寸或饰面边界不准确的方案误导你，${workspaceName}会先核对，再发布给你。` : `${workspaceName}会先核对方案，再发布给你。`}发布后可以在「项目」里查看。`}
+    items={[['提交方案需求', 'done', dateText(r.createdAt)], [drawing ? '图纸转换与排版出图' : '排版出图', 'done', `${r.schemes.length || 3} 个整体方案`], ['企业审核', 'now', '核对尺寸与饰面边界'], ['发布方案', '']]}>
+    <RequestSummary request={r}/>
+  </StatusScreen>;
 }
 function AssistView({ request: r }: { request: FinishRequestView }) {
   const { base, workspaceName } = useClient();
-  return <Shell back={`${base}/projects`}>
-    <section className="status-page">
-      <StatusChip kind="assist">需辅助转换</StatusChip>
-      <Title a="图纸需要" b="辅助转换"/>
-      <p className="lede">「{r.drawingName ?? '图纸'}」不是 DXF，系统不自动识别。{workspaceName}会协助转换图纸，与你确认楼层和饰面后，再出铺贴方案。</p>
-      <Timeline items={[['提交方案需求', 'done', dateText(r.createdAt)], ['企业辅助转换图纸', 'now', '通常 1–2 个工作日'], ['确认楼层与饰面', ''], ['排版出图并发布', '']]}/>
-      <h2 className="h3">你的方案需求</h2><RequestSummary request={r}/>
-    </section>
-  </Shell>;
+  return <StatusScreen back={`${base}/projects`} title="图纸需要企业协助转换"
+    sub={`「${r.drawingName ?? '图纸'}」不是 DXF，系统不能自动识别。${workspaceName}会协助转换图纸，与你确认楼层和饰面后再出方案。`}
+    items={[['提交方案需求', 'done', dateText(r.createdAt)], ['企业协助转换图纸', 'now', '通常 1–2 个工作日'], ['确认楼层与饰面', ''], ['排版出图并发布', '']]}>
+    <RequestSummary request={r}/>
+  </StatusScreen>;
 }
 function UploadAgainView({ request: r }: { request: FinishRequestView }) {
   const { base, entry } = useClient();
   const queries = useQueryClient(), [op] = useState(operationId);
   const send = useMutation({ mutationFn: (file: File) => clientApi(entry).drawing(r.id, file, op), onSuccess: v => queries.setQueryData(['request', entry, r.id], v) });
-  return <Shell back={`${base}/projects`}>
-    <section className="status-page">
-      <StatusChip kind="assist">待上传图纸</StatusChip>
-      <Title a="还差一份" b="户型图纸"/>
-      <p className="lede">需求已保存，但图纸没有上传成功。重新选择文件即可继续。</p>
-      <label className="btn primary wide" style={{ marginTop: 24 }}><input type="file" className="sr-only" accept=".dxf,.dwg,.pdf,.png,.jpg,.jpeg"
-        onChange={e => { const f = e.target.files?.[0]; if (f) send.mutate(f); }}/>{send.isPending ? '正在上传…' : '选择图纸文件'}</label>
-      <ErrorLine error={send.error}/>
-      <h2 className="h3">你的方案需求</h2><RequestSummary request={r}/>
-    </section>
-  </Shell>;
+  return <StatusScreen back={`${base}/projects`} title="还差一份户型图纸" sub="需求已保存，但图纸没有上传成功。重新选择文件即可继续。">
+    <div className="btn-stack"><label className="btn btn--primary btn--block"><input type="file" className="sr-only" accept=".dxf,.dwg,.pdf,.png,.jpg,.jpeg"
+      onChange={e => { const f = e.target.files?.[0]; if (f) send.mutate(f); }}/>{send.isPending ? '正在上传…' : '选择图纸文件'}</label></div>
+    <ErrorLine error={send.error}/>
+    <RequestSummary request={r}/>
+  </StatusScreen>;
 }
 
-// ---------- 方案结果（含分享预览） ----------
-type ResultUi = { scheme: string | null; level: string | null; view: 'image' | '3d' };
-export function ResultView({ request: r, preview, onGate, loadScene }: { request: FinishRequestView; preview?: { member: string }; onGate?: () => void; loadScene?: (schemeId: string) => Promise<SceneSnapshot> }) {
-  const { base, entry, workspaceName } = useClient();
-  const [ui, setUi] = useStored<ResultUi>(`hestia.client.result.${r.id}`, { scheme: null, level: null, view: 'image' });
+// ---------- 方案页：Stage（效果图 / 3D）+ Panel ----------
+type ResultUi = { scheme: string | null; level: string | null; view: 'image' | '3d'; expanded: boolean };
+const resultUi: ResultUi = { scheme: null, level: null, view: 'image', expanded: false };
+function useSwipe(onSwipe: (direction: 1 | -1) => void) {
+  const start = useRef<number | null>(null);
+  return {
+    onPointerDown: (e: React.PointerEvent) => { start.current = (e.target as HTMLElement).closest('button, canvas') ? null : e.clientX; },
+    onPointerUp: (e: React.PointerEvent) => { if (start.current !== null && Math.abs(e.clientX - start.current) > 40) onSwipe(e.clientX < start.current ? 1 : -1); start.current = null; },
+  };
+}
+export function ResultView({ request: r, preview, onGate, loadScene }: { request: FinishRequestView; preview?: boolean; onGate?: () => void; loadScene?: (schemeId: string) => Promise<SceneSnapshot> }) {
+  const { base, entry } = useClient();
+  const [ui, setUi] = useStored<ResultUi>(`hestia.client.result.${r.id}`, resultUi);
+  const s = pickScheme(r, ui.scheme);
+  const soft = useSoftStyle(r.id, s);
   const levels = levelsOf(r), level = levels.find(l => l.id === ui.level)?.id ?? levels[0]?.id ?? null;
-  const s = r.schemes.find(x => x.id === ui.scheme) ?? r.schemes.find(x => x.id === r.confirmation?.schemeId) ?? r.schemes[0];
-  const here = r.finishes.filter(f => !level || f.levelId === level);
-  const main = here.find(f => f.kind === 'floor') ?? here[0];
   const scene = useQuery({ queryKey: ['scene', r.id, s?.id, s?.revision], queryFn: () => (loadScene ?? (id => clientApi(entry).scene(r.id, id)))(s!.id),
     enabled: ui.view === '3d' && !!s, staleTime: Infinity });
-  if (!s) return <Shell back={preview ? undefined : `${base}/projects`}><NotFound title="方案" text="这个项目还没有可查看的方案。"/></Shell>;
-  const confirmed = r.confirmation?.current ? r.confirmation : null;
-  const [a, b] = splitTitle(r.title);
+  const index = Math.max(0, r.schemes.indexOf(s));
+  const shift = (d: 1 | -1) => setUi(u => ({ ...u, scheme: r.schemes[(index + d + r.schemes.length) % r.schemes.length].id }));
+  const swipe = useSwipe(shift);
+  if (!s) return <NotFound title="还没有可查看的方案" text="这个项目还没有发布方案。"/>;
+  const conf = r.confirmation, mine = conf?.schemeId === s.id;
+  const here = r.finishes.filter(f => !level || f.levelId === level);
+  const main = r.finishes.find(f => f.kind === 'floor') ?? r.finishes[0];
+  const mainTiling = main && tilingOf(s, main.id), mainStone = stoneOf(s, mainTiling);
+  const compareFinish = here.find(f => f.kind === 'floor') ?? here[0];
   const issues = s.issues.filter(i => here.some(f => f.id === i.objectId) || !r.finishes.some(f => f.id === i.objectId));
-  // Each row yields display content plus plain text, so "相同" compares values rather than markup.
-  const cell = (sc: FinishSchemeView) => { const t = main && tilingOf(sc, main.id); return { t, st: stoneOf(sc, t) }; };
-  const rows: [string, (sc: FinishSchemeView) => [React.ReactNode, string]][] = [
-    ['石材', sc => { const { st } = cell(sc); return st ? [<><SwatchChip stone={st}/>{st.name}</>, st.id] : ['—', '—']; }],
-    ['规格', sc => { const { t } = cell(sc), v = t ? (main.kind === 'stair' ? '整板' : tileLabel(t.tile)) : '—'; return [v, v]; }],
-    ['铺法', sc => { const { t } = cell(sc), v = t ? patternName[t.pattern] : '—'; return [v, v]; }],
-    ['波打线', sc => { const { t } = cell(sc), v = !t ? '—' : t.border ? stoneOf(sc, t.border)?.name ?? '有' : '无'; return [v, v]; }],
+  const reRendering = rendering(s) && s.revision > 1;
+  const actions = preview
+    ? <><button className="btn btn--secondary" onClick={onGate}><Icon name="lock" size={17}/>调整</button><button className="btn btn--primary btn--grow" onClick={onGate}><Icon name="lock" size={17}/>确认方案</button></>
+    : conf?.current && mine
+      ? <><Link className="btn btn--secondary" href={`${base}/r/${r.id}/adjust`}>继续调整</Link><Link className="btn btn--primary btn--grow" href={`${base}/r/${r.id}/done`}>查看确认</Link></>
+      : <><Link className="btn btn--secondary" href={`${base}/r/${r.id}/adjust`}>调整</Link><Link className="btn btn--primary btn--grow" href={`${base}/r/${r.id}/confirm`}>确认方案 {letter(s)}</Link></>;
+  const rows: [string, (x: FinishSchemeView) => string][] = [
+    ['软装', x => softById[softStyleStore.get(r.id, x.id, x.ordinal)]?.name ?? '—'],
+    ['石材', x => stoneOf(x, compareFinish && tilingOf(x, compareFinish.id))?.name ?? '—'],
+    ['规格', x => { const t = compareFinish && tilingOf(x, compareFinish.id); return t ? (compareFinish.kind === 'stair' ? '整板' : tileLabel(t.tile)) : '—'; }],
+    ['铺法', x => { const t = compareFinish && tilingOf(x, compareFinish.id); return t ? patternName[t.pattern] ?? t.pattern : '—'; }],
+    ['波打线', x => { const t = compareFinish && tilingOf(x, compareFinish.id); return !t ? '—' : t.border ? '有' : '无'; }],
   ];
-  const dock = preview
-    ? <><button className="btn ghost grow" onClick={onGate}><Icon name="lock" size={16}/> 调整</button><button className="btn primary grow" onClick={onGate}><Icon name="lock" size={16}/> 确认方案</button></>
-    : confirmed && confirmed.schemeId === s.id
-      ? <><Link className="btn ghost grow" href={`${base}/r/${r.id}/adjust`}>继续调整</Link><Link className="btn primary grow" href={`${base}/r/${r.id}/done`}>查看确认</Link></>
-      : <><Link className="btn ghost grow" href={`${base}/r/${r.id}/adjust`}>调整</Link><Link className="btn primary grow" href={`${base}/r/${r.id}/confirm`}>确认方案 {s.name}</Link></>;
-  const status = requestStatus(r);
-  return <Shell back={preview ? undefined : `${base}/projects`} dock={dock}>
-    {preview && <div className="preview-banner"><Icon name="eye" size={18}/><div><b>{preview.member}分享给你的方案</b><span>{workspaceName} · 仅预览，登录并绑定后可调整和确认</span></div></div>}
-    <section className="result">
-      <div className="result-head">
-        <Title a={a} b={b} small/>
-        <p className="meta"><StatusChip kind={status.kind}>{preview ? '已发布' : status.label}</StatusChip><span>{r.schemes.length} 个铺贴方案 · {r.finishes.length} 处饰面</span></p>
-        {confirmed && <p className="confirmed-line"><Icon name="check" size={16}/> 你已确认 方案 {r.schemes.find(x => x.id === confirmed.schemeId)?.name} · 修订 {confirmed.revision}</p>}
-        {!preview && r.confirmation && !r.confirmation.current && <p className="alert hint"><Icon name="info" size={16}/><span>你确认过的方案之后又调整过，需要重新确认。</span></p>}
+  const details = <>
+    <p className="meta" style={{ marginTop: 12 }}>{s.summary}</p>
+    <Section title={`软装 · ${soft.name}`} aside="演示"><div className="summary"><Palette style={soft}/><RowMain title={soft.name} sub={soft.line}/></div></Section>
+    {levels.length > 1 && <div className="section"><Segmented label="楼层" value={level ?? ''} onChange={v => setUi(u => ({ ...u, level: v }))} options={levels.map(l => [l.id, l.name])}/></div>}
+    <Section title="硬装" aside={`${levels.length > 1 ? `${levels.find(l => l.id === level)?.name} · ` : ''}${here.length} 处`}>
+      <Group>{here.map(f => <Row key={f.id} label={f.name} value={<><SwatchChip stone={stoneOf(s, tilingOf(s, f.id))}/>{finishLine(s, f)}</>} stack/>)}</Group>
+    </Section>
+    {compareFinish && r.schemes.length > 1 && <Section title={`${r.schemes.length} 个方案的差异`} aside={compareFinish.name}>
+      <table className="compare"><thead><tr><th scope="col"><span className="sr-only">项目</span></th>{r.schemes.map(x =>
+        <th key={x.id} scope="col" className={x.id === s.id ? 'is-current' : ''}>方案 {letter(x)}<br/>{x.name}</th>)}</tr></thead>
+        <tbody>{rows.map(([label, fn]) => { const vals = r.schemes.map(fn), same = vals.every(v => v === vals[0]); return <tr key={label}>
+          <th scope="row">{label}{same ? <small>相同</small> : null}</th>
+          {vals.map((v, i) => <td key={r.schemes[i].id} className={r.schemes[i].id === s.id ? 'is-current' : ''}>{v}</td>)}</tr>; })}</tbody></table>
+    </Section>}
+    {issues.map(i => <Alert key={i.code + i.objectId} kind="hint" title="提示">{i.message}</Alert>)}
+  </>;
+  return <Screen className={`immersive${ui.expanded ? ' is-expanded' : ''}`}>
+    <div className={`stage${reRendering && ui.view === 'image' ? ' stage--busy' : ''}`} {...swipe}>
+      {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`}/> : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data}/>}
+      {ui.view === '3d' && scene.error ? <div className="stage__msg" role="alert">{scene.error instanceof Error ? scene.error.message : '3D 暂时打不开'}</div> : null}
+      {!ui.expanded && <>
+        <div className="stage__top">
+          {preview && <span className="media-tag"><Icon name="eye" size={14}/>企业分享给你的方案 · 仅预览</span>}
+          {ui.view === '3d' && <span className="media-tag"><Icon name="cube" size={14}/>实时 3D · 以效果图为准</span>}
+          {reRendering && <span className="media-tag"><Icon name="clock" size={14}/>修订 {s.revision} 出图中</span>}
+        </div>
+        {r.schemes.length > 1 && <><button className="icon-btn icon-btn--media stage__nav stage__nav--prev" onClick={() => shift(-1)} aria-label="上一个方案"><Icon name="left" size={18}/></button>
+          <button className="icon-btn icon-btn--media stage__nav stage__nav--next" onClick={() => shift(1)} aria-label="下一个方案"><Icon name="right" size={18}/></button></>}
+        <div className="stage__bottom">
+          <Segmented media label="查看方式" value={ui.view} onChange={v => setUi(u => ({ ...u, view: v }))} options={[['image', '效果图', 'image'], ['3d', '3D', 'cube']]}/>
+          <span className="media-tag num">{index + 1} / {r.schemes.length}</span>
+        </div>
+      </>}
+    </div>
+    <AppBar back={preview ? undefined : `${base}/projects`} title={shortName(r.title)} overlay/>
+    <section className="panel" aria-label="方案详情">
+      <button className="panel__grip" onClick={() => setUi(u => ({ ...u, expanded: !u.expanded }))} aria-expanded={ui.expanded} aria-label={ui.expanded ? '收起详情' : '展开详情'}/>
+      <div className="panel__scroll">
+        {r.schemes.length > 1 && <Segmented label="切换方案" value={s.id} onChange={id => setUi(u => ({ ...u, scheme: id }))} options={r.schemes.map(x => [x.id, schemeTitle(x)])}/>}
+        <div className="panel__head"><div><h1 className="panel__title">方案 {schemeTitle(s)}</h1><p className="meta">修订 {s.revision}{r.schemes.length > 1 ? ' · 左右滑动效果图也可切换' : ''}</p></div>
+          <span className="style-tag"><Palette style={soft} mod="palette--dot"/>{soft.name}</span></div>
+        {!preview && conf && mine && conf.current && <p className="panel__note"><Icon name="check" size={14}/>你已确认这一版</p>}
+        {!preview && conf && !conf.current && <Alert kind="hint" title="需要重新确认">你确认的是方案 {letter(r.schemes.find(x => x.id === conf.schemeId) ?? s)} 修订 {conf.revision}，之后又调整过。企业看到的仍是修订 {conf.revision}。</Alert>}
+        {main && <div className="summary"><Swatch stone={mainStone} size={104} className="summary__img"/>
+          <RowMain title={mainStone?.name ?? '未铺石材'} sub={`${main.name} · ${finishLine(s, main).split(' · ').slice(1).join(' · ') || '—'}`}/></div>}
+        {ui.expanded ? details : <button className="text-link" onClick={() => setUi(u => ({ ...u, expanded: true }))} style={{ marginTop: 8 }}>查看软装、硬装清单与方案对比 <Icon name="right" size={14}/></button>}
       </div>
-      {levels.length > 1 && <div className="seg" role="tablist" aria-label="楼层">{levels.map(l =>
-        <button key={l.id} role="tab" aria-selected={l.id === level} onClick={() => setUi(u => ({ ...u, level: l.id }))}>{l.name}</button>)}</div>}
-      <figure className="plate">
-        <div className="plate-top"><span>{main?.levelName ? `${main.levelName} · ` : ''}{main?.name ?? ''}</span>
-          <div className="toggle" role="group" aria-label="查看方式">
-            <button aria-pressed={ui.view === 'image'} onClick={() => setUi(u => ({ ...u, view: 'image' }))}><Icon name="image" size={15}/>效果图</button>
-            <button aria-pressed={ui.view === '3d'} onClick={() => setUi(u => ({ ...u, view: '3d' }))}><Icon name="cube" size={15}/>3D 查看</button></div></div>
-        {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${s.name} 铺贴效果图（示意）`}/>
-          : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data}/>}
-        {ui.view === '3d' && scene.error ? <ErrorLine error={scene.error}/> : null}
-        <figcaption><span>方案 {s.name} · 修订 {s.revision}{rendering(s) && s.revision > 1 ? ' · 新修订出图中' : ''}</span><span>{ui.view === 'image' ? '效果图' : '实时 3D · 以效果图为准'} · 示意素材</span></figcaption>
-      </figure>
-      <div className="rail" role="group" aria-label="切换铺贴方案">{r.schemes.map(x => { const t = main && tilingOf(x, main.id), st = stoneOf(x, t); return <button key={x.id} className="rail-item" aria-pressed={x.id === s.id}
-        onClick={() => setUi(u => ({ ...u, scheme: x.id }))}><span className="rail-name">{x.ordinal}<b>{x.name}</b></span>
-        <small>{st ? <>{st.name}<br/>{main.kind === 'stair' ? '整板' : tileLabel(t!.tile)}<br/>{patternName[t!.pattern]}</> : null}</small></button>; })}</div>
-      <p className="scheme-line">{s.summary}</p>
-      {main && <section className="compare">
-        <h2 className="h3">{main.name}：{r.schemes.length} 个方案的差异</h2>
-        <table><thead><tr><th scope="col"><span className="sr-only">项目</span></th>{r.schemes.map(x => <th key={x.id} scope="col" className={x.id === s.id ? 'on' : ''}>方案 {x.name}</th>)}</tr></thead>
-          <tbody>{rows.map(([label, fn]) => { const vals = r.schemes.map(fn), same = vals.every(v => v[1] === vals[0][1]); return <tr key={label}>
-            <th scope="row">{label}{same ? <small>相同</small> : null}</th>
-            {vals.map((v, i) => <td key={r.schemes[i].id} className={`${r.schemes[i].id === s.id ? 'on' : ''}${same ? ' same' : ''}`}>{v[0]}</td>)}</tr>; })}</tbody></table>
-      </section>}
-      <section className="scheme-facets">
-        <h2 className="h3">方案 {s.name}{level && levels.length > 1 ? ` · ${levels.find(l => l.id === level)?.name}` : ''}饰面</h2>
-        <ul>{here.map(f => { const t = tilingOf(s, f.id); return <li key={f.id}><SwatchChip stone={stoneOf(s, t)} big/><div><b>{f.name}</b><small>{finishLine(s, f)}</small></div></li>; })}</ul>
-        {issues.length > 0 && <div className="checks">{issues.map(i => <p key={i.code + i.objectId} className="alert hint"><Icon name="info" size={16}/><span><b>提示</b>{i.message}</span></p>)}</div>}
-      </section>
+      <div className="panel__actions">{actions}</div>
     </section>
-  </Shell>;
+  </Screen>;
 }
 // The image URL of a scheme always serves its current revision, and is unavailable while a new revision renders.
-// Keep the last finished image per scheme so a re-render shows the previous revision (blurred by the caller) instead of a blank plate.
+// Keep the last finished image per scheme so a re-render shows the previous revision (blurred by the caller) instead of a blank stage.
 const lastImages = new Map<string, { revision: number; url: string }>();
-function SchemeImage({ scheme, alt }: { scheme: FinishSchemeView; alt: string }) {
+function SchemeImage({ scheme, alt, className = 'stage__img' }: { scheme: FinishSchemeView; alt: string; className?: string }) {
   const href = scheme.render?.imageHref, failed = scheme.render?.status === 'failed';
   const [url, setUrl] = useState(() => lastImages.get(scheme.id)?.url ?? null);
   useEffect(() => {
@@ -382,18 +391,26 @@ function SchemeImage({ scheme, alt }: { scheme: FinishSchemeView; alt: string })
     }).catch(() => { if (live) setUrl(cached?.url ?? null); });
     return () => { live = false; };
   }, [href, scheme.id, scheme.revision]);
-  return <div className="plate-img">{url ? <img src={url} alt={alt}/> : <div className="placeholder" role="status">
-    {failed ? <span>这张效果图暂时没有生成，企业会处理。可以先看 3D。</span> : <><span>正在出图…每张约 1–2 分钟</span><div className="bar-progress"><i style={{ animationDuration: '50s' }}/></div></>}</div>}</div>;
+  if (url) return <img className={className} src={url} alt={alt}/>;
+  if (className !== 'stage__img') return null;
+  return <div className="stage__msg" role="status">{failed ? '这张效果图暂时没有生成，企业会处理。可以先看 3D。' : <>正在出图…每张约 1–2 分钟<span className="progress"><i/></span></>}</div>;
 }
 
-// ---------- 选项式调整 ----------
-type AdjustUi = { finish: string | null; level: string | null; changes: string[] };
+// ---------- 调整：修改先累积在本机，「重新出图」一次提交（ADR-0010） ----------
+type Pending = { label: string; finishId?: string; change?: SchemeChange; soft?: { before: string; after: string } };
+type AdjustUi = { tab: 'soft' | 'hard'; level: string | null; finish: string | null; pending: Pending[]; base: string; softDone: boolean };
 function AdjustView({ request: r }: { request: FinishRequestView }) {
   const { base, entry, toast } = useClient();
   const queries = useQueryClient();
-  const [ui, setUi] = useStored<AdjustUi>(`hestia.client.adjust.${r.id}`, { finish: null, level: null, changes: [] });
-  const [result] = useStored<ResultUi>(`hestia.client.result.${r.id}`, { scheme: null, level: null, view: 'image' });
-  const s = r.schemes.find(x => x.id === result.scheme) ?? r.schemes.find(x => x.id === r.confirmation?.schemeId) ?? r.schemes[0];
+  const [result] = useStored<ResultUi>(`hestia.client.result.${r.id}`, resultUi);
+  const s = pickScheme(r, result.scheme);
+  const revisionKey = `${s.id}:${s.revision}`;
+  const [ui, setUi] = useStored<AdjustUi>(`hestia.client.adjust.${r.id}`, { tab: 'soft', level: null, finish: null, pending: [], base: revisionKey, softDone: false });
+  // Pending changes belong to the revision they were made on; a new revision (re-render, another device) starts over.
+  useEffect(() => { if (ui.base !== revisionKey) setUi(u => ({ ...u, pending: [], base: revisionKey })); }, [ui.base, revisionKey, setUi]);
+  const pending = ui.base === revisionKey ? ui.pending : [];
+  const savedSoft = useSoftStyle(r.id, s);
+  const soft = [...pending].reverse().find(p => p.soft)?.soft?.after ?? savedSoft.id;
   const catalog = useQuery({ queryKey: ['catalog', entry], queryFn: () => clientApi(entry).catalog(), staleTime: 5 * 60_000 });
   const options = useQuery({ queryKey: ['options', r.id, s.id, s.revision], queryFn: () => clientApi(entry).options(r.id, s.id) });
   const [rejected, setRejected] = useState<string | null>(null);
@@ -402,71 +419,88 @@ function AdjustView({ request: r }: { request: FinishRequestView }) {
   const finish = here.find(f => f.id === ui.finish) ?? here.find(f => f.kind === 'floor') ?? here[0];
   const opt = options.data?.finishes.find(f => f.finishId === finish?.id);
   const busy = rendering(s);
-  const apply = (view: FinishRequestView) => { queries.setQueryData(['request', entry, r.id], view); queries.invalidateQueries({ queryKey: ['requests', entry] }); };
-  const adjust = useMutation({
-    mutationFn: (change: { label: string; input: Record<string, unknown> }) => clientApi(entry).adjust(r.id, s.id, { operationId: operationId(), expectedRevision: s.revision, finishId: finish!.id, ...change.input }),
-    onSuccess: (view, change) => { setRejected(null); apply(view); setUi(u => ({ ...u, changes: [...u.changes, change.label] })); },
+  // Working value of the selected finish: the revision's current value with this finish's pending changes on top.
+  const changesFor = (id: string) => pending.filter(p => p.finishId === id).reduce<SchemeChange>((acc, p) => ({ ...acc, ...p.change }), { finishId: id });
+  const working = opt?.current && finish ? { ...opt.current, ...changesFor(finish.id), ...(changesFor(finish.id).stone ?? {}) } : null;
+  const stoneSpec = (ref: { stoneId: string; stoneVersion: number }) => catalog.data?.stones.find(x => x.id === ref.stoneId && x.version === ref.stoneVersion) ?? stoneOf(s, ref);
+  const workingStone = working && opt?.stones.find(x => x.stoneId === working.stoneId && x.stoneVersion === working.stoneVersion);
+  const name = (ref?: { stoneId: string; stoneVersion: number }) => (ref && stoneSpec(ref)?.name) ?? '';
+  const add = (p: Pending) => { setRejected(null); setUi(u => ({ ...u, pending: [...(u.base === revisionKey ? u.pending : []), p], base: revisionKey, softDone: false })); };
+  const undo = () => { setRejected(null); setUi(u => ({ ...u, pending: u.pending.slice(0, -1) })); };
+  const hard = pending.filter(p => p.change).map(p => p.change!);
+  const submit = useMutation({
+    mutationFn: async () => {
+      const softChange = [...pending].reverse().find(p => p.soft);
+      if (softChange) softStyleStore.set(r.id, s.id, softChange.soft!.after);
+      return hard.length ? adjustBatch(entry, r.id, s.id, s.revision, hard) : null;
+    },
+    onSuccess: view => {
+      setRejected(null);
+      if (view) { queries.setQueryData(['request', entry, r.id], view); queries.invalidateQueries({ queryKey: ['requests', entry] }); }
+      else toast('软装风格已切换（演示，暂不重新出图）');
+      setUi(u => ({ ...u, pending: [], softDone: !view }));
+    },
     onError: error => {
-      const e = error as ClientError;
+      const e = error as ClientError, view = e.details?.view as FinishRequestView | null | undefined, applied = Number(e.details?.applied ?? 0);
+      if (view) { queries.setQueryData(['request', entry, r.id], view); }
+      if (applied) { const done = new Set([...new Map(hard.map(c => [c.finishId, c])).keys()].slice(0, applied)); setUi(u => ({ ...u, pending: u.pending.filter(p => !p.finishId || !done.has(p.finishId)) })); }
       if (e.code === 'ADJUSTMENT_REJECTED' || e.code === 'OPTION_NOT_ALLOWED') setRejected(e.message);
       else { toast(e.message); if (e.code === 'SCHEME_REVISION_CONFLICT') queries.invalidateQueries({ queryKey: ['request', entry, r.id] }); }
     },
   });
-  const undo = useMutation({
-    mutationFn: () => clientApi(entry).undo(r.id, s.id, { operationId: operationId(), expectedRevision: s.revision }),
-    onSuccess: view => { setRejected(null); apply(view); setUi(u => ({ ...u, changes: u.changes.slice(0, -1) })); toast('已撤回上一次修改'); },
-    onError: error => toast((error as Error).message),
-  });
-  const stoneSpec = (ref: { stoneId: string; stoneVersion: number }) => catalog.data?.stones.find(x => x.id === ref.stoneId && x.version === ref.stoneVersion) ?? stoneOf(s, ref);
-  const current = opt?.current, currentStone = current && opt?.stones.find(x => x.stoneId === current.stoneId && x.stoneVersion === current.stoneVersion);
-  const pending = adjust.isPending || undo.isPending;
-  const name = (ref?: { stoneId: string; stoneVersion: number }) => (ref && stoneSpec(ref)?.name) ?? '';
-  const dock = busy ? <button className="btn primary wide" disabled>重新出图中…</button>
-    : <><Link className="btn ghost grow" href={`${base}/r/${r.id}`}>回到方案对比</Link><Link className="btn primary grow" href={`${base}/r/${r.id}/confirm`}>确认修订 {s.revision}</Link></>;
-  return <Shell back={`${base}/r/${r.id}`} dock={dock}>
-    <section className="adjust">
-      <div className="adjust-head">
-        <Title a="调整" b={`方案 ${s.name}`} small/>
-        <button className="btn ghost small" disabled={s.revision === 1 || pending || busy} onClick={() => undo.mutate()}><Icon name="undo" size={16}/> 撤回</button>
-      </div>
-      <p className="lede small">只能在给定选项内调整：换石材、规格、铺法和波打线。每次修改都会生成新的修订并重新出图，原方案保留。</p>
-      <figure className={`plate compact${busy ? ' is-rendering' : ''}`}>
-        <SchemeImage scheme={s} alt="当前修订效果图（示意）"/>
-        {busy && <div className="rendering" role="status"><b>重新出图中</b><span>按你的调整重新排版、渲染 · 约 1–2 分钟</span><div className="bar-progress"><i style={{ animationDuration: '50s' }}/></div></div>}
-        <figcaption><span>方案 {s.name} · 修订 {s.revision}</span><span>示意素材</span></figcaption>
-      </figure>
-      {levels.length > 1 && <div className="seg" role="tablist" aria-label="楼层">{levels.map(l =>
-        <button key={l.id} role="tab" aria-selected={l.id === level} onClick={() => setUi(u => ({ ...u, level: l.id, finish: null }))}>{l.name}</button>)}</div>}
-      <div className="facet-tabs" role="tablist" aria-label="饰面">{here.map(f =>
-        <button key={f.id} role="tab" aria-selected={f.id === finish?.id} onClick={() => { setRejected(null); setUi(u => ({ ...u, finish: f.id })); }}>{f.name}</button>)}</div>
-      {!opt ? (options.error ? <ErrorLine error={options.error}/> : <Loading/>) : <>
-        <fieldset className="opt" disabled={pending || busy}><legend className="h3">石材 <span className="tag">示意素材</span></legend>
-          <div className="swatch-row">{opt.stones.map(st => <button key={`${st.stoneId}:${st.stoneVersion}`} className="swatch"
-            aria-pressed={current?.stoneId === st.stoneId && current.stoneVersion === st.stoneVersion}
-            onClick={() => current?.stoneId === st.stoneId && current.stoneVersion === st.stoneVersion ? null
-              : adjust.mutate({ label: `${finish!.name}：${name(current ?? undefined)} → ${st.name}`, input: { stone: { stoneId: st.stoneId, stoneVersion: st.stoneVersion } } })}>
-            <Swatch stone={stoneSpec(st)} size={144}/><span>{st.name}</span></button>)}</div></fieldset>
-        {finish!.kind === 'stair' ? <p className="small muted">楼梯踏面使用整板踏步，只调整石材。</p> : <>
-          <fieldset className="opt" disabled={pending || busy}><legend className="h3">规格 <small>毫米</small></legend>
-            <div className="chips">{(currentStone?.sizes ?? []).map(size => { const on = !!current && Math.abs(current.tile.length - size.length) < 1e-9 && Math.abs(current.tile.width - size.width) < 1e-9;
-              return <button key={tileLabel(size)} className="chip" aria-pressed={on} onClick={() => on ? null : adjust.mutate({ label: `${finish!.name}：${current ? tileLabel(current.tile) : ''} → ${tileLabel(size)}`, input: { tile: size } })}>
-                {tileLabel(size)}{size.length / size.width >= 3 ? <small>条板</small> : null}</button>; })}</div></fieldset>
-          <fieldset className="opt" disabled={pending || busy}><legend className="h3">铺法</legend>
-            <div className="chips glyphs">{opt.patterns.map(p => <button key={p} className="chip" aria-pressed={current?.pattern === p}
-              onClick={() => current?.pattern === p ? null : adjust.mutate({ label: `${finish!.name}：${patternName[current?.pattern ?? ''] ?? ''} → ${patternName[p]}`, input: { pattern: p } })}>
-              <PatternGlyph pattern={p}/>{patternName[p]}</button>)}</div></fieldset>
-          {opt.border && <fieldset className="opt" disabled={pending || busy}><legend className="h3">波打线</legend>
-            <div className="switch-row"><button className="switch" role="switch" aria-checked={!!current?.border} aria-label="波打线"
-              onClick={() => adjust.mutate({ label: `${finish!.name}：${current?.border ? '有波打线 → 无波打线' : '无波打线 → 有波打线'}`, input: { border: !current?.border } })}><i/></button>
-              <span>{current?.border ? `开 · ${name(tilingOf(s, finish!.id)?.border)}收边，宽 ${Math.round((tilingOf(s, finish!.id)?.border?.width ?? .18) * 100)} cm` : '关 · 石材直接铺到墙边'}</span></div></fieldset>}
-        </>}
+  const locked = busy || submit.isPending;
+  const count = pending.length;
+  const tag = busy ? '' : count ? `${count} 处修改未出图` : ui.softDone ? '软装风格已切换（演示）' : `当前修订 ${s.revision}`;
+  const dock = busy || submit.isPending ? <button className="btn btn--primary btn--block" disabled>重新出图中…</button>
+    : !count && s.revision > 1 && !rejected ? <><Link className="btn btn--secondary" href={`${base}/r/${r.id}`}>回到方案</Link><Link className="btn btn--primary btn--grow" href={`${base}/r/${r.id}/confirm`}>确认修订 {s.revision}</Link></>
+      : <><button className="icon-btn icon-btn--outline" onClick={undo} disabled={!count} aria-label="撤回上一处修改"><Icon name="undo"/></button>
+        <button className="btn btn--primary btn--grow" disabled={!count || !!rejected} onClick={() => submit.mutate()}>
+          {rejected ? '有冲突，暂不能出图' : !count ? '先选择要调整的选项' : hard.length ? `重新出图 · 生成修订 ${s.revision + 1}` : '应用软装风格'}</button></>;
+  const softPanel = <><p className="meta" style={{ marginTop: 12 }}>换风格会改变全屋家具款式、布艺与配色；家具布局由方案确定。软装风格目前为演示，切换后暂不重新出图。</p>
+    <div style={{ marginTop: 12 }}><StyleOptions current={soft} disabled={locked} onPick={id => { if (id !== soft) add({ label: `软装风格：${softById[soft].name} → ${softById[id].name}`, soft: { before: soft, after: id } }); }}/></div></>;
+  const hardPanel = <>
+    {levels.length > 1 && <div style={{ marginTop: 16 }}><Segmented label="楼层" value={level ?? ''} onChange={v => setUi(u => ({ ...u, level: v, finish: null }))} options={levels.map(l => [l.id, l.name])}/></div>}
+    <div className="finish-tabs" role="tablist" aria-label="饰面">{here.map(f =>
+      <button key={f.id} className="chip" role="tab" aria-selected={f.id === finish?.id} aria-pressed={f.id === finish?.id} onClick={() => setUi(u => ({ ...u, finish: f.id }))}>{f.name}</button>)}</div>
+    {!opt || !working || !finish ? (options.error ? <ErrorLine error={options.error}/> : <Loading/>) : <>
+      <Section title={`${finish.name} · 石材`} aside="示意素材"><div className="swatches swatches--rail">{opt.stones.map(st => {
+        const on = working.stoneId === st.stoneId && working.stoneVersion === st.stoneVersion;
+        return <button key={`${st.stoneId}:${st.stoneVersion}`} className="swatch" aria-pressed={on} disabled={locked} onClick={() => {
+          if (on) return;
+          const fits = st.sizes.some(size => sameTile(size, working.tile)), tile = fits ? undefined : st.sizes[0];
+          add({ finishId: finish.id, label: `${finish.name}：${name(working)} → ${st.name}${tile ? `（规格改为 ${tileLabel(tile)}）` : ''}`,
+            change: { finishId: finish.id, stone: { stoneId: st.stoneId, stoneVersion: st.stoneVersion }, ...(tile ? { tile } : {}) } });
+        }}><Swatch stone={stoneSpec(st)} size={144}/>{st.name}</button>; })}</div></Section>
+      {finish.kind === 'stair' ? <p className="meta" style={{ marginTop: 12 }}>楼梯踏面使用整板踏步，只调整石材。</p> : <>
+        <Section title="规格" aside="毫米"><div className="chips">{(workingStone?.sizes ?? []).map(size => { const on = sameTile(size, working.tile);
+          return <button key={tileLabel(size)} className="chip num" aria-pressed={on} disabled={locked} onClick={() => { if (!on) add({ finishId: finish.id, label: `${finish.name}：${tileLabel(working.tile)} → ${tileLabel(size)}`, change: { finishId: finish.id, tile: size } }); }}>
+            {tileLabel(size)}{size.length / size.width >= 3 ? <small>条板</small> : null}</button>; })}</div></Section>
+        <Section title="铺法"><div className="chips">{opt.patterns.map(p => <button key={p} className="chip" aria-pressed={working.pattern === p} disabled={locked}
+          onClick={() => { if (working.pattern !== p) add({ finishId: finish.id, label: `${finish.name}：${patternName[working.pattern] ?? working.pattern} → ${patternName[p]}`, change: { finishId: finish.id, pattern: p } }); }}>
+          <PatternGlyph pattern={p} size={18}/>{patternName[p]}</button>)}</div></Section>
+        {opt.border && <Group style={{ marginTop: 24 }}><div className="row"><RowMain title="波打线" sub={working.border ? '石材四周加一圈收边' : '石材直接铺到墙边'}/>
+          <Switch on={!!working.border} label="波打线" disabled={locked} onChange={() => add({ finishId: finish.id, label: `${finish.name}：${working.border ? '有波打线 → 无波打线' : '无波打线 → 有波打线'}`, change: { finishId: finish.id, border: !working.border } })}/></div></Group>}
       </>}
-      {pending && <p className="small muted" role="status" style={{ marginTop: 14 }}>正在排版校验…</p>}
-      {rejected && <p className="alert danger" role="alert"><Icon name="alert" size={16}/><span><b>冲突 · 不能出图</b>{rejected}方案保持不变，可以换一个选项。</span></p>}
-      {s.issues.filter(i => i.objectId === finish?.id).map(i => <p key={i.code} className="alert hint"><Icon name="info" size={16}/><span><b>提示 · 可以继续</b>{i.message}</span></p>)}
-      {ui.changes.length > 0 && <section className="changes"><h2 className="h3">本次修改</h2><ol>{ui.changes.map((t, i) => <li key={i}>{t}</li>)}</ol></section>}
+      {s.issues.filter(i => i.objectId === finish.id).map(i => <Alert key={i.code} kind="hint" title="提示 · 可以继续">{i.message}</Alert>)}
+    </>}
+  </>;
+  return <Screen className="immersive adjust">
+    <div className={`stage${busy ? ' stage--busy' : ''}`}>
+      <SchemeImage scheme={s} alt="当前修订效果图（示意）"/>
+      {tag && <div className="stage__top"><span className="media-tag">{count ? <Icon name="clock" size={14}/> : null}{tag}</span></div>}
+      {busy && <div className="stage__veil" role="status"><b>重新出图中</b><span>按你的调整重新排版、渲染 · 约 1–2 分钟</span><div className="progress"><i/></div></div>}
+    </div>
+    <AppBar back={`${base}/r/${r.id}`} title={`调整方案 ${letter(s)}`} overlay/>
+    <section className="panel" aria-label="调整选项"><span className="panel__grip" aria-hidden="true"/>
+      <div className="panel__scroll">
+        <Segmented label="调整内容" value={ui.tab} onChange={tab => setUi(u => ({ ...u, tab }))} options={[['soft', '软装风格'], ['hard', '硬装石材']]}/>
+        <fieldset disabled={locked}>{ui.tab === 'soft' ? softPanel : hardPanel}</fieldset>
+        {count > 0 && <Section title="本次修改" aside={`${count} 处`}><ol className="changes">{pending.map((p, i) => <li key={i}>{p.label}</li>)}</ol></Section>}
+      </div>
+      {rejected && !locked && <div className="panel__notice"><Alert kind="danger" title="冲突 · 不能出图">{rejected} 方案保持不变，可以撤回最后一处修改或换一个选项。</Alert></div>}
+      <div className="panel__actions">{dock}</div>
     </section>
-  </Shell>;
+  </Screen>;
 }
 
 // ---------- 确认 + 留言 / 请求联系 ----------
@@ -474,10 +508,11 @@ type ConfirmDraft = { message: string; contact: boolean; time: string };
 function ConfirmView({ request: r }: { request: FinishRequestView }) {
   const { base, entry, user, workspaceName, go, toast } = useClient();
   const queries = useQueryClient();
-  const [result] = useStored<ResultUi>(`hestia.client.result.${r.id}`, { scheme: null, level: null, view: 'image' });
+  const [result] = useStored<ResultUi>(`hestia.client.result.${r.id}`, resultUi);
   const [c, setC] = useStored<ConfirmDraft>(`hestia.client.confirm.${r.id}`, { message: '', contact: true, time: '下午' });
   const [op] = useState(operationId);
-  const s = r.schemes.find(x => x.id === result.scheme) ?? r.schemes[0];
+  const s = pickScheme(r, result.scheme);
+  const soft = useSoftStyle(r.id, s);
   const confirm = useMutation({
     mutationFn: () => clientApi(entry).confirm(r.id, { operationId: op, schemeId: s.id, revision: s.revision, message: c.message.trim() || undefined,
       contactRequested: c.contact, preferredTime: c.contact ? c.time : undefined }),
@@ -485,25 +520,28 @@ function ConfirmView({ request: r }: { request: FinishRequestView }) {
     onError: error => { toast((error as Error).message); if ((error as ClientError).code === 'SCHEME_REVISION_CONFLICT') queries.invalidateQueries({ queryKey: ['request', entry, r.id] }); },
   });
   const levels = levelsOf(r);
-  return <Shell back={`${base}/r/${r.id}`} dock={<button className="btn primary wide" disabled={confirm.isPending || rendering(s)} onClick={() => confirm.mutate()}>
-    {rendering(s) ? '等待出图完成后确认' : confirm.isPending ? '正在提交…' : `确认方案 ${s.name} · 修订 ${s.revision}`}</button>}>
-    <section className="confirm">
-      <Title a="确认" b={`方案 ${s.name} · 修订 ${s.revision}`}/>
-      <p className="lede">确认后，{workspaceName}会收到这一版铺贴方案。之后如果再调整，需要重新确认。</p>
-      <figure className="plate compact"><SchemeImage scheme={s} alt="确认的方案效果图（示意）"/><figcaption><span>方案 {s.name}</span><span>示意素材</span></figcaption></figure>
-      <details className="spec-list" open><summary className="h3">饰面清单 · {r.finishes.length} 处</summary>
-        {(levels.length ? levels : [{ id: null as unknown as string, name: '' }]).map(l => <div key={l.id ?? 'all'}>{l.name && <h3>{l.name}</h3>}<ul>
-          {r.finishes.filter(f => !l.id || f.levelId === l.id).map(f => <li key={f.id}><b>{f.name}</b><span>{finishLine(s, f)}</span></li>)}</ul></div>)}
-      </details>
-      <label className="field"><span>给企业留言（选填）</span><textarea rows={3} maxLength={300} placeholder="例如：二层想再看看深色石材；希望周末看样品。" value={c.message} onChange={e => setC(v => ({ ...v, message: e.target.value }))}/></label>
-      <div className="contact">
-        <div className="switch-row"><button className="switch" role="switch" aria-checked={c.contact} aria-label="请企业联系我" onClick={() => setC(v => ({ ...v, contact: !v.contact }))}><i/></button><span><b>请企业联系我</b></span></div>
-        {c.contact && <><p className="small muted">联系电话 {maskPhone(user?.phoneNumber)}（登录手机号）</p>
-          <div className="chips" role="radiogroup" aria-label="方便联系的时间">{['上午', '下午', '晚上', '都可以'].map(t =>
-            <button key={t} className="chip" role="radio" aria-checked={c.time === t} onClick={() => setC(v => ({ ...v, time: t }))}>{t}</button>)}</div></>}
-      </div>
-    </section>
-  </Shell>;
+  const dock = <button className="btn btn--primary btn--block" disabled={confirm.isPending || rendering(s)} onClick={() => confirm.mutate()}>
+    {rendering(s) ? '等待出图完成后确认' : confirm.isPending ? '正在提交…' : `确认方案 ${letter(s)} · 修订 ${s.revision}`}</button>;
+  return <Screen bar={<AppBar back={`${base}/r/${r.id}`} title="确认方案"/>} dock={dock}>
+    <main className="screen__body">
+      <h1 className="page-title">确认方案 {letter(s)} · 修订 {s.revision}</h1>
+      <div className="confirm-hero"><div className="confirm-hero__img"><SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`} className="confirm-hero__photo"/></div>
+        <RowMain title={`${s.name} · ${soft.name}`} sub={`确认后，${workspaceName}会收到这一版整体方案。之后再调整，需要重新确认。`}/></div>
+      <Section title="方案内容" aside={`${r.finishes.length} 处饰面`}><Group>
+        <Row label="软装风格" value={`${soft.name}（演示）`}/>
+        {(levels.length ? levels : [{ id: '', name: '' }]).map(l => <div key={l.id || 'all'}>
+          {levels.length > 1 && <span className="row__level">{l.name}</span>}
+          {r.finishes.filter(f => !l.id || f.levelId === l.id).map(f => <Row key={f.id} label={f.name} value={finishLine(s, f)} stack/>)}</div>)}
+      </Group></Section>
+      <Section title="给企业留言" aside="选填"><Group><label className="field"><span className="sr-only">给企业留言（选填）</span>
+        <textarea rows={3} maxLength={300} placeholder="例如：二层想再看看深色石材；希望周末看样品。" value={c.message} onChange={e => setC(v => ({ ...v, message: e.target.value }))}/></label></Group></Section>
+      <Group style={{ marginTop: 12 }}>
+        <div className="row"><RowMain title="请企业联系我" sub={<span className="num">{maskPhone(user?.phoneNumber)} · 登录手机号</span>}/><Switch on={c.contact} label="请企业联系我" onChange={() => setC(v => ({ ...v, contact: !v.contact }))}/></div>
+        {c.contact && <div className="row row--stack"><span className="row__label">方便联系的时间</span><div className="chips" role="radiogroup" aria-label="方便联系的时间" style={{ marginTop: 8 }}>
+          {['上午', '下午', '晚上', '都可以'].map(t => <button key={t} className="chip" role="radio" aria-checked={c.time === t} onClick={() => setC(v => ({ ...v, time: t }))}>{t}</button>)}</div></div>}
+      </Group>
+    </main>
+  </Screen>;
 }
 function DoneView({ request: r }: { request: FinishRequestView }) {
   const { base, entry, user, workspaceName, go, toast } = useClient();
@@ -517,18 +555,16 @@ function DoneView({ request: r }: { request: FinishRequestView }) {
     onSuccess: view => { queries.setQueryData(['request', entry, r.id], view); setNote(''); setOp(operationId()); toast('留言已发送给企业'); },
     onError: error => toast((error as Error).message),
   });
-  if (!conf) return <Shell back={`${base}/r/${r.id}`}><Loading/></Shell>;
+  if (!conf) return <LoadingScreen back={`${base}/r/${r.id}`}/>;
   const s = r.schemes.find(x => x.id === conf.schemeId);
-  return <Shell back={`${base}/r/${r.id}`}>
-    <section className="status-page done">
-      <span className="seal" aria-hidden="true"><Icon name="check" size={30}/></span>
-      <Title a="已确认" b={`方案 ${s?.name ?? ''} · 修订 ${conf.revision}`}/>
-      <p className="lede">{workspaceName}已收到你的确认。{c.contact ? `企业成员会在${c.time === '都可以' ? '方便时' : c.time}联系 ${maskPhone(user?.phoneNumber)}。` : '你没有请求联系，可以随时在这里留言。'}</p>
-      {!conf.current && <p className="alert hint"><Icon name="info" size={16}/><span>确认之后方案又调整过，企业看到的仍是修订 {conf.revision}。如需以新修订为准，请重新确认。</span></p>}
-      <Timeline items={[['确认方案', 'done', dateText(conf.confirmedAt)], ['企业跟进', 'now', c.contact ? '电话联系' : '查看留言'], ['看样与深化', '']]}/>
-      <label className="field"><span>补充留言</span><textarea rows={3} maxLength={300} placeholder="例如：想约周末看样品。" value={note} onChange={e => setNote(e.target.value)}/></label>
-      <button className="btn ghost wide" style={{ marginTop: 12 }} disabled={!note.trim() || send.isPending} onClick={() => send.mutate()}>{send.isPending ? '正在发送…' : '发送留言'}</button>
-      <div className="stack"><Link className="btn primary wide" href={`${base}/projects`}>我的项目</Link><Link className="btn ghost wide" href={`${base}/r/${r.id}`}>回到方案</Link></div>
-    </section>
-  </Shell>;
+  return <StatusScreen back={`${base}/r/${r.id}`} seal={<span className="seal" aria-hidden="true"><Icon name="check" size={28}/></span>}
+    title={`已确认 方案 ${s ? letter(s) : ''} · 修订 ${conf.revision}`}
+    sub={<>{workspaceName}已收到你的确认。{c.contact ? <>企业会在{c.time === '都可以' ? '方便时' : c.time}联系 <span className="num">{maskPhone(user?.phoneNumber)}</span>。</> : '你没有请求联系，可以随时在这里留言。'}</>}
+    items={[['确认方案', 'done', dateText(conf.confirmedAt)], ['企业跟进', 'now', c.contact ? '电话联系' : '查看留言'], ['看样与深化', '']]}>
+    {!conf.current && <Alert kind="hint" title="需要重新确认">确认之后方案又调整过，企业看到的仍是修订 {conf.revision}。如需以新修订为准，请重新确认。</Alert>}
+    <Section title="补充留言"><Group><label className="field"><span className="sr-only">补充留言</span>
+      <textarea rows={3} maxLength={300} placeholder="例如：想约周末看样品。" value={note} onChange={e => setNote(e.target.value)}/></label></Group>
+      <button className="btn btn--secondary btn--block" style={{ marginTop: 12 }} disabled={!note.trim() || send.isPending} onClick={() => send.mutate()}>{send.isPending ? '正在发送…' : '发送留言'}</button></Section>
+    <div className="btn-stack"><Link className="btn btn--primary btn--block" href={`${base}/projects`}>我的项目</Link><Link className="btn btn--secondary btn--block" href={`${base}/r/${r.id}`}>回到方案</Link></div>
+  </StatusScreen>;
 }

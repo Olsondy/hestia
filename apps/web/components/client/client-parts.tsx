@@ -1,9 +1,10 @@
 'use client';
-// Small shared pieces of the H5 client: stone swatches, plan drawing, status chip, timeline.
+// Shared pieces of the H5 client: stone swatches, plan drawing and the v2 component set (Badge, Alert, Group…).
 import { useEffect, useState } from 'react';
 import type { StoneSpec } from '../../../../packages/contracts/src/finishes';
 import type { ClientCatalogView } from './client-api';
-import { Icon } from './client-icons';
+import { Icon, type IconName } from './client-icons';
+import { softStyles, type SoftStyle } from './soft-styles';
 
 // Swatches come from the same procedural recipe as the 3D textures (示意素材), rendered once per stone and size.
 const swatches = new Map<string, Promise<string>>();
@@ -31,7 +32,7 @@ export function useSwatch(stone: StoneSpec | undefined, size = 120) {
 }
 export function Swatch({ stone, size = 120, className, alt = '' }: { stone: StoneSpec | undefined; size?: number; className?: string; alt?: string }) {
   const url = useSwatch(stone, size);
-  return url ? <img className={className} src={url} alt={alt}/> : <span className={className} style={{ display: 'block', background: stone?.texture.base ?? '#ddd' }} aria-hidden="true"/>;
+  return url ? <img className={className ?? 'swatch__img'} src={url} alt={alt}/> : <span className={className ?? 'swatch__img'} style={{ display: 'block', background: stone?.texture.base ?? 'var(--c-surface-2)' }} aria-hidden="true"/>;
 }
 export function SwatchChip({ stone, big = false }: { stone: StoneSpec | undefined; big?: boolean }) {
   const url = useSwatch(stone, big ? 96 : 48);
@@ -74,14 +75,48 @@ export function PlanDrawing({ plan, finishes, levelId, selected, small = false }
   </svg>;
 }
 
-export type StatusKind = 'wait' | 'review' | 'assist' | 'ok';
-export function StatusChip({ kind, children }: { kind: StatusKind; children: React.ReactNode }) {
-  return <span className={`status ${kind}`}>{children}</span>;
+export const dateText = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+// ---------- 通用组件（类名与 docs/design/H5_UI_DESIGN.md 组件对照一致） ----------
+/** wait / done are neutral; act marks a state the customer has to act on (accent); ok is finished (ink dot). */
+export type BadgeKind = 'wait' | 'act' | 'ok';
+export const Badge = ({ kind = 'wait', children }: { kind?: BadgeKind; children: React.ReactNode }) => <span className={`badge badge--${kind}`}>{children}</span>;
+export function Alert({ kind, title, children }: { kind: 'hint' | 'danger' | 'info'; title?: string; children: React.ReactNode }) {
+  return <div className={`alert alert--${kind}`} role={kind === 'danger' ? 'alert' : undefined}>
+    <Icon name={kind === 'info' ? 'info' : 'alert'} size={16}/><span>{title && <b>{title}</b>}{children}</span></div>;
 }
-export function Timeline({ items }: { items: [string, 'done' | 'now' | '', string?][] }) {
-  return <ol className="timeline">{items.map(([title, state, sub]) => <li key={title} className={state}>
-    <i aria-hidden="true">{state === 'done' ? <Icon name="check" size={12}/> : null}</i>
+export function Section({ title, aside, children, className = '' }: { title: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return <section className={`section ${className}`}><div className="section__head"><h2 className="section__title">{title}</h2>{aside != null && aside !== '' && <span className="section__aside">{aside}</span>}</div>{children}</section>;
+}
+export const Group = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => <div className="group" style={style}>{children}</div>;
+export const Row = ({ label, value, stack = false }: { label: React.ReactNode; value: React.ReactNode; stack?: boolean }) =>
+  <div className={`row${stack ? ' row--stack' : ''}`}><span className="row__label">{label}</span><span className="row__value">{value}</span></div>;
+export function RowMain({ icon, title, sub, chevron = false }: { icon?: IconName; title: React.ReactNode; sub?: React.ReactNode; chevron?: boolean }) {
+  return <>{icon && <span className="row__icon"><Icon name={icon} size={18}/></span>}<span className="row__main"><b>{title}</b>{sub && <small>{sub}</small>}</span>
+    {chevron && <span className="row__chev"><Icon name="right" size={16}/></span>}</>;
+}
+export function Timeline({ items }: { items: [string, 'done' | 'now' | '', React.ReactNode?][] }) {
+  return <ol className="timeline">{items.map(([title, state, sub]) => <li key={title} data-state={state || 'todo'}>
+    <i aria-hidden="true">{state === 'done' ? <Icon name="check" size={13}/> : null}</i>
     <div><b>{title}</b>{sub ? <small>{sub}</small> : null}</div>
   </li>)}</ol>;
 }
-export const dateText = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+export function Segmented<T extends string | number>({ options, value, onChange, media = false, label }: { options: [T, React.ReactNode, IconName?][]; value: T; onChange: (value: T) => void; media?: boolean; label: string }) {
+  return <div className={`segmented${media ? ' segmented--media' : ''}`} role="group" aria-label={label}>{options.map(([v, text, icon]) =>
+    <button key={String(v)} type="button" aria-pressed={v === value} onClick={() => onChange(v)}>{icon && <Icon name={icon} size={16}/>}{text}</button>)}</div>;
+}
+export const Switch = ({ on, onChange, label, disabled }: { on: boolean; onChange: () => void; label: string; disabled?: boolean }) =>
+  <button type="button" className="switch" role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={onChange}/>;
+export function Stepper({ step, names }: { step: number; names: string[] }) {
+  return <ol className="stepper" aria-label={`第 ${step} 步，共 ${names.length} 步`}>{names.map((n, i) =>
+    <li key={n} data-state={i + 1 === step ? 'now' : i + 1 < step ? 'done' : 'todo'} aria-current={i + 1 === step ? 'step' : undefined}>{n}</li>)}</ol>;
+}
+export const Palette = ({ style, mod = '' }: { style: SoftStyle; mod?: string }) =>
+  <span className={`palette ${mod}`} aria-hidden="true">{style.palette.map(c => <i key={c} style={{ background: c }}/>)}</span>;
+export function StyleOptions({ current, onPick, disabled }: { current?: string; onPick?: (id: string) => void; disabled?: boolean }) {
+  return <div className="styles">{softStyles.map(st => {
+    const body = <><Palette style={st} mod="palette--tile"/><b>{st.name}</b><small>{st.line.split('、').slice(0, 2).join('、')}</small></>;
+    return onPick ? <button key={st.id} type="button" className="style-opt" aria-pressed={current === st.id} disabled={disabled} onClick={() => onPick(st.id)}>{body}</button>
+      : <div key={st.id} className="style-opt">{body}</div>;
+  })}</div>;
+}

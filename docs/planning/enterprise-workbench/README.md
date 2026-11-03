@@ -1,6 +1,6 @@
 # 企业工作台：线索、Agent 出整体方案、审核与分享
 
-依据 [ADR-0007](../../decisions/0007-shared-core-personal-and-enterprise-workspaces.md) 与 [ADR-0008](../../decisions/0008-one-stop-home-furnishing-hard-and-soft.md)，为一站式家装企业实现成员的电脑端工作台：线索与跟进、Agent 辅助出整体方案（硬装 + 软装）、审核发布、预置方案与分享、绑定审批、石材与软装风格目录；客户端补充软装风格切换。视觉依据 B 版（家居杂志，`example/prototypes/projects` 设计方向对比页右侧）。客户端 H5 见 [家装 H5 演示](../stone-demo/README.md)。
+依据 [ADR-0007](../../decisions/0007-shared-core-personal-and-enterprise-workspaces.md) 与 [ADR-0008](../../decisions/0008-one-stop-home-furnishing-hard-and-soft.md)，为一站式家装企业实现成员的电脑端工作台：线索与跟进、Agent 辅助出整体方案（硬装 + 软装）、审核发布、预置方案与分享、绑定审批、石材与软装风格目录；客户端补充软装风格切换。视觉依据 [Web 工作台 UI 设计规则](../../design/WEB_UI_DESIGN.md) 与 [H5 UI 设计规则](../../design/H5_UI_DESIGN.md)（柔和中性，ADR-0011；原定的家居杂志 B 版已被覆盖）。客户端 H5 见 [家装 H5 演示](../stone-demo/README.md)。
 
 | 规格/能力 | 本地规格 | 阻塞 | GitHub |
 | --- | --- | --- | --- |

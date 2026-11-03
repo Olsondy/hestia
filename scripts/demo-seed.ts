@@ -38,6 +38,11 @@ const prepared = [
 ] as const;
 
 const args = new Set(process.argv.slice(2));
+// Demo data belongs to demo and development environments only: refuse production settings outright.
+if (process.env.NODE_ENV === 'production' || process.env.SMS_PROVIDER !== 'mock') {
+  console.error('demo:seed 只能在演示或开发环境运行（要求 SMS_PROVIDER=mock，且不是 NODE_ENV=production）。已停止，未改动任何数据。');
+  process.exit(1);
+}
 const storage = path.resolve(process.env.PRIVATE_STORAGE_PATH ?? './private-data');
 const stateFile = path.join(storage, 'demo', 'seed.json');
 /** Demo member's workbench password; kept across --reset, so a browser that saved it keeps working. */

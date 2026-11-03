@@ -172,12 +172,12 @@ function DeniedView({ base }: { base: string }) {
 }
 
 // ---------- 今日 ----------
-/** What a lead needs from members. Contact requests stay listed until follow-up status exists (S02). */
+/** What a lead needs from members. A contact request is open until someone moves the lead past 新线索 (S02). */
 function actionsOf(lead: LeadView) {
   return {
     review: lead.status === 'pending_review',
     assist: lead.status === 'assisted_conversion',
-    contact: lead.events.some(event => event.contactRequested),
+    contact: lead.contactRequested && lead.follow.status === 'new',
     apply: lead.sharing.applications.some(application => application.status === 'pending'),
   };
 }

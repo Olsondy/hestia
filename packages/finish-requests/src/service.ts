@@ -5,7 +5,7 @@ import { DomainError, idSchema, spatialStateSchema, type SpatialState } from '..
 import { effectiveLevels, levelOf, stairToPlan } from '../../contracts/src/building';
 import type { Finish } from '../../contracts/src/finishes';
 import type { SceneSnapshot } from '../../contracts/src/scene';
-import { createFinishRequestSchema, createMemberRequestSchema, publishFinishRequestSchema, type ClientCatalogView, type DemoVillaPlanView, type FinishRequestStatus, type FinishRequestView,
+import { createFinishRequestSchema, createMemberRequestSchema, leadFilterSchema, publishFinishRequestSchema, type ClientCatalogView, type DemoVillaPlanView, type FinishRequestStatus, type FinishRequestView,
   type RequestFinishView, type RequestPreferences,
   type FinishSchemeView, type LeadView } from '../../contracts/src/finish-requests';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
@@ -22,6 +22,7 @@ import type { PrivateFileStore } from '../../files/src/storage';
 import { enqueueSchemeRender, readRenderImage, renderStatuses } from '../../renders/src/service';
 import { generateSchemes } from './generate';
 import { sharingOf } from './sharing-view';
+import { followOf, lastCustomerAction } from './follow-view';
 
 export type RequestRow = {
   id: string; workspace_id: string; customer_id: string | null; created_by: string; origin: 'customer' | 'member'; project_id: string; request_id: string; request_hash: string;
@@ -290,20 +291,29 @@ export async function readSchemeScene(principal: Principal, slug: string, reques
   });
 }
 
-/** Leads (线索) of a workspace, for members. */
-export async function listLeads(principal: Principal, workspaceId: string): Promise<LeadView[]> {
-  const userId = actorOf(principal), id = idSchema.parse(workspaceId);
+/**
+ * Leads (线索) of a workspace, for members, newest first (200 at most). Filters: follow status and contact requests in
+ * the query; the request status (which for drawings depends on the import) after building the views.
+ */
+export async function listLeads(principal: Principal, workspaceId: string, filters: unknown = {}): Promise<LeadView[]> {
+  const userId = actorOf(principal), id = idSchema.parse(workspaceId), filter = leadFilterSchema.parse(filters);
   return transaction(async (client, tx) => {
     await memberOf(client, userId, id);
-    const rows = await tx.select({ ...requestColumns, phone_number: hestiaAuthUser.phoneNumber, name: hestiaAuthUser.name }).from(finishRequests)
-      .leftJoin(hestiaAuthUser, eq(hestiaAuthUser.id, finishRequests.customerId)).where(eq(finishRequests.workspaceId, id))
-      .orderBy(desc(finishRequests.createdAt)).limit(200) as (RequestRow & { phone_number: string | null; name: string | null })[];
-    return Promise.all(rows.map(async row => ({ ...await view(client, row, 'member'), reviewReason: row.review_reason,
-      origin: row.origin, customer: row.customer_id ? { userId: row.customer_id, phone: row.phone_number, name: row.name } : null,
-      sharing: await sharingOf(client, row.id),
-      events: (await tx.select().from(finishRequestEvents).where(eq(finishRequestEvents.requestId, row.id)).orderBy(asc(finishRequestEvents.createdAt)))
-        .map(event => ({ id: event.id, kind: event.kind as 'confirmation' | 'message', schemeId: event.schemeId, schemeRevision: event.schemeRevision, message: event.message,
-          contactRequested: event.contactRequested, preferredTime: event.preferredTime, createdAt: event.createdAt.toISOString() })) })));
+    const contact = sql`EXISTS (SELECT 1 FROM ${finishRequestEvents} WHERE ${finishRequestEvents.requestId} = ${finishRequests.id} AND ${finishRequestEvents.contactRequested})`;
+    const rows = await tx.select({ ...requestColumns, follow_status: finishRequests.followStatus, phone_number: hestiaAuthUser.phoneNumber, name: hestiaAuthUser.name }).from(finishRequests)
+      .leftJoin(hestiaAuthUser, eq(hestiaAuthUser.id, finishRequests.customerId))
+      .where(and(eq(finishRequests.workspaceId, id), filter.follow ? eq(finishRequests.followStatus, filter.follow) : undefined, filter.contact ? contact : undefined))
+      .orderBy(desc(finishRequests.createdAt)).limit(200) as (RequestRow & { follow_status: string; phone_number: string | null; name: string | null })[];
+    const leads = await Promise.all(rows.map(async row => {
+      const base = { ...await view(client, row, 'member'), reviewReason: row.review_reason,
+        origin: row.origin, customer: row.customer_id ? { userId: row.customer_id, phone: row.phone_number, name: row.name } : null,
+        sharing: await sharingOf(client, row.id), follow: await followOf(client, row.id, row.follow_status),
+        events: (await tx.select().from(finishRequestEvents).where(eq(finishRequestEvents.requestId, row.id)).orderBy(asc(finishRequestEvents.createdAt)))
+          .map(event => ({ id: event.id, kind: event.kind as 'confirmation' | 'message', schemeId: event.schemeId, schemeRevision: event.schemeRevision, message: event.message,
+            contactRequested: event.contactRequested, preferredTime: event.preferredTime, createdAt: event.createdAt.toISOString() })) };
+      return { ...base, contactRequested: base.events.some(event => event.contactRequested), lastCustomerAction: lastCustomerAction(base) };
+    }));
+    return filter.status ? leads.filter(lead => lead.status === filter.status) : leads;
   });
 }
 

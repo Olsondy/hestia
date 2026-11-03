@@ -27,6 +27,8 @@ export const finishRequests = pgTable("finish_requests", {
 	origin: text().default('customer').notNull(),
 	createdBy: text("created_by").notNull(),
 	preferences: jsonb(),
+	/** 线索跟进 (S02): members only; history in lead_follow_events. */
+	followStatus: text("follow_status").default('new').notNull(),
 }, (table) => [
 	index("finish_requests_customer").on(table.customerId, table.createdAt.desc().nullsFirst()),
 	uniqueIndex("finish_requests_operation").on(table.createdBy, table.requestId),
@@ -51,6 +53,8 @@ export const finishRequests = pgTable("finish_requests", {
 	check("finish_requests_note_check", sql`(note IS NULL) OR (length(note) <= 500)`),
 	check("finish_requests_origin_check", sql`origin = ANY (ARRAY['customer'::text, 'member'::text])`),
 	check("finish_requests_source_check", sql`source = ANY (ARRAY['demo-villa'::text, 'drawing'::text])`),
+	check("finish_requests_follow_status_check", sql`follow_status = ANY (ARRAY['new'::text, 'contacted'::text, 'active'::text, 'won'::text, 'parked'::text])`),
+	index("finish_requests_workspace_follow").on(table.workspaceId, table.followStatus),
 	check("finish_requests_status_check", sql`status = ANY (ARRAY['awaiting_drawing'::text, 'converting'::text, 'pending_review'::text, 'published'::text])`),
 ]);
 
@@ -158,6 +162,26 @@ export const requestShares = pgTable("request_shares", {
 			name: "request_shares_request_id_fkey"
 		}).onDelete("cascade"),
 	unique("request_shares_token_hash_key").on(table.tokenHash),
+]);
+
+/** 线索跟进记录 (S02): follow status changes and internal notes, append-only, visible to members only. */
+export const leadFollowEvents = pgTable("lead_follow_events", {
+	id: uuid().primaryKey().notNull(),
+	requestId: uuid("request_id").notNull(),
+	actorId: text("actor_id").notNull(),
+	kind: text().notNull(),
+	status: text(),
+	note: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+	index("lead_follow_events_request").on(table.requestId, table.createdAt),
+	foreignKey({
+			columns: [table.requestId],
+			foreignColumns: [finishRequests.id],
+			name: "lead_follow_events_request_id_fkey"
+		}).onDelete("cascade"),
+	check("lead_follow_events_kind_check", sql`(kind = 'status' AND status IS NOT NULL AND note IS NULL) OR (kind = 'note' AND status IS NULL AND note IS NOT NULL AND length(note) BETWEEN 1 AND 500)`),
+	check("lead_follow_events_status_check", sql`status IS NULL OR status = ANY (ARRAY['new'::text, 'contacted'::text, 'active'::text, 'won'::text, 'parked'::text])`),
 ]);
 
 /** Wrong share codes per request source (keyed HMAC), for the guessing limit (ADR-0012). */

@@ -39,6 +39,8 @@ export class RenderStage {
   private preset?: DisplayLightPreset;
   private probe?: { texture: T.Texture; position: T.Vector3 };
   private interior = false;
+  /** While the camera moves, frames skip ambient occlusion and probe recapture to stay smooth. */
+  private moving = false;
   state: LightingState = { mode: 'day', interiorLights: false };
   /** Page colour shown behind the model in daylight (host pages may match their own surface). */
   private dayBackdrop = day.background;
@@ -96,10 +98,16 @@ export class RenderStage {
     this.ao?.setSize(width * this.renderer.getPixelRatio(), height * this.renderer.getPixelRatio());
   }
 
+  /** Interactive frames (dragging, gliding, easing) trade ambient occlusion and probe capture for frame rate. */
+  setInteractive(moving: boolean) {
+    this.moving = moving;
+    if (this.ao) this.ao.enabled = !moving;
+  }
+
   render() {
     this.updateInteriorShadows();
     this.placeLamps();
-    this.updateProbe();
+    if (!this.moving) this.updateProbe();
     if (this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
   }
 

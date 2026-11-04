@@ -409,3 +409,9 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 .project__main .meta{}
 
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+/* Horizontal rails (useRail): edge fades show that more items are off-screen; mouse can drag them. */
+[data-rail]{-webkit-mask-image:var(--rail-mask);mask-image:var(--rail-mask);cursor:grab}
+[data-rail][data-more-end]{--rail-mask:linear-gradient(to right,#000 calc(100% - 40px),transparent)}
+[data-rail][data-more-start]{--rail-mask:linear-gradient(to right,transparent,#000 40px)}
+[data-rail][data-more-start][data-more-end]{--rail-mask:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent)}
+@media (pointer:coarse){[data-rail]{cursor:auto}}

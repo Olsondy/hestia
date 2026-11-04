@@ -9,6 +9,7 @@ import { AppBar, ErrorLine, Loading, LoadingScreen, NotFound, Screen, StatusScre
 import { Icon, PatternGlyph, patternName } from './client-icons';
 import { Alert, Badge, dateText, Group, Palette, PlanDrawing, Row, RowMain, Section, Segmented, Stepper, StyleOptions, Swatch, SwatchChip, Switch, type BadgeKind } from './client-parts';
 import { SchemeViewer } from './scheme-viewer';
+import { useRail } from './rail';
 import { softOf, styleKey } from './soft-styles';
 
 // ---------- 状态 ----------
@@ -346,7 +347,7 @@ const resultUi: ResultUi = { scheme: null, level: null, view: 'image', expanded:
 function useSwipe(onSwipe: (direction: 1 | -1) => void) {
   const start = useRef<number | null>(null);
   return {
-    onPointerDown: (e: React.PointerEvent) => { start.current = (e.target as HTMLElement).closest('button, canvas') ? null : e.clientX; },
+    onPointerDown: (e: React.PointerEvent) => { start.current = (e.target as HTMLElement).closest('button, canvas, [data-rail]') ? null : e.clientX; },
     onPointerUp: (e: React.PointerEvent) => { if (start.current !== null && Math.abs(e.clientX - start.current) > 40) onSwipe(e.clientX < start.current ? 1 : -1); start.current = null; },
   };
 }
@@ -486,6 +487,7 @@ function AdjustView({ request: r }: { request: FinishRequestView }) {
   const stoneSpec = (ref: { stoneId: string; stoneVersion: number }) => catalog.data?.stones.find(x => x.id === ref.stoneId && x.version === ref.stoneVersion) ?? stoneOf(s, ref);
   const workingStone = working && opt?.stones.find(x => x.stoneId === working.stoneId && x.stoneVersion === working.stoneVersion);
   const name = (ref?: { stoneId: string; stoneVersion: number }) => (ref && stoneSpec(ref)?.name) ?? '';
+  const tabsRail = useRail<HTMLDivElement>(finish?.id), stonesRail = useRail<HTMLDivElement>(`${finish?.id}:${working?.stoneId}`);
   const add = (p: Pending) => { setRejected(null); setUi(u => ({ ...u, pending: [...(u.base === revisionKey ? u.pending : []), p], base: revisionKey, softDone: false })); };
   const undo = () => { setRejected(null); setUi(u => ({ ...u, pending: u.pending.slice(0, -1) })); };
   const hard = pending.filter(p => p.change).map(p => p.change!);
@@ -520,10 +522,10 @@ function AdjustView({ request: r }: { request: FinishRequestView }) {
     : <p className="meta" style={{ marginTop: 12 }}>这个方案没有可切换的软装风格。</p>;
   const hardPanel = <>
     {levels.length > 1 && <div style={{ marginTop: 16 }}><Segmented label="楼层" value={level ?? ''} onChange={v => setUi(u => ({ ...u, level: v, finish: null }))} options={levels.map(l => [l.id, l.name])}/></div>}
-    <div className="finish-tabs" role="tablist" aria-label="饰面">{here.map(f =>
+    <div className="finish-tabs" ref={tabsRail} role="tablist" aria-label="饰面">{here.map(f =>
       <button key={f.id} className="chip" role="tab" aria-selected={f.id === finish?.id} aria-pressed={f.id === finish?.id} onClick={() => setUi(u => ({ ...u, finish: f.id }))}>{f.name}</button>)}</div>
     {!opt || !working || !finish ? (options.error ? <ErrorLine error={options.error}/> : <Loading/>) : <>
-      <Section title={`${finish.name} · 石材`} aside="示意素材"><div className="swatches swatches--rail">{opt.stones.map(st => {
+      <Section title={`${finish.name} · 石材`} aside="示意素材"><div className="swatches swatches--rail" ref={stonesRail}>{opt.stones.map(st => {
         const on = working.stoneId === st.stoneId && working.stoneVersion === st.stoneVersion;
         return <button key={`${st.stoneId}:${st.stoneVersion}`} className="swatch" aria-pressed={on} disabled={locked} onClick={() => {
           if (on) return;

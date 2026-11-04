@@ -3,9 +3,10 @@ import type { SceneSnapshot } from './snapshot';
 import { inside, isOutdoorRoom } from './architecture';
 
 /**
- * Preset shots shared by the H5 result page and background stills. Aerial presets are reframed to the shown model
- * and canvas aspect when applied; interior presets are eye-level shots with a horizontal field of view so phones
- * in portrait and landscape stills frame the same room.
+ * Preset shots shared by the H5 result page and background stills. Viewing is one storey at a time: each storey has
+ * an overview (that storey only, seen from above, reframed to the model and canvas aspect when applied) and eye-level
+ * interior shots that load only their own storey. Interior shots use a horizontal field of view so phones in portrait
+ * and landscape stills frame the same room. There is no whole-building view: customers look at one floor's finishes.
  */
 export type CameraPreset =
   | { id: string; name: string; kind: 'aerial'; view: SceneView; direction: [number, number, number] }
@@ -14,20 +15,36 @@ export type CameraPreset =
 const service = /卫|厕|浴|设备|储|车库|衣帽|洗衣|garage|bath|toilet|storage|utility/i;
 const eye = 1.4, interiorFov = 78;
 
-export function cameraPresets(snapshot: SceneSnapshot): CameraPreset[] {
-  const levels = effectiveLevels(snapshot), presets: CameraPreset[] = [
-    { id: 'aerial', name: '整栋鸟瞰', kind: 'aerial', view: { mode: 'building' }, direction: [.62, .78, .9] },
-  ];
-  if (snapshot.levels) levels.forEach((level, index) => presets.push({ id: `aerial-${level.id}`, name: `${level.name ?? `${index + 1} 层`}鸟瞰`,
-    kind: 'aerial', view: { mode: 'section', levelId: level.id }, direction: [.45, 1.25, .7] }));
+/**
+ * The storey the interactive viewer shows: the one carrying most tiled floor finishes (the demo villa's ground floor),
+ * otherwise the first. Customers look at one floor's soft furnishing and finishes, not a multi-storey model.
+ */
+export function mainLevelId(snapshot: SceneSnapshot) {
+  const levels = effectiveLevels(snapshot), tiled = new Set(snapshot.surfaceDesign?.tilings.map(tiling => tiling.finishId) ?? []);
+  const rooms = new Map(snapshot.rooms.map(room => [room.id, levelOf(room, levels)]));
+  const weight = (levelId: string) => (snapshot.finishes ?? []).filter(finish => tiled.has(finish.id) && finish.kind === 'floor'
+    && (finish.levelId ?? (finish.roomId ? rooms.get(finish.roomId) : undefined)) === levelId).length;
+  return [...levels].sort((a, b) => weight(b.id) - weight(a.id))[0]?.id;
+}
+
+/** `levelId` limits the shots to one storey and drops the storey name from their labels. */
+export function cameraPresets(snapshot: SceneSnapshot, levelId?: string): CameraPreset[] {
+  const all = effectiveLevels(snapshot), presets: CameraPreset[] = [];
+  const levels = levelId ? all.filter(level => level.id === levelId) : all;
+  const many = !!snapshot.levels && levels.length > 1;
+  const levelView = (id: string): SceneView => snapshot.levels ? { mode: 'level', levelId: id } : { mode: 'building' };
+  levels.forEach((level, index) => {
+    const name = many ? `${level.name ?? `${index + 1} 层`} · 全层` : '全层浏览';
+    presets.push({ id: many ? `overview-${level.id}` : 'overview', name, kind: 'aerial', view: levelView(level.id), direction: [.55, 1.1, .8] });
+  });
   for (const level of levels) {
-    const rooms = snapshot.rooms.filter(room => levelOf(room, levels) === level.id && room.name && !isOutdoorRoom(room) && !service.test(room.name));
+    const rooms = snapshot.rooms.filter(room => levelOf(room, all) === level.id && room.name && !isOutdoorRoom(room) && !service.test(room.name));
     const stairRoom = rooms.find(room => /楼梯|stair/i.test(room.name!) && (snapshot.stairs ?? []).some(stair => stair.fromLevelId === level.id && inside(stair.position, room.outline)));
     const main = rooms.filter(room => room !== stairRoom).map(room => ({ room, area: area(room.outline) })).sort((a, b) => b.area - a.area)[0]?.room;
     for (const room of [main, stairRoom]) {
       if (!room) continue;
-      const shot = interiorShot(snapshot, room, level.elevation, level.id, levels, room === stairRoom);
-      if (shot) presets.push({ id: `interior-${room.id}`, name: `${level.name ? `${level.name} · ` : ''}${room.name}`, kind: 'interior', view: { mode: 'building' }, ...shot, horizontalFov: interiorFov, roomId: room.id });
+      const shot = interiorShot(snapshot, room, level.elevation, level.id, all, room === stairRoom);
+      if (shot) presets.push({ id: `interior-${room.id}`, name: `${many && level.name ? `${level.name} · ` : ''}${room.name}`, kind: 'interior', view: levelView(level.id), ...shot, horizontalFov: interiorFov, roomId: room.id });
     }
   }
   return presets;

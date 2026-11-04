@@ -11,7 +11,7 @@ import { ambienceProp } from './props';
 import { addArchitecturalDetail } from './architecture';
 import { RenderStage, type LightingState } from './stage';
 import { detectQuality, type QualityTier } from './quality';
-import { cameraPresets, type CameraPreset } from './cameras';
+import { cameraPresets, mainLevelId, type CameraPreset } from './cameras';
 import { createFinishMeshes } from './finish-surfaces';
 
 export type CameraState = { position: number[]; target: number[] };
@@ -181,6 +181,11 @@ export class SpatialScene {
   private selectedId: string | null = null;
   private view: SceneView = buildingView;
   private stage: RenderStage;
+  /** Camera move in progress (preset changes); a user drag cancels it. */
+  private tween?: { start: number; duration: number; from: CameraState & { fov: number }; to: CameraState & { fov: number } };
+  private frameId = 0;
+  private settleTimer?: ReturnType<typeof setTimeout>;
+  private dragging = false;
   /** `quality` defaults to a device guess (phones `medium`); background stills pass `ultra`. */
   constructor(private host: HTMLElement, private onSelect: (id: string | null) => void = () => {}, options: { quality?: QualityTier } = {}) {
     this.renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
@@ -188,7 +193,12 @@ export class SpatialScene {
     this.stage = new RenderStage(this.renderer, this.scene, this.camera, options.quality ?? detectQuality());
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.maxPolarAngle = Math.PI * .49;
+    // Damped orbiting: the view keeps gliding briefly after release. Frames run only while something moves; when
+    // still, the scene renders on demand and the full-quality frame (ambient occlusion, probe) is drawn once.
+    this.controls.enableDamping = true; this.controls.dampingFactor = .08;
     this.controls.addEventListener('change', this.draw);
+    this.controls.addEventListener('start', () => { this.dragging = true; this.tween = undefined; this.animate(); });
+    this.controls.addEventListener('end', () => { this.dragging = false; this.animate(); });
     this.renderer.domElement.addEventListener('pointerdown', this.onDown);
     this.renderer.domElement.addEventListener('pointerup', this.onUp);
     this.renderer.domElement.setAttribute('aria-label', '可旋转缩放的合成测试空间');
@@ -223,9 +233,13 @@ export class SpatialScene {
   getQuality(): QualityTier { return this.stage.getQuality(); }
   /** Preset aerial and eye-level shots for the loaded snapshot (shared with background stills). */
   cameraPresets(): CameraPreset[] { if (!this.model) throw new Error('No scene loaded'); return cameraPresets(this.model.data); }
-  applyCameraPreset(id: string) {
-    const preset = this.cameraPresets().find(item => item.id === id);
+  /** Shots of the single storey the interactive viewer shows (see `mainLevelId`). */
+  mainLevelPresets(): CameraPreset[] { if (!this.model) throw new Error('No scene loaded'); return cameraPresets(this.model.data, mainLevelId(this.model.data)); }
+  /** `animate` eases from the current view to the preset (interactive use); stills apply it at once. */
+  applyCameraPreset(id: string, options: { animate?: boolean } = {}) {
+    const preset = [...this.mainLevelPresets(), ...this.cameraPresets()].find(item => item.id === id);
     if (!preset) throw new Error(`Unknown camera preset: ${id}`);
+    const from = { ...this.getCamera(), fov: this.camera.fov };
     if (JSON.stringify(preset.view) !== JSON.stringify(this.view)) this.setView(preset.view, true);
     if (preset.kind === 'aerial') { this.camera.fov = 38; this.camera.updateProjectionMatrix(); this.frame(new T.Vector3(...preset.direction)); }
     else {
@@ -234,6 +248,13 @@ export class SpatialScene {
       this.camera.fov = T.MathUtils.clamp(T.MathUtils.radToDeg(2 * Math.atan(Math.tan(half) / this.camera.aspect)), 45, 80);
       this.camera.updateProjectionMatrix();
       this.camera.position.fromArray(preset.position); this.controls.target.fromArray(preset.target); this.controls.update();
+    }
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (options.animate && !reduced && typeof requestAnimationFrame === 'function') {
+      const to = { ...this.getCamera(), fov: this.camera.fov };
+      this.place(from);
+      this.tween = { start: performance.now(), duration: 750, from, to };
+      this.animate();
     }
     this.draw();
   }
@@ -319,6 +340,32 @@ export class SpatialScene {
     this.camera.aspect = this.host.clientWidth / this.host.clientHeight; this.camera.updateProjectionMatrix(); this.draw();
   };
   private draw = () => { if (!this.disposed) this.stage.render(); };
+  private place(value: CameraState & { fov: number }) {
+    this.camera.position.fromArray(value.position); this.controls.target.fromArray(value.target);
+    if (this.camera.fov !== value.fov) { this.camera.fov = value.fov; this.camera.updateProjectionMatrix(); }
+    this.camera.lookAt(this.controls.target);
+  }
+  /** Runs frames while dragging, gliding (damping) or easing to a preset; then one full-quality frame. */
+  private animate() {
+    if (this.disposed || typeof requestAnimationFrame !== 'function') return;
+    clearTimeout(this.settleTimer); this.stage.setInteractive(true);
+    if (this.frameId) return;
+    const step = (now: number) => {
+      this.frameId = 0;
+      if (this.disposed) return;
+      let moving = this.dragging;
+      if (this.tween) {
+        const { start, duration, from, to } = this.tween, t = Math.min(1, (now - start) / duration), e = 1 - Math.pow(1 - t, 3);
+        const mix = (a: number[], b: number[]) => a.map((value, index) => value + (b[index] - value) * e);
+        this.place({ position: mix(from.position, to.position), target: mix(from.target, to.target), fov: from.fov + (to.fov - from.fov) * e });
+        this.draw(); moving = true;
+        if (t >= 1) { this.tween = undefined; this.controls.update(); }
+      } else if (this.controls.update()) moving = true; // update() reports remaining damped motion and redraws via 'change'.
+      if (moving) { this.frameId = requestAnimationFrame(step); return; }
+      this.settleTimer = setTimeout(() => { if (this.disposed) return; this.stage.setInteractive(false); this.draw(); }, 160);
+    };
+    this.frameId = requestAnimationFrame(step);
+  }
   private onDown = (event: PointerEvent) => { this.down = { x: event.clientX, y: event.clientY }; };
   private onUp = (event: PointerEvent) => {
     if (!this.down || Math.hypot(event.clientX - this.down.x, event.clientY - this.down.y) > 5) return;
@@ -332,6 +379,7 @@ export class SpatialScene {
   };
   dispose() {
     this.disposed = true; this.observer.disconnect(); this.controls.dispose();
+    if (this.frameId) cancelAnimationFrame(this.frameId); clearTimeout(this.settleTimer);
     this.renderer.domElement.removeEventListener('pointerdown', this.onDown);
     this.renderer.domElement.removeEventListener('pointerup', this.onUp);
     if (this.model) disposeModel(this.model.root);

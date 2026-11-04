@@ -11,10 +11,14 @@ import { ambienceProp } from './props';
 import { addArchitecturalDetail } from './architecture';
 import { RenderStage, type LightingState } from './stage';
 import { detectQuality, type QualityTier } from './quality';
-import { cameraPresets, type CameraPreset } from './cameras';
+import { cameraPresets, mainLevelId, type CameraPreset } from './cameras';
 import { createFinishMeshes } from './finish-surfaces';
+import { Cutaway, CUT_HEIGHT, roomAnchor } from './dollhouse';
 
 export type CameraState = { position: number[]; target: number[] };
+/** A room of the shown storey as listed by the overview: label anchor (world) and its eye-level shot, if any. */
+export type RoomEntry = { id: string; name: string; anchor: [number, number, number]; interiorPreset: string | null };
+export type Presentation = 'standard' | 'overview' | 'interior';
 export type { SceneView, LightingState, QualityTier, CameraPreset };
 const wallColor = '#f4efe6', slabEdgeColor = '#d9d0c3', stairColor = '#cfc4b4';
 const buildingView: SceneView = { mode: 'building' };
@@ -181,14 +185,28 @@ export class SpatialScene {
   private selectedId: string | null = null;
   private view: SceneView = buildingView;
   private stage: RenderStage;
+  /** Camera move in progress (preset changes); a user drag cancels it, applying its end state's presentation. */
+  private tween?: { start: number; duration: number; from: CameraState & { fov: number }; to: CameraState & { fov: number }; done?: () => void };
+  private cutaway?: Cutaway;
+  private presentation: Presentation = 'standard';
+  private listeners = new Set<() => void>();
+  private frameId = 0;
+  private settleTimer?: ReturnType<typeof setTimeout>;
+  private dragging = false;
   /** `quality` defaults to a device guess (phones `medium`); background stills pass `ultra`. */
   constructor(private host: HTMLElement, private onSelect: (id: string | null) => void = () => {}, options: { quality?: QualityTier } = {}) {
     this.renderer = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    this.renderer.localClippingEnabled = true; // Overview wall cut (dollhouse.ts).
     this.scene.background = new T.Color('#f3ece2');
     this.stage = new RenderStage(this.renderer, this.scene, this.camera, options.quality ?? detectQuality());
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.maxPolarAngle = Math.PI * .49;
+    // Damped orbiting: the view keeps gliding briefly after release. Frames run only while something moves; when
+    // still, the scene renders on demand and the full-quality frame (ambient occlusion, probe) is drawn once.
+    this.controls.enableDamping = true; this.controls.dampingFactor = .08;
     this.controls.addEventListener('change', this.draw);
+    this.controls.addEventListener('start', () => { this.dragging = true; this.endTween(); this.animate(); });
+    this.controls.addEventListener('end', () => { this.dragging = false; this.animate(); });
     this.renderer.domElement.addEventListener('pointerdown', this.onDown);
     this.renderer.domElement.addEventListener('pointerup', this.onUp);
     this.renderer.domElement.setAttribute('aria-label', '可旋转缩放的合成测试空间');
@@ -201,8 +219,9 @@ export class SpatialScene {
     const requested = view ?? (this.view.mode !== 'building' && snapshot.levels?.some(level => level.id === (this.view as { levelId: string }).levelId) ? this.view : buildingView);
     const next = createSceneModel(snapshot, requested); // Validate before replacing a working scene.
     this.view = requested;
-    if (this.model) { this.scene.remove(this.model.root); disposeModel(this.model.root); }
+    if (this.model) { this.cutaway?.dispose(); this.scene.remove(this.model.root); disposeModel(this.model.root); }
     this.model = next; this.scene.add(next.root);
+    this.cutaway = new Cutaway(next.data, next.objects, next.levels);
     this.stage.setModel(next.root, next.lamps, light);
     if (!preserveCamera) this.fit();
     this.setSelection(this.selectedId);
@@ -223,9 +242,17 @@ export class SpatialScene {
   getQuality(): QualityTier { return this.stage.getQuality(); }
   /** Preset aerial and eye-level shots for the loaded snapshot (shared with background stills). */
   cameraPresets(): CameraPreset[] { if (!this.model) throw new Error('No scene loaded'); return cameraPresets(this.model.data); }
-  applyCameraPreset(id: string) {
-    const preset = this.cameraPresets().find(item => item.id === id);
+  /** Shots of the single storey the interactive viewer shows (see `mainLevelId`). */
+  mainLevelPresets(): CameraPreset[] { if (!this.model) throw new Error('No scene loaded'); return cameraPresets(this.model.data, mainLevelId(this.model.data)); }
+  /**
+   * `interactive` (implied by `animate`) uses the viewer's looks: overview shots get the dollhouse cut and bright
+   * look, interiors the realistic one. Without it (stills) the standard look is used. `animate` eases the camera.
+   */
+  applyCameraPreset(id: string, options: { animate?: boolean; interactive?: boolean } = {}) {
+    const preset = [...this.mainLevelPresets(), ...this.cameraPresets()].find(item => item.id === id);
     if (!preset) throw new Error(`Unknown camera preset: ${id}`);
+    this.endTween();
+    const from = { ...this.getCamera(), fov: this.camera.fov };
     if (JSON.stringify(preset.view) !== JSON.stringify(this.view)) this.setView(preset.view, true);
     if (preset.kind === 'aerial') { this.camera.fov = 38; this.camera.updateProjectionMatrix(); this.frame(new T.Vector3(...preset.direction)); }
     else {
@@ -235,8 +262,48 @@ export class SpatialScene {
       this.camera.updateProjectionMatrix();
       this.camera.position.fromArray(preset.position); this.controls.target.fromArray(preset.target); this.controls.update();
     }
-    this.draw();
+    // Interactive overview shots use the dollhouse look; interiors switch to the realistic look once arrived.
+    const target: Presentation = !(options.interactive ?? options.animate) ? 'standard' : preset.kind === 'aerial' ? 'overview' : 'interior';
+    this.moveFrom(from, options.animate ? 750 : 0, target);
   }
+  /** Overview close-up of one room of the shown storey (dollhouse look), keeping the current compass direction. */
+  focusRoom(id: string, options: { animate?: boolean } = {}) {
+    if (!this.model) throw new Error('No scene loaded');
+    const room = this.model.data.rooms.find(item => item.id === id);
+    if (!room) throw new Error(`Unknown room: ${id}`);
+    this.endTween();
+    const elevation = this.elevationOf(room), from = { ...this.getCamera(), fov: this.camera.fov };
+    const xs = room.outline.map(p => p.x), zs = room.outline.map(p => p.z);
+    const box = new T.Box3(new T.Vector3(Math.min(...xs), elevation, Math.min(...zs)), new T.Vector3(Math.max(...xs), elevation + CUT_HEIGHT, Math.max(...zs)));
+    const anchor = roomAnchor(room.outline), centre = new T.Vector3(anchor.x, elevation + .4, anchor.z);
+    const horizontal = new T.Vector3(from.position[0] - from.target[0], 0, from.position[2] - from.target[2]);
+    if (horizontal.lengthSq() < 1e-6) horizontal.set(.55, 0, .8);
+    const direction = horizontal.normalize().multiplyScalar(Math.cos(T.MathUtils.degToRad(42))).setY(Math.sin(T.MathUtils.degToRad(42)));
+    this.camera.fov = 38; this.camera.updateProjectionMatrix();
+    const vertical = T.MathUtils.degToRad(this.camera.fov / 2), side = Math.atan(Math.tan(vertical) * this.camera.aspect);
+    const radius = box.getSize(new T.Vector3()).length() / 2, distance = Math.max(3, radius / Math.sin(Math.min(vertical, side)) * 1.05);
+    this.controls.target.copy(centre); this.camera.position.copy(centre).addScaledVector(direction, distance); this.controls.update();
+    this.moveFrom(from, options.animate ? 750 : 0, 'overview');
+  }
+  /** Named rooms of the shown storey with label anchors; entries without a shot cannot be entered. */
+  rooms(): RoomEntry[] {
+    if (!this.model) throw new Error('No scene loaded');
+    const shots = new Map(this.mainLevelPresets().flatMap(preset => preset.kind === 'interior' ? [[preset.roomId, preset.id] as const] : []));
+    const levels = effectiveLevels(this.model.data), main = mainLevelId(this.model.data);
+    return this.model.data.rooms.filter(room => room.name && (!this.model!.data.levels || levelOf(room, levels) === main)).map(room => {
+      const anchor = roomAnchor(room.outline);
+      return { id: room.id, name: room.name!, anchor: [anchor.x, this.elevationOf(room) + .25, anchor.z], interiorPreset: shots.get(room.id) ?? null };
+    });
+  }
+  getPresentation(): Presentation { return this.presentation; }
+  /** Screen position (CSS pixels within the host) of a world point; `visible` is false behind the camera or off-canvas. */
+  projectPoint(point: [number, number, number]) {
+    const p = new T.Vector3(...point).project(this.camera);
+    const x = (p.x + 1) * this.host.clientWidth / 2, y = (1 - p.y) * this.host.clientHeight / 2;
+    return { x, y, visible: p.z < 1 && Math.abs(p.x) <= 1.05 && Math.abs(p.y) <= 1.05 };
+  }
+  /** Called after every rendered frame (labels follow the camera). Returns an unsubscribe function. */
+  onFrame(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   /** Renders one frame through the quality tier's pipeline (post-processing included). */
   render() { this.draw(); }
   updateObject(id: string, patch: { x?: number; y?: number; z?: number; yaw?: number }) {
@@ -318,7 +385,61 @@ export class SpatialScene {
     this.stage.setSize(this.host.clientWidth, this.host.clientHeight);
     this.camera.aspect = this.host.clientWidth / this.host.clientHeight; this.camera.updateProjectionMatrix(); this.draw();
   };
-  private draw = () => { if (!this.disposed) this.stage.render(); };
+  private draw = () => {
+    if (this.disposed) return;
+    if (this.presentation === 'overview' && this.cutaway?.update(this.camera, this.controls.target)) this.stage.invalidate();
+    this.stage.render();
+    for (const listener of this.listeners) listener();
+  };
+  private elevationOf(room: { levelId?: string }) {
+    const levels = effectiveLevels(this.model!.data);
+    return levels.find(level => level.id === levelOf(room, levels))?.elevation ?? 0;
+  }
+  private setPresentation(next: Presentation) {
+    this.presentation = next;
+    if (next !== 'overview' && this.cutaway?.clear()) this.stage.invalidate();
+    this.stage.setOverview(next === 'overview');
+  }
+  /** Eases from `from` to the camera's current state; the overview look starts at once, the realistic look on arrival. */
+  private moveFrom(from: CameraState & { fov: number }, duration: number, next: Presentation) {
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!duration || reduced || typeof requestAnimationFrame !== 'function') { this.setPresentation(next); this.draw(); return; }
+    if (next === 'overview') this.setPresentation(next);
+    const to = { ...this.getCamera(), fov: this.camera.fov };
+    this.place(from);
+    this.tween = { start: performance.now(), duration, from, to, done: next === 'overview' ? undefined : () => this.setPresentation(next) };
+    this.animate(); this.draw();
+  }
+  private endTween() {
+    const tween = this.tween; if (!tween) return;
+    this.tween = undefined; tween.done?.();
+  }
+  private place(value: CameraState & { fov: number }) {
+    this.camera.position.fromArray(value.position); this.controls.target.fromArray(value.target);
+    if (this.camera.fov !== value.fov) { this.camera.fov = value.fov; this.camera.updateProjectionMatrix(); }
+    this.camera.lookAt(this.controls.target);
+  }
+  /** Runs frames while dragging, gliding (damping) or easing to a preset; then one full-quality frame. */
+  private animate() {
+    if (this.disposed || typeof requestAnimationFrame !== 'function') return;
+    clearTimeout(this.settleTimer); this.stage.setInteractive(true);
+    if (this.frameId) return;
+    const step = (now: number) => {
+      this.frameId = 0;
+      if (this.disposed) return;
+      let moving = this.dragging;
+      if (this.tween) {
+        const { start, duration, from, to } = this.tween, t = Math.min(1, (now - start) / duration), e = 1 - Math.pow(1 - t, 3);
+        const mix = (a: number[], b: number[]) => a.map((value, index) => value + (b[index] - value) * e);
+        this.place({ position: mix(from.position, to.position), target: mix(from.target, to.target), fov: from.fov + (to.fov - from.fov) * e });
+        this.draw(); moving = true;
+        if (t >= 1) { this.endTween(); this.controls.update(); this.draw(); }
+      } else if (this.controls.update()) moving = true; // update() reports remaining damped motion and redraws via 'change'.
+      if (moving) { this.frameId = requestAnimationFrame(step); return; }
+      this.settleTimer = setTimeout(() => { if (this.disposed) return; this.stage.setInteractive(false); this.draw(); }, 160);
+    };
+    this.frameId = requestAnimationFrame(step);
+  }
   private onDown = (event: PointerEvent) => { this.down = { x: event.clientX, y: event.clientY }; };
   private onUp = (event: PointerEvent) => {
     if (!this.down || Math.hypot(event.clientX - this.down.x, event.clientY - this.down.y) > 5) return;
@@ -326,14 +447,18 @@ export class SpatialScene {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    let hit: T.Object3D | null = this.model ? this.raycaster.intersectObject(this.model.root, true)[0]?.object ?? null : null;
+    // Rays pass through the removed upper part of cut walls in the overview.
+    const hits = this.model ? this.raycaster.intersectObject(this.model.root, true).filter(item => !this.cutaway?.clipped(item.object, item.point)) : [];
+    let hit: T.Object3D | null = hits[0]?.object ?? null;
     while (hit && !hit.userData.id) hit = hit.parent;
     this.onSelect(hit?.userData.id ?? null);
   };
   dispose() {
     this.disposed = true; this.observer.disconnect(); this.controls.dispose();
+    if (this.frameId) cancelAnimationFrame(this.frameId); clearTimeout(this.settleTimer);
     this.renderer.domElement.removeEventListener('pointerdown', this.onDown);
     this.renderer.domElement.removeEventListener('pointerup', this.onUp);
+    this.cutaway?.dispose();
     if (this.model) disposeModel(this.model.root);
     if (this.selection) { this.selection.geometry.dispose(); this.selection.material.dispose(); }
     this.stage.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();

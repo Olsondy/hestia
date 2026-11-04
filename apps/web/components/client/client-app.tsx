@@ -9,6 +9,7 @@ import { Icon } from './client-icons';
 import { Alert, Badge, Group, PlanDrawing, Row, RowMain, Section, Segmented, StyleOptions, Swatch, Timeline } from './client-parts';
 import { NewRequestView, RequestRoute, requestStatus } from './client-request';
 import { ShareCodeEntry, ShareRoute, rememberedShares } from './client-share';
+import { useRail } from './rail';
 
 // ---------- 上下文 ----------
 type Ctx = {
@@ -124,6 +125,7 @@ export function useStored<T>(key: string, initial: T): [T, (value: T | ((old: T)
 function HomeView() {
   const { entry, workspaceName } = useClient();
   const catalog = useQuery({ queryKey: ['catalog', entry], queryFn: () => clientApi(entry).catalog(), staleTime: 5 * 60_000 });
+  const stoneRail = useRail<HTMLDivElement>();
   return <Screen tabs="home">
     <section className="home-hero">
       <img src="/client/demo-villa-cover.jpg" alt="示例别墅一层客厅效果图（示意）"/>
@@ -136,7 +138,7 @@ function HomeView() {
         <li key={t}>{t}<small>{s}</small></li>)}</ol>
       {!!catalog.data?.softStyles.length && <Section title={`${catalog.data.softStyles.length} 套软装风格`} aside="示意素材"><StyleOptions styles={catalog.data.softStyles}/></Section>}
       <Section title="企业石材库" aside="示意素材">
-        {catalog.isLoading ? <Loading/> : <div className="stone-rail">{catalog.data?.stones.map(stone =>
+        {catalog.isLoading ? <Loading/> : <div className="stone-rail" ref={stoneRail}>{catalog.data?.stones.map(stone =>
           <figure key={`${stone.id}:${stone.version}`}><Swatch stone={stone} size={176}/><figcaption>{stone.name}</figcaption></figure>)}</div>}
         <ErrorLine error={catalog.error}/>
       </Section>

@@ -1,11 +1,12 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { projectUV, SURFACE_TILE, surfaceDetail, type SurfaceKind } from './surface-texture';
 
 // Parametric ambience props for non-catalog scene objects (e.g. imported HouseSpec furniture keys such as `lSofa`).
 // Every builder fills the object's size envelope exactly: width along x, depth along z, height up from the floor,
 // origin at the footprint centre. The front (seat side, doors, foot of a bed) faces +z, the back faces -z.
-// Procedural geometry only; no external models or textures.
+// Procedural geometry and procedural detail textures only (surface-texture.ts); no external models or images.
 
 type V3 = [number, number, number];
 export type PropSize = { width: number; height: number; depth: number };
@@ -16,6 +17,8 @@ type Surface = 'fabric' | 'cushion' | 'linen' | 'wood' | 'darkWood' | 'lacquer' 
 export type PropTones = { fabric: string; cushion: string; wood: string; darkWood: string; metal: string; accent: string };
 const toned: Partial<Record<Surface, keyof PropTones>> = { fabric: 'fabric', cushion: 'cushion', wood: 'wood', darkWood: 'darkWood', metal: 'metal', brass: 'metal', matte: 'accent' };
 const cache = new Map<string, T.MeshStandardMaterial>();
+/** Surfaces that carry a procedural detail texture (weave, slub, grain, plaster). */
+const detail: Partial<Record<Surface, SurfaceKind>> = { fabric: 'fabric', cushion: 'fabric', felt: 'fabric', linen: 'linen', wood: 'wood', darkWood: 'wood', concrete: 'plaster' };
 /** Shared physically based materials. Base colours stay in sRGB hex like the rest of the scene. */
 function material(surface: Surface, tint: string, tones?: PropTones) {
   const tone = tones && toned[surface] ? tones[toned[surface]!] : undefined;
@@ -50,7 +53,11 @@ function material(surface: Surface, tint: string, tones?: PropTones) {
     concrete: { color: '#bdb6aa', roughness: .85 },
     matte: { color: tint, roughness: .8 },
   };
-  mat = new T.MeshPhysicalMaterial(tone ? { ...spec[surface], color: tone, ...(spec[surface].sheenColor ? { sheenColor: new T.Color(tone).lerp(new T.Color('#ffffff'), .35) } : {}) } : spec[surface]);
+  const kind = detail[surface];
+  mat = new T.MeshPhysicalMaterial({ ...(tone ? { ...spec[surface], color: tone, ...(spec[surface].sheenColor ? { sheenColor: new T.Color(tone).lerp(new T.Color('#ffffff'), .35) } : {}) } : spec[surface]),
+    ...(kind ? surfaceDetail(kind) : {}) });
+  // Textured surfaces get box-projected UVs at true scale when the prop is merged (finish()).
+  if (kind) mat.userData.tile = SURFACE_TILE[kind];
   if (surface === 'lamp') mat.userData.lamp = true;
   cache.set(key, mat);
   return mat;
@@ -481,7 +488,8 @@ function finish(group: T.Group) {
     const mat = mesh.material as T.Material;
     const geometry = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
     for (const name of Object.keys(geometry.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geometry.deleteAttribute(name);
-    if (!geometry.attributes.uv) geometry.setAttribute('uv', new T.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
+    if (mat.userData.tile) projectUV(geometry, mat.userData.tile as number);
+    else if (!geometry.attributes.uv) geometry.setAttribute('uv', new T.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
     geometry.clearGroups();
     if (!mesh.castShadow) shadowless.add(mat);
     buckets.set(mat, [...buckets.get(mat) ?? [], geometry]);

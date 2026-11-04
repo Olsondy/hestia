@@ -15,6 +15,7 @@ import { detectQuality, type QualityTier } from './quality';
 import { cameraPresets, mainLevelId, viewerRoomNames, type CameraPreset } from './cameras';
 import { createFinishMeshes } from './finish-surfaces';
 import { Cutaway, CUT_HEIGHT, roomAnchor } from './dollhouse';
+import { projectUV, SURFACE_TILE, surfaceDetail } from './surface-texture';
 
 export type CameraState = { position: number[]; target: number[] };
 /** A room of the shown storey as listed by the overview: label anchor (world) and its eye-level shot, if any. */
@@ -67,7 +68,7 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
       const shape = new T.Shape();
       room.outline.forEach((p, i) => i ? shape.lineTo(p.x, -p.z) : shape.moveTo(p.x, -p.z));
       shape.closePath();
-      const floor = new T.Mesh(new T.ShapeGeometry(shape), new T.MeshStandardMaterial({ color: room.floorColor, side: T.DoubleSide, roughness: .9 }));
+      const floor = new T.Mesh(projectUV(new T.ShapeGeometry(shape), SURFACE_TILE.plaster), new T.MeshStandardMaterial({ color: room.floorColor, side: T.DoubleSide, roughness: .9, ...surfaceDetail('plaster') }));
       floor.rotation.x = -Math.PI / 2;
       floor.receiveShadow = true;
       floor.userData.id = room.id;
@@ -75,12 +76,12 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
       continue;
     }
     const holes = (data.slabOpenings ?? []).filter(opening => opening.levelId === level.id).map(opening => opening.outline);
-    const shapes = floorShapes(room.outline, holes), surface = new T.MeshStandardMaterial({ color: room.floorColor, side: T.DoubleSide, roughness: .9 });
+    const shapes = floorShapes(room.outline, holes), surface = new T.MeshStandardMaterial({ color: room.floorColor, side: T.DoubleSide, roughness: .9, ...surfaceDetail('plaster') });
     const floor = index > 0 && level.slabThickness > 0
       // Upper storeys are solid slabs whose top is the finished floor; slab openings are real holes.
-      ? new T.Mesh(new T.ExtrudeGeometry(shapes, { depth: level.slabThickness, bevelEnabled: false }),
+      ? new T.Mesh(projectUV(new T.ExtrudeGeometry(shapes, { depth: level.slabThickness, bevelEnabled: false }), SURFACE_TILE.plaster),
         [surface, new T.MeshStandardMaterial({ color: slabEdgeColor, roughness: .9 })])
-      : new T.Mesh(new T.ShapeGeometry(shapes), surface);
+      : new T.Mesh(projectUV(new T.ShapeGeometry(shapes), SURFACE_TILE.plaster), surface);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = level.elevation - (index > 0 ? level.slabThickness : 0);
     floor.receiveShadow = true; floor.castShadow = index > 0;
@@ -115,6 +116,10 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
       if (end - start < 1e-7 || high - low < 1e-7) return;
       const mesh = box(end - start, high - low, wall.thickness, wallColor);
       mesh.position.set((start + end) / 2, (low + high) / 2, 0); group.add(mesh);
+      // Lime-plaster detail, projected in wall coordinates so it runs on across openings.
+      const geometry = mesh.geometry.translate(mesh.position.x, mesh.position.y, 0);
+      projectUV(geometry, SURFACE_TILE.plaster).translate(-mesh.position.x, -mesh.position.y, 0);
+      Object.assign(mesh.material as T.MeshStandardMaterial, surfaceDetail('plaster'), { roughness: .92 });
     };
     let cursor = 0;
     for (const opening of [...wall.openings].sort((a, b) => a.offset - b.offset)) {
@@ -181,7 +186,8 @@ export function disposeModel(root: T.Object3D) {
     if (material instanceof T.MeshStandardMaterial) { if (material.map) textures.add(material.map); if (material.bumpMap) textures.add(material.bumpMap); }
     material.dispose();
   }
-  textures.forEach(texture => texture.dispose());
+  // Cached procedural textures (stone, surface detail) are reused by the next model; keep their GPU copies.
+  textures.forEach(texture => { if (!texture.userData.shared) texture.dispose(); });
 }
 
 export class SpatialScene {

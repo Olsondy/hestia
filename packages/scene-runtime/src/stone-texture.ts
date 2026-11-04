@@ -20,7 +20,7 @@ function lattice(seed: number) {
   }
   return values;
 }
-function noise(x: number, y: number, s: number, period = 0) {
+export function noise(x: number, y: number, s: number, period = 0) {
   let xi = Math.floor(x), yi = Math.floor(y);
   const xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
   let x1 = xi + 1, y1 = yi + 1;

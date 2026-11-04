@@ -47,6 +47,8 @@ export class RenderStage {
   private radius = 4;
   /** Optional region the overview concentrates on (design rooms): the sun's shadow map covers just this. */
   private focus?: T.Box3;
+  /** Point whose nearest lamps are lit at night (overview / plan); defaults to a point ahead of the camera. */
+  lampFocus?: T.Vector3;
   state: LightingState = { mode: 'day', interiorLights: false };
   /** Page colour shown behind the model in daylight (host pages may match their own surface). */
   private dayBackdrop = day.background;
@@ -217,7 +219,7 @@ export class RenderStage {
   private placeLamps() {
     if (!this.pointLights.length) return;
     const focus = new T.Vector3(), forward = this.camera.getWorldDirection(new T.Vector3());
-    focus.copy(this.camera.position).addScaledVector(forward, 4);
+    if (this.lampFocus) focus.copy(this.lampFocus); else focus.copy(this.camera.position).addScaledVector(forward, 4);
     const candidates = [
       ...this.lamps.map(lamp => ({ position: lamp.position, strength: Math.min(1.6, .45 + lamp.area / 25) })),
       ...this.lampAnchors.map(anchor => ({ position: anchor.getWorldPosition(new T.Vector3()), strength: anchor.userData.lightAnchor as number })),

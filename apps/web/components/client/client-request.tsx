@@ -342,7 +342,7 @@ function UploadAgainView({ request: r }: { request: FinishRequestView }) {
 }
 
 // ---------- 方案页：Stage（效果图 / 3D）+ Panel ----------
-type ResultUi = { scheme: string | null; level: string | null; view: 'image' | '3d'; expanded: boolean };
+type ResultUi = { scheme: string | null; level: string | null; view: 'image' | '3d' | 'plan'; expanded: boolean };
 const resultUi: ResultUi = { scheme: null, level: null, view: 'image', expanded: false };
 function useSwipe(onSwipe: (direction: 1 | -1) => void) {
   const start = useRef<number | null>(null);
@@ -358,7 +358,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   const soft = softOf(s);
   const levels = levelsOf(r), level = levels.find(l => l.id === ui.level)?.id ?? levels[0]?.id ?? null;
   const scene = useQuery({ queryKey: ['scene', r.id, s?.id, s?.revision], queryFn: () => (loadScene ?? (id => clientApi(entry).scene(r.id, id)))(s!.id),
-    enabled: ui.view === '3d' && !!s, staleTime: Infinity });
+    enabled: ui.view !== 'image' && !!s, staleTime: Infinity });
   const index = Math.max(0, r.schemes.indexOf(s));
   const shift = (d: 1 | -1) => setUi(u => ({ ...u, scheme: r.schemes[(index + d + r.schemes.length) % r.schemes.length].id }));
   const swipe = useSwipe(shift);
@@ -400,18 +400,19 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   </>;
   return <Screen className={`immersive${ui.expanded ? ' is-expanded' : ''}`}>
     <div className={`stage${reRendering && ui.view === 'image' ? ' stage--busy' : ''}`} {...swipe}>
-      {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`}/> : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data}/>}
-      {ui.view === '3d' && scene.error ? <div className="stage__msg" role="alert">{scene.error instanceof Error ? scene.error.message : '3D 暂时打不开'}</div> : null}
+      {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`}/> : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data} plan={ui.view === 'plan'}/>}
+      {ui.view !== 'image' && scene.error ? <div className="stage__msg" role="alert">{scene.error instanceof Error ? scene.error.message : '3D 暂时打不开'}</div> : null}
       {!ui.expanded && <>
         <div className="stage__top">
           {preview && <span className="media-tag"><Icon name="eye" size={14}/>企业分享给你的方案 · 仅预览</span>}
           {ui.view === '3d' && <span className="media-tag"><Icon name="cube" size={14}/>实时 3D · 以效果图为准</span>}
+          {ui.view === 'plan' && <span className="media-tag"><Icon name="plan" size={14}/>平面图 · 示意</span>}
           {reRendering && <span className="media-tag"><Icon name="clock" size={14}/>修订 {s.revision} 出图中</span>}
         </div>
         {r.schemes.length > 1 && <><button className="icon-btn icon-btn--media stage__nav stage__nav--prev" onClick={() => shift(-1)} aria-label="上一个方案"><Icon name="left" size={18}/></button>
           <button className="icon-btn icon-btn--media stage__nav stage__nav--next" onClick={() => shift(1)} aria-label="下一个方案"><Icon name="right" size={18}/></button></>}
         <div className="stage__bottom">
-          <Segmented media label="查看方式" value={ui.view} onChange={v => setUi(u => ({ ...u, view: v }))} options={[['image', '效果图', 'image'], ['3d', '3D', 'cube']]}/>
+          <Segmented media label="查看方式" value={ui.view} onChange={v => setUi(u => ({ ...u, view: v }))} options={[['image', '效果图', 'image'], ['3d', '3D', 'cube'], ['plan', '平面图', 'plan']]}/>
           <span className="media-tag num">{index + 1} / {r.schemes.length}</span>
         </div>
       </>}

@@ -48,7 +48,7 @@ export function cameraPresets(snapshot: SceneSnapshot, levelId?: string): Camera
   const many = !!snapshot.levels && levels.length > 1;
   const levelView = (id: string): SceneView => snapshot.levels ? { mode: 'level', levelId: id } : { mode: 'building' };
   levels.forEach((level, index) => {
-    const name = many ? `${level.name ?? `${index + 1} 层`} · 全层` : '全层浏览';
+    const name = many ? `${level.name ?? `${index + 1} 层`} · 全层立体` : '全层立体浏览';
     presets.push({ id: many ? `overview-${level.id}` : 'overview', name, kind: 'aerial', view: levelView(level.id), direction: [.62, .78, .9] });
   });
   for (const level of levels) {

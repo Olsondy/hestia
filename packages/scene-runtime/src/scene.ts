@@ -22,7 +22,15 @@ export type CameraState = { position: number[]; target: number[] };
 export type RoomEntry = { id: string; name: string; anchor: [number, number, number]; interiorPreset: string | null; design: boolean };
 /** Utility spaces with nothing to design (garage, plant room, storage, laundry). */
 const utility = /车库|设备|储藏|储物|杂物|洗衣|空调位|garage|storage|utility|plant/i;
-export type Presentation = 'standard' | 'overview' | 'interior';
+export type Presentation = 'standard' | 'overview' | 'interior' | 'plan';
+/** Plan view surfaces: the scene's own materials, a white model, or line drawing (edges on paper). */
+export type MaterialMode = 'real' | 'white' | 'line';
+/** Plan section height above the storey floor (architectural plan convention). */
+export const PLAN_CUT = 1.2;
+const planWhite = new T.MeshStandardMaterial({ color: '#f3f0ea', roughness: .9 });
+const planPaper = new T.MeshBasicMaterial({ color: '#fbfaf6' });
+const planEdge = new T.LineBasicMaterial({ color: '#59605b' });
+for (const material of [planWhite, planPaper, planEdge]) material.userData.shared = true;
 export type { SceneView, LightingState, QualityTier, CameraPreset };
 const wallColor = '#f4efe6', slabEdgeColor = '#d9d0c3', stairColor = '#cfc4b4';
 const buildingView: SceneView = { mode: 'building' };
@@ -213,6 +221,10 @@ export class SpatialScene {
   /** Set by focusOnDesign: overview framing covers the design rooms only. */
   private focusBounds?: T.Box3;
   private designFocus = false;
+  private materialMode: MaterialMode = 'real';
+  private swapped = new Map<T.Mesh, T.Material | T.Material[]>();
+  private edges: T.LineSegments[] = [];
+  private planPlane = new T.Plane(new T.Vector3(0, -1, 0), 0);
   private frameId = 0;
   private settleTimer?: ReturnType<typeof setTimeout>;
   private dragging = false;
@@ -242,7 +254,7 @@ export class SpatialScene {
     const requested = view ?? (this.view.mode !== 'building' && snapshot.levels?.some(level => level.id === (this.view as { levelId: string }).levelId) ? this.view : buildingView);
     const next = createSceneModel(snapshot, requested); // Validate before replacing a working scene.
     this.view = requested;
-    if (this.model) { this.cutaway?.dispose(); this.scene.remove(this.model.root); disposeModel(this.model.root); }
+    if (this.model) { this.setMaterialMode('real'); this.dropEdges(); this.cutaway?.dispose(); this.scene.remove(this.model.root); disposeModel(this.model.root); }
     this.focusBounds = undefined;
     this.model = next; this.scene.add(next.root);
     this.cutaway = new Cutaway(next.data, next.objects, next.levels);
@@ -298,6 +310,11 @@ export class SpatialScene {
     if (!room) throw new Error(`Unknown room: ${id}`);
     this.endTween();
     const elevation = this.elevationOf(room), from = { ...this.getCamera(), fov: this.camera.fov };
+    if (this.presentation === 'plan') {
+      const xs = room.outline.map(p => p.x), zs = room.outline.map(p => p.z);
+      this.framePlan(new T.Box3(new T.Vector3(Math.min(...xs), elevation, Math.min(...zs)), new T.Vector3(Math.max(...xs), elevation + PLAN_CUT, Math.max(...zs))));
+      this.moveFrom(from, options.animate ? 650 : 0, 'plan'); return;
+    }
     const xs = room.outline.map(p => p.x), zs = room.outline.map(p => p.z);
     // Furniture-height box of the room; the camera comes as close as keeps all its corners on screen.
     const box = new T.Box3(new T.Vector3(Math.min(...xs), elevation, Math.min(...zs)), new T.Vector3(Math.max(...xs), elevation + .9, Math.max(...zs)));
@@ -372,6 +389,53 @@ export class SpatialScene {
       this.stage.setFocus(box);
     }
   }
+  /**
+   * Plan view (平面图): straight down through a narrow lens (near-orthographic), everything above PLAN_CUT over the
+   * storey floor sectioned away, pan and zoom only. Leaving it restores orbiting; the caller then picks a shot.
+   */
+  setPlan(on: boolean, options: { animate?: boolean } = {}) {
+    if (!this.model) throw new Error('No scene loaded');
+    if (on === (this.presentation === 'plan')) return;
+    this.endTween();
+    if (on) {
+      const from = { ...this.getCamera(), fov: this.camera.fov };
+      const box = this.focusBounds?.clone() ?? new T.Box3().setFromObject(this.model.root);
+      this.planPlane.constant = box.min.y + PLAN_CUT; this.renderer.clippingPlanes = [this.planPlane];
+      this.controls.enableRotate = false; this.controls.mouseButtons.LEFT = T.MOUSE.PAN; this.controls.touches.ONE = T.TOUCH.PAN;
+      this.framePlan(box);
+      this.moveFrom(from, options.animate ? 650 : 0, 'plan');
+    } else {
+      this.setMaterialMode('real');
+      this.renderer.clippingPlanes = [];
+      this.controls.enableRotate = true; this.controls.mouseButtons.LEFT = T.MOUSE.ROTATE; this.controls.touches.ONE = T.TOUCH.ROTATE;
+      this.setPresentation('standard'); this.stage.invalidate(); this.draw();
+    }
+  }
+  /** Plan surfaces; only meaningful in the plan view (leaving the plan restores real materials). */
+  setMaterialMode(mode: MaterialMode) {
+    if (!this.model || mode === this.materialMode) return;
+    for (const [mesh, material] of this.swapped) mesh.material = material;
+    this.swapped.clear();
+    for (const edge of this.edges) edge.visible = false;
+    this.materialMode = mode;
+    if (mode !== 'real') this.model.root.traverse(node => {
+      if (!(node instanceof T.Mesh)) return;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      if (materials.some(material => material.transparent)) return; // Glass keeps its own look.
+      this.swapped.set(node, node.material);
+      node.material = mode === 'white' ? planWhite : planPaper;
+      if (mode === 'line') {
+        let edge = node.userData.planEdges as T.LineSegments | undefined;
+        if (!edge) {
+          edge = new T.LineSegments(new T.EdgesGeometry(node.geometry, 25), planEdge); edge.raycast = () => {};
+          node.add(edge); node.userData.planEdges = edge; this.edges.push(edge);
+        }
+        edge.visible = true;
+      }
+    });
+    this.stage.invalidate(); this.draw();
+  }
+  getMaterialMode(): MaterialMode { return this.materialMode; }
   getPresentation(): Presentation { return this.presentation; }
   /** Screen position (CSS pixels within the host) of a world point; `visible` is false behind the camera or off-canvas. */
   projectPoint(point: [number, number, number]) {
@@ -465,8 +529,11 @@ export class SpatialScene {
   private draw = () => {
     if (this.disposed) return;
     if (this.presentation === 'overview' && this.cutaway?.update(this.camera, this.controls.target)) this.stage.invalidate();
+    // Night views from above light the lamps nearest what the viewer looks at, not those nearest the camera.
+    this.stage.lampFocus = this.presentation === 'overview' || this.presentation === 'plan' ? this.controls.target : undefined;
     // Depth precision: from far away a 5 cm near plane leaves too few depth steps for thin layers (rugs on stone).
-    const near = this.presentation === 'overview' ? T.MathUtils.clamp(this.camera.position.distanceTo(this.controls.target) * .03, .05, .6) : .05;
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    const near = this.presentation === 'plan' ? Math.max(.05, distance * .5) : this.presentation === 'overview' ? T.MathUtils.clamp(distance * .03, .05, .6) : .05;
     if (Math.abs(this.camera.near - near) > .005) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
     this.stage.render();
     for (const listener of this.listeners) listener();
@@ -478,7 +545,19 @@ export class SpatialScene {
   private setPresentation(next: Presentation) {
     this.presentation = next;
     if (next !== 'overview' && this.cutaway?.clear()) this.stage.invalidate();
-    this.stage.setOverview(next === 'overview');
+    this.stage.setOverview(next === 'overview' || next === 'plan');
+  }
+  /** Straight-down shot fitting `box` (its floor at box.min.y), north up. */
+  private framePlan(box: T.Box3) {
+    this.camera.fov = 12; this.camera.updateProjectionMatrix();
+    const size = box.getSize(new T.Vector3()), half = Math.tan(T.MathUtils.degToRad(this.camera.fov / 2));
+    const distance = Math.max(size.z / 2 / half, size.x / 2 / (half * this.camera.aspect)) * 1.12 + PLAN_CUT;
+    const centre = box.getCenter(new T.Vector3()).setY(box.min.y);
+    this.controls.target.copy(centre); this.camera.position.set(centre.x, centre.y + distance, centre.z + distance * 1e-4); this.controls.update();
+  }
+  private dropEdges() {
+    for (const edge of this.edges) { edge.geometry.dispose(); edge.removeFromParent(); }
+    this.edges = [];
   }
   /** Eases from `from` to the camera's current state; the overview look starts at once, the realistic look on arrival. */
   private moveFrom(from: CameraState & { fov: number }, duration: number, next: Presentation) {
@@ -528,13 +607,14 @@ export class SpatialScene {
     this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     // Rays pass through the removed upper part of cut walls in the overview.
-    const hits = this.model ? this.raycaster.intersectObject(this.model.root, true).filter(item => visibleChain(item.object) && !this.cutaway?.clipped(item.object, item.point)) : [];
+    const hits = this.model ? this.raycaster.intersectObject(this.model.root, true).filter(item => visibleChain(item.object) && !this.cutaway?.clipped(item.object, item.point)
+      && !(this.presentation === 'plan' && item.point.y > this.planPlane.constant)) : [];
     let hit: T.Object3D | null = hits[0]?.object ?? null;
     while (hit && !hit.userData.id) hit = hit.parent;
     this.onSelect(hit?.userData.id ?? null);
   };
   dispose() {
-    this.disposed = true; this.observer.disconnect(); this.controls.dispose();
+    this.disposed = true; this.observer.disconnect(); this.controls.dispose(); this.dropEdges();
     if (this.frameId) cancelAnimationFrame(this.frameId); clearTimeout(this.settleTimer);
     this.renderer.domElement.removeEventListener('pointerdown', this.onDown);
     this.renderer.domElement.removeEventListener('pointerup', this.onUp);

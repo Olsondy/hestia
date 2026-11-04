@@ -11,14 +11,16 @@ import { projectUV, SURFACE_TILE, surfaceDetail, type SurfaceKind } from './surf
 type V3 = [number, number, number];
 export type PropSize = { width: number; height: number; depth: number };
 type Surface = 'fabric' | 'cushion' | 'linen' | 'wood' | 'darkWood' | 'lacquer' | 'stone' | 'metal' | 'brass' | 'chrome' | 'black'
-  | 'ceramic' | 'glass' | 'leaf' | 'leafDark' | 'bark' | 'soil' | 'water' | 'felt' | 'screen' | 'paint' | 'rubber' | 'lamp' | 'grass' | 'concrete' | 'matte';
+  | 'ceramic' | 'glass' | 'leaf' | 'leafDark' | 'bark' | 'soil' | 'water' | 'felt' | 'screen' | 'paint' | 'rubber' | 'lamp' | 'grass' | 'concrete' | 'matte'
+  /** Woven accent textile (scatter cushions, throws) in the soft style's accent tone. */
+  | 'accentFabric';
 
 /** Soft-style material tones (K01): replace the neutral defaults of these surfaces. */
 export type PropTones = { fabric: string; cushion: string; wood: string; darkWood: string; metal: string; accent: string };
-const toned: Partial<Record<Surface, keyof PropTones>> = { fabric: 'fabric', cushion: 'cushion', wood: 'wood', darkWood: 'darkWood', metal: 'metal', brass: 'metal', matte: 'accent' };
+const toned: Partial<Record<Surface, keyof PropTones>> = { fabric: 'fabric', cushion: 'cushion', wood: 'wood', darkWood: 'darkWood', metal: 'metal', brass: 'metal', matte: 'accent', accentFabric: 'accent' };
 const cache = new Map<string, T.MeshStandardMaterial>();
 /** Surfaces that carry a procedural detail texture (weave, slub, grain, plaster). */
-const detail: Partial<Record<Surface, SurfaceKind>> = { fabric: 'fabric', cushion: 'fabric', felt: 'fabric', linen: 'linen', wood: 'wood', darkWood: 'wood', concrete: 'plaster' };
+const detail: Partial<Record<Surface, SurfaceKind>> = { fabric: 'fabric', cushion: 'fabric', felt: 'fabric', accentFabric: 'fabric', linen: 'linen', wood: 'wood', darkWood: 'wood', concrete: 'plaster' };
 /** Shared physically based materials. Base colours stay in sRGB hex like the rest of the scene. */
 function material(surface: Surface, tint: string, tones?: PropTones) {
   const tone = tones && toned[surface] ? tones[toned[surface]!] : undefined;
@@ -52,6 +54,7 @@ function material(surface: Surface, tint: string, tones?: PropTones) {
     grass: { color: '#6f8a4c', roughness: 1 },
     concrete: { color: '#bdb6aa', roughness: .85 },
     matte: { color: tint, roughness: .8 },
+    accentFabric: { color: '#9a8470', roughness: .93, sheen: 1, sheenRoughness: .6, sheenColor: '#d9cbbb' },
   };
   const kind = detail[surface];
   mat = new T.MeshPhysicalMaterial({ ...(tone ? { ...spec[surface], color: tone, ...(spec[surface].sheenColor ? { sheenColor: new T.Color(tone).lerp(new T.Color('#ffffff'), .35) } : {}) } : spec[surface]),
@@ -102,29 +105,47 @@ function legs(k: Kit, w: number, d: number, top: number, inset: number, radius: 
   for (const x of [-1, 1]) for (const z of [-1, 1]) k.cyl(surface, [x * (w / 2 - inset), 0, z * (d / 2 - inset)], radius * taper, radius, top);
 }
 function sofa(k: Kit, w: number, h: number, d: number, options: { chaise?: boolean; seats?: number; arms?: boolean } = {}) {
-  const arm = Math.min(.2, w * .09), base = Math.min(.14, h * .17), seatTop = Math.min(.45, h * .55), back = Math.min(.24, d * .26);
-  k.box('darkWood', [-w / 2 + .05, 0, -d / 2 + .05], [w / 2 - .05, base * .5, d / 2 - .05]);
-  k.rbox('fabric', [-w / 2, base * .5, -d / 2], [w / 2, seatTop - .12, d / 2], .05);
-  k.rbox('fabric', [-w / 2 + (options.arms === false ? 0 : arm), seatTop - .14, -d / 2], [w / 2 - (options.arms === false ? 0 : arm), h, -d / 2 + back], .07);
-  if (options.arms !== false) for (const s of [-1, 1]) k.rbox('fabric', [s > 0 ? w / 2 - arm : -w / 2, base * .5, -d / 2], [s > 0 ? w / 2 : -w / 2 + arm, Math.min(h, seatTop + .2), d / 2], .07);
-  const inner = w - (options.arms === false ? 0 : arm * 2), seats = options.seats ?? Math.max(1, Math.round(inner / .75));
-  const seatFront = options.chaise ? d / 2 : d / 2 - .02;
+  // Frame raised on short tapered legs (light shows underneath), plump rounded arms and back, seat cushions with
+  // visible seams, scatter cushions with one in the accent tone, and a throw folded over one arm.
+  const arm = Math.min(.2, w * .09), leg = Math.min(.1, h * .13), seatTop = Math.min(.45, h * .55), back = Math.min(.24, d * .26);
+  const arms = options.arms !== false, legCount = w > 2.2 ? 3 : 2;
+  for (let i = 0; i < legCount; i++) for (const z of [-1, 1]) {
+    const x = -w / 2 + .07 + (w - .14) * i / (legCount - 1);
+    k.cyl('darkWood', [x, 0, z * (d / 2 - .07)], .018, .026, leg + .01, 12);
+  }
+  if (options.chaise) k.cyl('darkWood', [w / 2 - .07, 0, d / 2 - .07], .018, .026, leg + .01, 12);
+  k.rbox('fabric', [-w / 2, leg, -d / 2], [w / 2, seatTop - .12, d / 2], .06);
+  k.rbox('fabric', [-w / 2 + (arms ? arm * .6 : 0), seatTop - .14, -d / 2], [w / 2 - (arms ? arm * .6 : 0), h, -d / 2 + back], .1);
+  if (arms) for (const s of [-1, 1]) k.rbox('fabric', [s > 0 ? w / 2 - arm : -w / 2, leg, -d / 2], [s > 0 ? w / 2 : -w / 2 + arm, Math.min(h, seatTop + .18), d / 2], .09);
+  const inner = w - (arms ? arm * 2 : 0), seats = options.seats ?? Math.max(1, Math.round(inner / .75));
+  const seatFront = options.chaise ? d / 2 : d / 2 - .01, seam = .012;
   for (let i = 0; i < seats; i++) {
-    const x0 = -inner / 2 + inner * i / seats + .01, x1 = -inner / 2 + inner * (i + 1) / seats - .01;
-    k.rbox('cushion', [x0, seatTop - .13, -d / 2 + back - .02], [x1, seatTop, Math.min(seatFront, -d / 2 + back + .75)], .06);
-    const cushion = k.rbox('cushion', [x0 + .02, seatTop - .02, -d / 2 + back - .02], [x1 - .02, Math.min(h - .02, seatTop + .4), -d / 2 + back + .14], .07);
+    const x0 = -inner / 2 + inner * i / seats + seam, x1 = -inner / 2 + inner * (i + 1) / seats - seam;
+    k.rbox('cushion', [x0, seatTop - .14, -d / 2 + back - .02], [x1, seatTop, Math.min(seatFront, -d / 2 + back + .75)], .08);
+    const cushion = k.rbox('cushion', [x0 + .015, seatTop - .02, -d / 2 + back - .03], [x1 - .015, Math.min(h - .01, seatTop + .42), -d / 2 + back + .16], .09);
     cushion.rotation.x = -.12;
   }
   if (options.chaise) {
     // L-shaped sofa: the right end extends to the full depth as a chaise.
-    const cx0 = w / 2 - (options.arms === false ? 0 : arm) - Math.min(.9, inner / seats), cx1 = w / 2 - (options.arms === false ? 0 : arm) - .01;
-    k.rbox('cushion', [cx0, seatTop - .13, -d / 2 + back + .74], [cx1, seatTop, d / 2 - .02], .06);
-    k.rbox('fabric', [cx0 - .01, base * .5, -d / 2 + back + .7], [w / 2 - (options.arms === false ? 0 : arm), seatTop - .12, d / 2], .05);
+    const cx0 = w / 2 - (arms ? arm : 0) - Math.min(.9, inner / seats) + seam, cx1 = w / 2 - (arms ? arm : 0) - seam;
+    k.rbox('cushion', [cx0, seatTop - .14, -d / 2 + back + .75], [cx1, seatTop, d / 2 - .01], .08);
+    k.rbox('fabric', [cx0 - .01, leg, -d / 2 + back + .7], [w / 2 - (arms ? arm : 0), seatTop - .12, d / 2], .06);
   }
-  // Scatter cushions: one at each end against the back.
+  // Scatter cushions against the back: a pair at each end, the inner one of the left pair in the accent tone.
   for (const s of [-1, 1]) {
-    const x = s * (inner / 2 - .26), pillow = k.rbox('linen', [x - .2, seatTop - .02, -d / 2 + back], [x + .2, seatTop + .36, -d / 2 + back + .13], .06);
-    pillow.rotation.set(-.2, 0, s * .12);
+    const x = s * (inner / 2 - .24), pillow = k.rbox('linen', [x - .2, seatTop - .02, -d / 2 + back], [x + .2, seatTop + .36, -d / 2 + back + .14], .08);
+    pillow.rotation.set(-.22, 0, s * .1);
+    if (s < 0 && inner > 1.3) {
+      const accent = k.rbox('accentFabric', [x + .16, seatTop - .02, -d / 2 + back + .08], [x + .5, seatTop + .3, -d / 2 + back + .2], .07);
+      accent.rotation.set(-.18, 0, -.08);
+    }
+  }
+  // Throw folded over the right arm: a band across the top that drops down both faces of the arm.
+  if (arms) {
+    const x0 = w / 2 - arm - .03, x1 = w / 2 + .012, top = Math.min(h, seatTop + .18), z0 = -.05, z1 = Math.min(d / 2 - .08, .35);
+    k.rbox('accentFabric', [x0, top - .01, z0], [x1, top + .018, z1], .009);
+    k.rbox('accentFabric', [x1 - .018, top - .32, z0], [x1, top + .01, z1], .008);
+    k.rbox('accentFabric', [x0, seatTop - .02, z0], [x0 + .018, top + .01, z1], .008);
   }
 }
 function chair(k: Kit, w: number, h: number, d: number, arms = false) {
@@ -133,7 +154,10 @@ function chair(k: Kit, w: number, h: number, d: number, arms = false) {
     k.rod('darkWood', [x * (w / 2 - .04), 0, d / 2 - .05], [x * (w / 2 - .04), seat - .03, d / 2 - .07], .018);
     k.rod('darkWood', [x * (w / 2 - .04), 0, -d / 2 + .03], [x * (w / 2 - .04), h, -d / 2 + .08], .018);
   }
-  k.rbox('fabric', [-w / 2 + .01, seat - .06, -d / 2 + .05], [w / 2 - .01, seat, d / 2 - .02], .025);
+  // Front and back stretchers tie the legs; the seat pad is crowned like a sewn cushion.
+  for (const z of [d / 2 - .06, -d / 2 + .05]) k.rod('darkWood', [-(w / 2 - .04), .16, z], [w / 2 - .04, .16, z], .011);
+  k.box('darkWood', [-w / 2 + .02, seat - .08, -d / 2 + .05], [w / 2 - .02, seat - .05, d / 2 - .03]);
+  k.rbox('fabric', [-w / 2 + .01, seat - .06, -d / 2 + .05], [w / 2 - .01, seat + .015, d / 2 - .02], .035);
   const back = k.rbox('fabric', [-w / 2 + .03, seat + .12, -d / 2 + .04], [w / 2 - .03, h - .04, -d / 2 + .1], .025); back.rotation.x = -.08;
   if (arms) for (const x of [-1, 1]) k.box('darkWood', [x * (w / 2 - .03) - .02, seat + .18, -d / 2 + .05], [x * (w / 2 - .03) + .02, seat + .21, d / 2 - .06]);
 }
@@ -144,12 +168,13 @@ function table(k: Kit, w: number, h: number, d: number, top: Surface = 'stone', 
     k.cyl(leg, [0, 0, 0], .06, .06, h - t, 16); k.cyl(leg, [0, 0, 0], Math.min(w, d) * .28, Math.min(w, d) * .3, .03, 32);
     return;
   }
-  k.rbox(top, [-w / 2, h - t, -d / 2], [w / 2, h, d / 2], .008);
-  k.box(leg, [-w / 2 + .06, h - t - .06, -d / 2 + .06], [w / 2 - .06, h - t, d / 2 - .06]);
+  // Eased top edge; the apron sits back from the edge so a shadow line separates it from the top.
+  k.rbox(top, [-w / 2, h - t, -d / 2], [w / 2, h, d / 2], Math.min(.014, t / 2.2));
+  k.box(leg, [-w / 2 + .08, h - t - .07, -d / 2 + .08], [w / 2 - .08, h - t - .004, d / 2 - .08]);
   legs(k, w, d, h - t, .09, Math.min(.03, w * .03), leg);
 }
 function cabinet(k: Kit, w: number, h: number, d: number, options: { doors?: number; drawers?: boolean; body?: Surface; front?: Surface; top?: Surface; plinth?: boolean; open?: 'books' | 'bottles' | 'plants' | 'display' } = {}) {
-  const body = options.body ?? 'wood', plinth = options.plinth === false ? 0 : Math.min(.08, h * .1), gap = .004;
+  const body = options.body ?? 'wood', plinth = options.plinth === false ? 0 : Math.min(.08, h * .1), gap = .0035;
   if (plinth) k.box('black', [-w / 2 + .03, 0, -d / 2 + .03], [w / 2 - .03, plinth, d / 2 - .04]);
   if (options.open) {
     const t = .022, shelves = Math.max(2, Math.round((h - plinth) / .38));
@@ -162,13 +187,15 @@ function cabinet(k: Kit, w: number, h: number, d: number, options: { doors?: num
     return;
   }
   k.box(body, [-w / 2, plinth, -d / 2], [w / 2, h - (options.top ? .02 : 0), d / 2 - .02]);
-  if (options.top) k.box(options.top, [-w / 2 - .005, h - .02, -d / 2], [w / 2 + .005, h, d / 2 + .005]);
+  // Recessed dark line behind the fronts reads as the gaps between doors and drawers.
+  k.box('black', [-w / 2 + .01, plinth + .004, d / 2 - .024], [w / 2 - .01, h - (options.top ? .024 : .004), d / 2 - .019]);
+  if (options.top) k.rbox(options.top, [-w / 2 - .008, h - .022, -d / 2], [w / 2 + .008, h, d / 2 + .01], .006);
   const doors = options.doors ?? Math.max(1, Math.round(w / .5)), top = h - (options.top ? .02 : 0);
   const rows = options.drawers ? Math.max(1, Math.round((top - plinth) / .22)) : 1;
   for (let i = 0; i < doors; i++) for (let r = 0; r < rows; r++) {
     const x0 = -w / 2 + w * i / doors + gap, x1 = -w / 2 + w * (i + 1) / doors - gap;
     const y0 = plinth + (top - plinth) * r / rows + gap, y1 = plinth + (top - plinth) * (r + 1) / rows - gap;
-    k.box(options.front ?? 'lacquer', [x0, y0, d / 2 - .02], [x1, y1, d / 2]);
+    k.rbox(options.front ?? 'lacquer', [x0, y0, d / 2 - .02], [x1, y1, d / 2], .003);
     const hx = options.drawers ? (x0 + x1) / 2 : i % 2 ? x0 + .04 : x1 - .04, hy = options.drawers ? y1 - .05 : Math.min(y1 - .1, plinth + 1.05);
     if (options.drawers) k.box('brass', [hx - .07, hy - .006, d / 2], [hx + .07, hy + .006, d / 2 + .018]);
     else k.box('brass', [hx - .006, hy - Math.min(.12, (y1 - y0) / 4), d / 2], [hx + .006, hy + Math.min(.12, (y1 - y0) / 4), d / 2 + .018]);
@@ -200,18 +227,31 @@ function fillShelf(k: Kit, kind: 'books' | 'bottles' | 'plants' | 'display', x0:
   }
 }
 function bed(k: Kit, w: number, h: number, d: number) {
-  const frame = .32, mattress = .54, board = Math.min(.1, d * .05);
-  k.rbox('fabric', [-w / 2, 0, -d / 2 + board], [w / 2, frame, d / 2], .03);
-  k.rbox('fabric', [-w / 2, 0, -d / 2], [w / 2, h, -d / 2 + board], .04);
-  for (let i = 0; i < 4; i++) { const x0 = -w / 2 + .05 + (w - .1) * i / 4; k.box('cushion', [x0 + .01, frame + .1, -d / 2 + board], [x0 + (w - .1) / 4 - .01, h - .06, -d / 2 + board + .03]); }
+  // Upholstered frame floating on a recessed dark plinth, channel-tufted headboard, duvet hanging over the sides,
+  // sleep pillows with accent cushions in front, and an accent throw across the foot that drops over the end.
+  const plinth = .08, frame = .32, mattress = .54, board = Math.min(.1, d * .05);
+  k.box('black', [-w / 2 + .08, 0, -d / 2 + board + .08], [w / 2 - .08, plinth, d / 2 - .08]);
+  k.rbox('fabric', [-w / 2, plinth, -d / 2 + board], [w / 2, frame, d / 2], .04);
+  k.rbox('fabric', [-w / 2, 0, -d / 2], [w / 2, h, -d / 2 + board], .05);
+  const channels = Math.max(4, Math.round(w / .3));
+  for (let i = 0; i < channels; i++) {
+    const x0 = -w / 2 + .05 + (w - .1) * i / channels;
+    k.rbox('cushion', [x0 + .006, frame + .08, -d / 2 + board - .005], [x0 + (w - .1) / channels - .006, h - .05, -d / 2 + board + .035], .02);
+  }
   k.rbox('linen', [-w / 2 + .03, frame, -d / 2 + board + .02], [w / 2 - .03, mattress, d / 2 - .03], .05);
-  const duvet = k.rbox('cushion', [-w / 2 + .01, mattress - .1, -d / 2 + board + .55], [w / 2 - .01, mattress + .07, d / 2 - .01], .06);
-  duvet.material = material('fabric', '#d9d0c4');
-  k.rbox('fabric', [-w / 2 + .005, mattress - .02, d / 2 - .55], [w / 2 - .005, mattress + .085, d / 2 - .005], .04);
-  const pillows = w > 1.3 ? 2 : 1;
+  // Duvet: the top layer from the pillows to the foot, and its overhang falling down both sides.
+  const duvetColour = material('fabric', '#d9d0c4'), z0 = -d / 2 + board + .55, z1 = d / 2 - .01;
+  k.rbox('cushion', [-w / 2 + .01, mattress - .02, z0], [w / 2 - .01, mattress + .07, z1], .06).material = duvetColour;
+  for (const s of [-1, 1]) k.rbox('cushion', s < 0 ? [-w / 2 - .015, frame - .04, z0 + .02] : [w / 2 - .01, frame - .04, z0 + .02],
+    s < 0 ? [-w / 2 + .01, mattress + .05, z1] : [w / 2 + .015, mattress + .05, z1], .012).material = duvetColour;
+  k.rbox('accentFabric', [-w / 2 - .005, mattress + .06, d / 2 - .5], [w / 2 + .005, mattress + .09, d / 2 + .012], .012);
+  k.rbox('accentFabric', [-w / 2 - .005, frame - .02, d / 2 - .006], [w / 2 + .005, mattress + .08, d / 2 + .014], .008);
+  const pillows = w > 1.3 ? 2 : 1, half = Math.min(.34, w / 4.6);
   for (let i = 0; i < pillows; i++) {
     const x = pillows === 1 ? 0 : (i ? 1 : -1) * w / 4;
-    const p = k.rbox('linen', [x - Math.min(.34, w / 4.6), mattress, -d / 2 + board + .08], [x + Math.min(.34, w / 4.6), mattress + .14, -d / 2 + board + .5], .07); p.rotation.x = -.25;
+    const p = k.rbox('linen', [x - half, mattress, -d / 2 + board + .06], [x + half, mattress + .16, -d / 2 + board + .5], .08); p.rotation.x = -.3;
+    const c = k.rbox('accentFabric', [x - half * .62, mattress + .02, -d / 2 + board + .3], [x + half * .62, mattress + .3, -d / 2 + board + .42], .07);
+    c.rotation.set(-.32, 0, (i ? -1 : 1) * .06);
   }
 }
 function plant(k: Kit, w: number, h: number, d: number) {

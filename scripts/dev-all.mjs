@@ -1,14 +1,20 @@
 // Starts the web app and both Workers (renders, floorplan imports) in one terminal, with prefixed logs. Queues are
 // checked first. Ctrl+C stops everything; if one process exits, the others are stopped too.
-//   pnpm dev:all
+//   pnpm dev:all      development server (hot reload)
+//   pnpm demo:start   production build from `pnpm demo:build` (much smaller pages; needs HESTIA_DEMO=1 for mock SMS)
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
+const production = process.argv.includes('--start');
+if (production && !existsSync(new URL('../apps/web/.next/BUILD_ID', import.meta.url))) {
+  process.stderr.write('✖ 还没有生产构建，请先运行 pnpm demo:build（每次拉取新代码后都要重新构建）。\n'); process.exit(1);
+}
 const env = ['--env-file=.env', '--import', 'tsx'];
 const queues = spawnSync(process.execPath, [...env, 'scripts/queues.ts'], { cwd: root, stdio: 'inherit' });
 if (queues.status !== 0) { process.stderr.write('✖ 队列准备失败，请先运行 pnpm bootstrap。\n'); process.exit(queues.status ?? 1); }
 const services = [
-  ['web   ', ['scripts/web.mjs', 'dev']],
+  ['web   ', ['scripts/web.mjs', production ? 'start' : 'dev']],
   ['render', [...env, 'scripts/render-worker.ts']],
   ['import', [...env, 'scripts/import-worker.ts']],
 ];

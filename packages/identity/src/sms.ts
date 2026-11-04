@@ -22,14 +22,15 @@ export const mockSmsSender: SmsSender = {
 };
 
 /**
- * Validates SMS_PROVIDER at startup. `mock` is refused when NODE_ENV=production so the demo switch
- * cannot ship; unset means phone sign-in is unavailable until a provider adapter is installed.
+ * Validates SMS_PROVIDER at startup. `mock` is refused when NODE_ENV=production so the demo switch cannot ship by
+ * accident; a demo deployment that runs a production build on purpose says so with HESTIA_DEMO=1 (`pnpm demo:start`).
+ * Unset means phone sign-in is unavailable until a provider adapter is installed.
  */
 export function smsSenderFromEnv(env: NodeJS.ProcessEnv = process.env): SmsSender | null {
   const provider = env.SMS_PROVIDER?.trim() ?? '';
   if (provider === '') return null;
   if (provider !== 'mock') throw new SmsConfigurationError(`SMS_PROVIDER=${provider} has no adapter; only "mock" is available.`);
-  if (env.NODE_ENV === 'production') throw new SmsConfigurationError('SMS_PROVIDER=mock is not allowed when NODE_ENV=production.');
+  if (env.NODE_ENV === 'production' && env.HESTIA_DEMO !== '1') throw new SmsConfigurationError('SMS_PROVIDER=mock is not allowed when NODE_ENV=production (set HESTIA_DEMO=1 for a demo deployment).');
   return mockSmsSender;
 }
 
@@ -40,6 +41,6 @@ export function smsSender(): SmsSender | null {
 }
 /** Installs a provider adapter (or a test double). Refuses the mock in production like the env path. */
 export function setSmsSender(sender: SmsSender | null) {
-  if (sender?.revealsCode && process.env.NODE_ENV === 'production') throw new SmsConfigurationError('A code-revealing SMS sender is not allowed in production.');
+  if (sender?.revealsCode && process.env.NODE_ENV === 'production' && process.env.HESTIA_DEMO !== '1') throw new SmsConfigurationError('A code-revealing SMS sender is not allowed in production.');
   current = sender;
 }

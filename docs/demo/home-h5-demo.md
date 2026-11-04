@@ -43,6 +43,15 @@ pnpm dev:all
 
 需要单独运行时仍可分别使用 `pnpm dev`、`pnpm worker:render`、`pnpm worker:import`。
 
+**给别人远程演示（公网或隧道访问）时改用生产构建**：开发模式的页面约大 4 倍，且每个页面首次访问要现场编译。`.env` 里加 `HESTIA_DEMO=1`（只有设置它，模拟短信才允许在生产构建下运行），然后：
+
+```sh
+pnpm demo:build   # 每次拉取新代码后重新构建，约 1–2 分钟
+pnpm demo:start   # 生产模式的 Web + 两个 Worker，用法同 dev:all
+```
+
+生产模式下改代码不会自动生效，开发调试仍用 `pnpm dev:all`。效果图在浏览器支持时以 WebP 返回（约 50 KB，原图 PNG 约 1 MB），下载原图仍是 PNG。走 cloudflared 等隧道时另加 `HESTIA_OTP_SOURCE_HEADER=cf-connecting-ip`。
+
 ## 演示账号
 
 | 用途 | 手机号 | 说明 |

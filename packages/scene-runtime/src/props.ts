@@ -28,9 +28,10 @@ function material(surface: Surface, tint: string, tones?: PropTones) {
   let mat = cache.get(key);
   if (mat) return mat;
   const spec: Record<Surface, T.MeshPhysicalMaterialParameters> = {
-    fabric: { color: tint, roughness: .92, sheen: 1, sheenRoughness: .6, sheenColor: new T.Color(tint).lerp(new T.Color('#ffffff'), .35) },
-    cushion: { color: new T.Color(tint).offsetHSL(0, -.02, .06), roughness: .9, sheen: 1, sheenRoughness: .55, sheenColor: '#ffffff' },
-    linen: { color: '#f3efe7', roughness: .88, sheen: .8, sheenRoughness: .6, sheenColor: '#ffffff' },
+    // Textiles stay matte: a little sheen at grazing angles only (strong sheen read as plastic).
+    fabric: { color: tint, roughness: .95, sheen: .35, sheenRoughness: .8, sheenColor: new T.Color(tint).lerp(new T.Color('#ffffff'), .25) },
+    cushion: { color: new T.Color(tint).offsetHSL(0, -.02, .06), roughness: .94, sheen: .35, sheenRoughness: .8, sheenColor: '#ffffff' },
+    linen: { color: '#f3efe7', roughness: .93, sheen: .3, sheenRoughness: .8, sheenColor: '#ffffff' },
     wood: { color: '#b48a62', roughness: .55, clearcoat: .2, clearcoatRoughness: .5 },
     darkWood: { color: '#5e4433', roughness: .5, clearcoat: .25, clearcoatRoughness: .45 },
     lacquer: { color: '#efebe4', roughness: .35, clearcoat: .4, clearcoatRoughness: .3 },
@@ -54,7 +55,7 @@ function material(surface: Surface, tint: string, tones?: PropTones) {
     grass: { color: '#6f8a4c', roughness: 1 },
     concrete: { color: '#bdb6aa', roughness: .85 },
     matte: { color: tint, roughness: .8 },
-    accentFabric: { color: '#9a8470', roughness: .93, sheen: 1, sheenRoughness: .6, sheenColor: '#d9cbbb' },
+    accentFabric: { color: '#9a8470', roughness: .95, sheen: .35, sheenRoughness: .8, sheenColor: '#d9cbbb' },
   };
   const kind = detail[surface];
   mat = new T.MeshPhysicalMaterial({ ...(tone ? { ...spec[surface], color: tone, ...(spec[surface].sheenColor ? { sheenColor: new T.Color(tone).lerp(new T.Color('#ffffff'), .35) } : {}) } : spec[surface]),
@@ -72,6 +73,8 @@ class Kit {
   m(surface: Surface) { return material(surface, this.tint, this.tones); }
   add(geometry: T.BufferGeometry, surface: Surface | T.Material, at: V3, rotation?: V3) {
     const mesh = new T.Mesh(geometry, typeof surface === 'string' ? this.m(surface) : surface);
+    // Parts cast shadows unless a builder opts out (rugs, lawns); without this no prop cast any shadow.
+    mesh.castShadow = true;
     mesh.position.set(...at); if (rotation) mesh.rotation.set(...rotation);
     this.group.add(mesh); return mesh;
   }

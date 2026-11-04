@@ -246,8 +246,8 @@ export class SpatialScene {
     this.focusBounds = undefined;
     this.model = next; this.scene.add(next.root);
     this.cutaway = new Cutaway(next.data, next.objects, next.levels);
-    this.applyDesignFocus();
     this.stage.setModel(next.root, next.lamps, light);
+    this.applyDesignFocus();
     if (!preserveCamera) this.fit();
     this.setSelection(this.selectedId);
     this.draw();
@@ -299,15 +299,35 @@ export class SpatialScene {
     this.endTween();
     const elevation = this.elevationOf(room), from = { ...this.getCamera(), fov: this.camera.fov };
     const xs = room.outline.map(p => p.x), zs = room.outline.map(p => p.z);
-    const box = new T.Box3(new T.Vector3(Math.min(...xs), elevation, Math.min(...zs)), new T.Vector3(Math.max(...xs), elevation + CUT_HEIGHT, Math.max(...zs)));
-    const anchor = roomAnchor(room.outline), centre = new T.Vector3(anchor.x, elevation + .4, anchor.z);
+    // Furniture-height box of the room; the camera comes as close as keeps all its corners on screen.
+    const box = new T.Box3(new T.Vector3(Math.min(...xs), elevation, Math.min(...zs)), new T.Vector3(Math.max(...xs), elevation + .9, Math.max(...zs)));
+    // Large rooms (open living-dining) would frame as far as the whole floor: frame a 6.5 m square around the
+    // furniture's area-weighted centre instead, kept inside the room.
+    const span = 6.5;
+    if (box.max.x - box.min.x > 7 || box.max.z - box.min.z > 7) {
+      const levels = effectiveLevels(this.model.data);
+      const pieces = this.model.data.objects.filter(object => levelOf(object, levels) === levelOf(room, levels) && pointInPolygon(object.position, room.outline) && object.size.height > .3);
+      const weight = pieces.reduce((sum, o) => sum + o.size.width * o.size.depth, 0);
+      const focus = weight ? pieces.reduce((sum, o) => ({ x: sum.x + o.position.x * o.size.width * o.size.depth / weight, z: sum.z + o.position.z * o.size.width * o.size.depth / weight }), { x: 0, z: 0 })
+        : roomAnchor(room.outline);
+      const clampSpan = (value: number, min: number, max: number) => max - min <= span ? (min + max) / 2 : T.MathUtils.clamp(value, min + span / 2, max - span / 2);
+      const cx = clampSpan(focus.x, box.min.x, box.max.x), cz = clampSpan(focus.z, box.min.z, box.max.z);
+      const hx = Math.min(span, box.max.x - box.min.x) / 2, hz = Math.min(span, box.max.z - box.min.z) / 2;
+      box.min.set(cx - hx, box.min.y, cz - hz); box.max.set(cx + hx, box.max.y, cz + hz);
+    }
+    const centre = box.getCenter(new T.Vector3());
     const horizontal = new T.Vector3(from.position[0] - from.target[0], 0, from.position[2] - from.target[2]);
     if (horizontal.lengthSq() < 1e-6) horizontal.set(.55, 0, .8);
     const direction = horizontal.normalize().multiplyScalar(Math.cos(T.MathUtils.degToRad(42))).setY(Math.sin(T.MathUtils.degToRad(42)));
     this.camera.fov = 38; this.camera.updateProjectionMatrix();
-    const vertical = T.MathUtils.degToRad(this.camera.fov / 2), side = Math.atan(Math.tan(vertical) * this.camera.aspect);
-    const radius = box.getSize(new T.Vector3()).length() / 2, distance = Math.max(3, radius / Math.sin(Math.min(vertical, side)) * 1.05);
-    this.controls.target.copy(centre); this.camera.position.copy(centre).addScaledVector(direction, distance); this.controls.update();
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new T.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+    const fits = (distance: number) => {
+      this.camera.position.copy(centre).addScaledVector(direction, distance); this.camera.lookAt(centre); this.camera.updateMatrixWorld(true);
+      return corners.every(corner => { const p = corner.clone().project(this.camera); return Math.abs(p.x) < .9 && Math.abs(p.y) < .82 && p.z < 1; });
+    };
+    let low = 1, high = 60;
+    for (let i = 0; i < 30; i++) { const mid = (low + high) / 2; if (fits(mid)) high = mid; else low = mid; }
+    this.controls.target.copy(centre); this.camera.position.copy(centre).addScaledVector(direction, Math.max(2.5, high)); this.controls.update();
     this.moveFrom(from, options.animate ? 750 : 0, 'overview');
   }
   /** Named rooms of the shown storey with label anchors; entries without a shot cannot be entered. */
@@ -342,11 +362,14 @@ export class SpatialScene {
       const node = this.model.objects.get(object.id); if (!node) continue;
       node.visible = !hidden.some(room => levelOf(room, levels) === levelOf(object, levels) && pointInPolygon(object.position, room.outline));
     }
+    // Yards and terraces without stone are not design content: hide their floor too, so they read as backdrop.
+    for (const room of hidden) if (isOutdoorRoom(room)) { const floor = this.model.objects.get(room.id); if (floor) floor.visible = false; }
     const shown = this.rooms().filter(room => room.design).map(entry => data.rooms.find(room => room.id === entry.id)!);
     if (shown.length) {
       const box = new T.Box3();
       for (const room of shown) for (const p of room.outline) box.expandByPoint(new T.Vector3(p.x, this.elevationOf(room), p.z));
       box.max.y += Math.max(2.4, ...data.walls.map(wall => wall.height)); this.focusBounds = box;
+      this.stage.setFocus(box);
     }
   }
   getPresentation(): Presentation { return this.presentation; }

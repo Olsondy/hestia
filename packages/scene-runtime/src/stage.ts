@@ -45,6 +45,8 @@ export class RenderStage {
   private overview = false;
   private centre = new T.Vector3();
   private radius = 4;
+  /** Optional region the overview concentrates on (design rooms): the sun's shadow map covers just this. */
+  private focus?: T.Box3;
   state: LightingState = { mode: 'day', interiorLights: false };
   /** Page colour shown behind the model in daylight (host pages may match their own surface). */
   private dayBackdrop = day.background;
@@ -91,17 +93,24 @@ export class RenderStage {
     if (this.overview === on) return;
     this.overview = on;
     if (on) this.dropProbe();
-    this.interiorShadows = null; this.sun.shadow.radius = this.quality.shadowRadius * (on ? 2.5 : 1);
+    this.interiorShadows = null; this.sun.shadow.radius = this.quality.shadowRadius * (on ? 1.2 : 1);
     this.aimSun(); this.applyLighting();
   }
 
-  /** The overview lowers the sun for longer, softer shadows that model the furniture. */
+  /** Region for the overview's shadow map (tighter map, crisper furniture shadows); undefined covers the model. */
+  setFocus(box?: T.Box3) { this.focus = box?.clone(); this.aimSun(); }
+
+  /** Sun position and shadow frustum for the current look and focus. */
   private aimSun() {
     if (!this.preset) return;
-    const direction = new T.Vector3(...this.preset.directional.position).normalize();
-    if (this.overview) { direction.y *= .55; direction.normalize(); }
-    const radius = this.radius, shadow = this.sun.shadow.camera;
-    this.sun.position.copy(this.centre).addScaledVector(direction, radius * 2.5); this.sun.target.position.copy(this.centre);
+    // Overview: side light like the hestia-creation demo. The default overview camera looks from (.62, ·, .9); a sun
+    // ~74° round from it at ~50° elevation throws shadows sideways across the floor, where they model the
+    // furniture. Presets light from near the camera's side, which hides every shadow behind its own object.
+    const direction = this.overview ? new T.Vector3(.93, 1.19, -.37).normalize() : new T.Vector3(...this.preset.directional.position).normalize();
+    const focus = this.overview && this.focus && !this.focus.isEmpty() ? this.focus : undefined;
+    const centre = focus ? focus.getCenter(new T.Vector3()) : this.centre;
+    const radius = focus ? Math.max(3, focus.getSize(new T.Vector3()).length() / 2) : this.radius, shadow = this.sun.shadow.camera;
+    this.sun.position.copy(centre).addScaledVector(direction, radius * 2.5); this.sun.target.position.copy(centre);
     shadow.left = shadow.bottom = -radius * 1.1; shadow.right = shadow.top = radius * 1.1; shadow.near = radius * .5; shadow.far = radius * 4.5;
     shadow.updateProjectionMatrix(); this.sun.target.updateMatrixWorld();
     this.invalidate();
@@ -149,7 +158,7 @@ export class RenderStage {
     if (q.shadowMapSize && this.sun.shadow.mapSize.x !== q.shadowMapSize) {
       this.sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
     }
-    this.sun.shadow.radius = q.shadowRadius * (this.overview ? 2.5 : 1);
+    this.sun.shadow.radius = q.shadowRadius * (this.overview ? 1.2 : 1);
     this.composer?.dispose(); this.ao?.dispose(); this.bloom?.dispose(); this.composer = this.ao = this.bloom = undefined;
     if (q.ambientOcclusion || q.bloom) {
       const size = renderer.getDrawingBufferSize(new T.Vector2());
@@ -160,7 +169,7 @@ export class RenderStage {
         this.ao = new GTAOPass(this.scene, this.camera, size.x || 1, size.y || 1);
         this.ao.updateGtaoMaterial({ radius: .5, distanceExponent: 1.5, thickness: 1.5, scale: 1.1, samples: this.tier === 'ultra' ? 16 : 8, distanceFallOff: 1 });
         this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: this.tier === 'ultra' ? 16 : 8 });
-        this.ao.blendIntensity = this.overview ? .45 : .85;
+        this.ao.blendIntensity = this.overview ? .7 : .85;
         this.composer.addPass(this.ao);
       }
       if (q.bloom) { this.bloom = new UnrealBloomPass(new T.Vector2(size.x / 2, size.y / 2), .35, .6, .92); this.composer.addPass(this.bloom); }
@@ -174,21 +183,24 @@ export class RenderStage {
   private applyLighting() {
     const preset = this.preset, isNight = this.state.mode === 'night', look = isNight ? night : day;
     const soft = this.overview && !isNight;
-    (this.ground.material as T.ShadowMaterial).opacity = isNight ? .1 : soft ? .16 : .22;
-    if (this.ao) this.ao.blendIntensity = soft ? .45 : .85;
+    // The overview's side sun would throw the whole building's shadow across the backdrop; keep only a trace of it.
+    (this.ground.material as T.ShadowMaterial).opacity = isNight ? .1 : soft ? .06 : .22;
+    // Overview: sun clearly stronger than the fill (like a sunny scale model), so furniture casts readable shadows.
+    if (this.ao) this.ao.blendIntensity = soft ? .7 : .85;
     // With post-processing the backdrop is tone mapped too; pre-compensate so the page colour is shown unchanged.
     const background = isNight ? look.background : this.dayBackdrop;
     const backdrop = this.composer ? untoneMapped(background, (preset?.exposure ?? 1) * look.exposure) : new T.Color(background);
     if (this.scene.background instanceof T.Color) this.scene.background.copy(backdrop); else this.scene.background = backdrop;
-    this.scene.environmentIntensity = look.environment * (soft ? 1.5 : 1);
-    this.renderer.toneMappingExposure = (preset?.exposure ?? 1) * look.exposure * (soft ? 1.08 : 1);
+    this.scene.environmentIntensity = look.environment * (soft ? .6 : 1);
+    this.renderer.toneMappingExposure = (preset?.exposure ?? 1) * look.exposure * (soft ? 1.05 : 1);
     if (preset) {
       // Style presets keep their colours and relative strength; the environment now carries most of the fill.
       this.sun.color.set(isNight ? '#9fb4d8' : preset.directional.color);
-      this.sun.intensity = isNight ? .12 : preset.directional.intensity * (soft ? .8 : .95);
+      // Overview: a fixed sunny ratio whatever the style preset (some presets have a weak sun and strong sky).
+      this.sun.intensity = isNight ? .12 : soft ? 3.2 : preset.directional.intensity * .95;
       // The hemisphere's ground colour stands in for bounce light onto ceilings and undersides.
       this.sky.color.set(isNight ? '#30445a' : preset.hemisphere.sky); this.sky.groundColor.set(isNight ? '#141b20' : '#e8dccb');
-      this.sky.intensity = isNight ? .25 : preset.hemisphere.intensity * (soft ? 1 : .45);
+      this.sky.intensity = isNight ? .25 : soft ? Math.min(.9, preset.hemisphere.intensity * .4) : preset.hemisphere.intensity * .45;
     }
     const lit = this.state.interiorLights;
     for (const material of lampMaterials(this.scene)) {

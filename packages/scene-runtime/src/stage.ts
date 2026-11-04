@@ -256,7 +256,18 @@ export class RenderStage {
     this.scene.environment = this.environment!; this.scene.environmentIntensity = this.look().environment;
     const selection = this.scene.children.filter(child => child.type === 'BoxHelper' && child.visible);
     selection.forEach(child => { child.visible = false; });
-    cube.update(this.renderer, this.scene);
+    // Bump-mapped materials can shade to NaN inside the cube capture on software WebGL (SwiftShader: background stills,
+    // GPU-less browsers); PMREM then spreads it over the whole environment and every PBR surface renders black. The
+    // probe is far too coarse to show bump detail, so capture with bump-free twins of those materials.
+    const swapped: [T.Mesh, T.Material | T.Material[]][] = [];
+    this.scene.traverse(node => {
+      if (!(node instanceof T.Mesh)) return;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      if (!materials.some(material => (material as T.MeshStandardMaterial).bumpMap)) return;
+      swapped.push([node, node.material]);
+      node.material = Array.isArray(node.material) ? node.material.map(flat) : flat(node.material);
+    });
+    try { cube.update(this.renderer, this.scene); } finally { for (const [mesh, material] of swapped) mesh.material = material; }
     selection.forEach(child => { child.visible = true; });
     const pmrem = new T.PMREMGenerator(this.renderer);
     this.probe = { texture: pmrem.fromCubemap(target.texture).texture, position: this.camera.position.clone() };
@@ -306,4 +317,13 @@ function lampMaterials(scene: T.Scene) {
     for (const material of Array.isArray(node.material) ? node.material : [node.material]) if (material.userData?.lamp) found.add(material);
   });
   return found;
+}
+
+/** Bump-free twin of a material for probe capture (cached; shares textures with the original). */
+const flatTwins = new WeakMap<T.Material, T.Material>();
+function flat(material: T.Material) {
+  if (!(material as T.MeshStandardMaterial).bumpMap) return material;
+  let twin = flatTwins.get(material);
+  if (!twin) { twin = material.clone(); (twin as T.MeshStandardMaterial).bumpMap = null; twin.userData = { ...material.userData, shared: true }; flatTwins.set(material, twin); }
+  return twin;
 }

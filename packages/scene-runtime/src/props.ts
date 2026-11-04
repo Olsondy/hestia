@@ -104,6 +104,61 @@ const center = (min: V3, max: V3): V3 => [(min[0] + max[0]) / 2, (min[1] + max[1
 
 type Builder = (k: Kit, w: number, h: number, d: number) => void;
 
+// Tabletop styling (after the hestia-creation demo): small pieces placed on furniture tops, so they never block a
+// route. `at` is the point on the top surface where the piece stands.
+const bookColours = ['#7d6a58', '#b9a78d', '#5f6f63', '#a35f4c', '#3f4a52', '#c9b79c'];
+function bookStack(k: Kit, at: V3, count = 2, yaw = 0, seed = 0) {
+  const g = new Kit(k.tint, k.tones); let y = 0;
+  for (let i = 0; i < count; i++) {
+    const w = .2 - i * .015, d = .15 - i * .01, t = .028 + (i % 2) * .008, colour = bookColours[(seed + i * 2) % bookColours.length];
+    g.add(new T.BoxGeometry(w, t, d), material('matte', colour), [0, y + t / 2, 0]).rotation.y = (i % 2 ? .12 : -.06);
+    g.box('linen', [-w / 2 + .006, y + .004, -d / 2 + .004], [w / 2 - .002, y + t - .004, d / 2 - .002]); // page block
+    y += t;
+  }
+  g.group.position.set(...at); g.group.rotation.y = yaw; k.group.add(g.group);
+}
+function cup(k: Kit, at: V3) {
+  k.cyl('ceramic', at, .038, .032, .09, 18);
+  k.add(new T.TorusGeometry(.026, .006, 6, 16), 'ceramic', [at[0] + .042, at[1] + .05, at[2]], [0, 0, 0]);
+}
+function tray(k: Kit, at: V3, w = .32, d = .22) {
+  k.rbox('darkWood', [at[0] - w / 2, at[1], at[2] - d / 2], [at[0] + w / 2, at[1] + .018, at[2] + d / 2], .006);
+}
+function pottedPlant(k: Kit, at: V3, size = .35, seed = 3) {
+  let n = seed * 7919 + 1; const rand = () => { n = (n * 16807) % 2147483647; return n / 2147483647; };
+  k.cyl('ceramic', at, size * .2, size * .16, size * .38, 18);
+  k.cyl('soil', [at[0], at[1] + size * .34, at[2]], size * .18, size * .18, .01, 12);
+  for (let i = 0; i < 8; i++) {
+    const a = i * 2.4 + rand(), lean = .25 + rand() * .3, top = size * (.55 + rand() * .45);
+    const tip: V3 = [at[0] + Math.cos(a) * size * lean * .5, at[1] + size * .36 + top, at[2] + Math.sin(a) * size * lean * .5];
+    k.rod('leafDark', [at[0], at[1] + size * .36, at[2]], tip, .004, 4);
+    const leaf = k.sphere(i % 2 ? 'leaf' : 'leafDark', tip, size * .13, [1, .35, .55], 1); leaf.rotation.set(rand() - .5, a, lean);
+  }
+}
+function vaseStems(k: Kit, at: V3, height = .3) {
+  k.cyl('ceramic', at, .045, .065, height * .55, 20);
+  for (let i = 0; i < 5; i++) {
+    const a = i * 1.3, tip: V3 = [at[0] + Math.cos(a) * .07, at[1] + height * (.95 + (i % 3) * .12), at[2] + Math.sin(a) * .07];
+    k.rod('bark', [at[0], at[1] + height * .5, at[2]], tip, .003, 4);
+    k.sphere(i % 2 ? 'leaf' : 'brass', tip, .022, [1, 1, 1], 0);
+  }
+}
+/** Lamp-shade linen: open cylinder seen from inside too, so its own double-sided material (not the shared linen). */
+let shadeMaterial: T.MeshStandardMaterial | undefined;
+function shade(): T.MeshStandardMaterial {
+  if (!shadeMaterial) {
+    const made = material('linen', '#f3efe7').clone(); made.side = T.DoubleSide; made.userData.shared = true; shadeMaterial = made;
+  }
+  return shadeMaterial;
+}
+function tableLamp(k: Kit, at: V3, height = .5) {
+  k.cyl('brass', at, .06, .075, .025, 20);
+  k.rod('brass', [at[0], at[1] + .025, at[2]], [at[0], at[1] + height * .62, at[2]], .007, 8);
+  k.cyl('lamp', [at[0], at[1] + height * .55, at[2]], .03, .03, .05, 12);
+  k.add(new T.CylinderGeometry(.09, .13, height * .38, 28, 1, true), shade(), [at[0], at[1] + height * .62 + height * .19 - .02, at[2]]);
+  k.light([at[0], at[1] + height * .6, at[2]], .35);
+}
+
 function legs(k: Kit, w: number, d: number, top: number, inset: number, radius: number, surface: Surface = 'darkWood', taper = .7) {
   for (const x of [-1, 1]) for (const z of [-1, 1]) k.cyl(surface, [x * (w / 2 - inset), 0, z * (d / 2 - inset)], radius * taper, radius, top);
 }
@@ -387,7 +442,8 @@ const builders: [RegExp, Builder][] = [
   [/^(coffeeTable)$|茶几/, (k, w, h, d) => {
     k.rbox('stone', [-w / 2, h - .05, -d / 2], [w / 2, h, d / 2], .02); k.rbox('darkWood', [-w / 2 + .1, .05, -d / 2 + .08], [w / 2 - .1, h - .05, d / 2 - .08], .02);
     k.box('black', [-w / 2 + .14, 0, -d / 2 + .12], [w / 2 - .14, .05, d / 2 - .12]);
-    k.box('linen', [-w * .3, h, -d * .2], [-w * .05, h + .03, d * .15]); k.cyl('ceramic', [w * .25, h, 0], .05, .07, .2, 20); k.sphere('leaf', [w * .25, h + .26, 0], .08, [1, .7, 1]);
+    bookStack(k, [-w * .22, h, -d * .08], 2, .2, 1); cup(k, [-w * .02, h, d * .18]);
+    tray(k, [w * .24, h, 0], Math.min(.34, w * .3), Math.min(.24, d * .5)); vaseStems(k, [w * .24, h + .018, 0], .26);
   }],
   [/^(teaTable)$|茶台/, (k, w, h, d) => { table(k, w, h, d, 'darkWood', 'darkWood'); k.box('stone', [-w * .3, h, -d * .25], [w * .1, h + .02, d * .25]); for (let i = 0; i < 4; i++) k.cyl('ceramic', [-w * .25 + i * .09, h + .02, 0], .025, .02, .045, 12); }],
   [/^(mahjong)$/, (k, w, h, d) => { cabinet(k, w, h - .04, d, { doors: 1, drawers: true, body: 'darkWood', front: 'darkWood', plinth: false }); k.box('felt', [-w / 2 + .05, h - .04, -d / 2 + .05], [w / 2 - .05, h - .02, d / 2 - .05]); k.box('darkWood', [-w / 2, h - .04, -d / 2], [w / 2, h, d / 2]).scale.set(1, .5, 1); }],
@@ -398,7 +454,18 @@ const builders: [RegExp, Builder][] = [
   [/^(longTable|diningTable|desk|consoleTable|table)$|餐桌|书桌|桌/, (k, w, h, d) => {
     if (w <= 1.3 && d < .5) { cabinet(k, w, h, d, { doors: 2, drawers: true, body: 'darkWood', front: 'darkWood', top: 'stone' }); return; }
     table(k, w, h, d, w > 1.8 ? 'stone' : 'wood', w > 1.8 ? 'metal' : 'darkWood');
-    if (w > 1.8) { k.cyl('ceramic', [0, h, 0], .07, .05, .16, 24); k.sphere('leaf', [0, h + .2, 0], .09, [1.3, .6, 1]); for (const x of [-.6, .6]) k.cyl('ceramic', [x * w / 2.4, h, 0], .12, .1, .015, 24); }
+    if (w > 1.8) {
+      // Dining: a centrepiece and a linen place mat with a plate at each seat along both long sides.
+      vaseStems(k, [0, h, 0], .34);
+      const seats = Math.max(2, Math.floor(w / .62));
+      for (let i = 0; i < seats; i++) for (const z of [-1, 1]) {
+        const x = -w / 2 + w * (i + .5) / seats, zz = z * (d / 2 - .19);
+        k.box('linen', [x - .2, h, zz - .14], [x + .2, h + .003, zz + .14]); k.cyl('ceramic', [x, h + .003, zz], .11, .09, .014, 24);
+      }
+    } else if (d >= .5) {
+      // Desk: lamp at one end, books and a small plant at the other.
+      tableLamp(k, [w / 2 - .18, h, -d * .2], .48); bookStack(k, [-w / 2 + .22, h, -d * .15], 3, -.15, 2); pottedPlant(k, [-w / 2 + .45, h, -d * .25], .26, 5);
+    }
   }],
   [/^(kitchenIsland|barCounter)$|岛台|吧台/, (k, w, h, d) => { cabinet(k, w, h, d - .05, { doors: Math.round(w / .6), body: 'lacquer', front: 'wood', top: 'stone' }); k.box('stone', [-w / 2, h - .03, -d / 2], [w / 2, h, d / 2]); for (const x of [-.25, .25]) k.cyl('ceramic', [x * w, h, 0], .06, .045, .12, 16); }],
   [/^lCounter$|橱柜/, (k, w, h, d) => {
@@ -445,12 +512,12 @@ const builders: [RegExp, Builder][] = [
   [/^(workbench)$/, (k, w, h, d) => { table(k, w, .9, d, 'wood', 'metal'); k.box('lacquer', [-w / 2, .9, -d / 2], [w / 2, h, -d / 2 + .03]); for (let i = 0; i < 6; i++) k.box('metal', [-w / 2 + .1 + i * (w - .2) / 6, 1.2, -d / 2 + .03], [-w / 2 + .14 + i * (w - .2) / 6, 1.45, -d / 2 + .06]); }],
   [/^(nightstand)$|床头柜/, (k, w, h, d) => {
     cabinet(k, w, h, d, { doors: 1, drawers: true, body: 'darkWood', front: 'darkWood' });
-    k.cyl('ceramic', [w * .15, h, -d * .1], .06, .07, .2, 20); k.cyl('linen', [w * .15, h + .2, -d * .1], .1, .13, .16, 24).material = material('lamp', '');
-    k.light([w * .15, h + .3, -d * .1], .35);
+    tableLamp(k, [w * .12, h, -d * .12], .46); bookStack(k, [-w * .2, h, d * .12], 2, .4, 3);
   }],
   [/^(tvCabinet|sideboard|shoeCabinet)$|电视柜|边柜|鞋柜/, (k, w, h, d) => {
     cabinet(k, w, h, d, { doors: Math.max(2, Math.round(w / .6)), drawers: h < .6, body: 'darkWood', front: 'wood', top: h < .6 ? 'stone' : undefined });
-    if (w > 1.5) { k.cyl('ceramic', [-w * .32, h, 0], .06, .09, .3, 24); k.sphere('brass', [w * .3, h + .08, 0], .08, [1, 1, 1], 2); }
+    if (w > 1.5) { pottedPlant(k, [-w / 2 + .2, h, 0], .4, 7); bookStack(k, [w / 2 - .32, h, .02], 3, .1, 4); vaseStems(k, [w / 2 - .12, h, -.04], .3); }
+    else if (w > .8) { tray(k, [w * .2, h, 0], .26, .18); vaseStems(k, [w * .2, h + .018, 0], .22); }
   }],
   [/^(rug)$|地毯/, (k, w, h, d) => {
     k.rbox('fabric', [-w / 2, 0, -d / 2], [w / 2, Math.max(.008, h), d / 2], .004).castShadow = false;

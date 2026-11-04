@@ -15,13 +15,13 @@ page.on('pageerror', error => errors.push(error.message));
 const output = '.impeccable/review/t06'; await mkdir(output, { recursive: true });
 let projectId = '';
 try {
-  await page.goto(origin); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.goto(`${origin}/studio`); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('button', { name: '创建第一个项目' })).toBeVisible();
   const created = await context.request.post(`${origin}/api/projects`, { headers: { Origin: origin }, data: { name: '两种生活安排', template: 'courtyard', operationId: randomUUID() } });
   assert.equal(created.status(), 201); const original = (await created.json()).project; projectId = original.id;
   const readProject = async () => (await (await context.request.get(`${origin}/api/projects/${projectId}`)).json()).project;
-  await page.goto(`${origin}/?project=${projectId}&view=candidates`);
+  await page.goto(`${origin}/studio?project=${projectId}&view=candidates`);
   await page.getByLabel('新候选名称').fill('靠窗会客');
   await page.getByRole('button', { name: '从当前方案创建', exact: true }).click();
   await expect(page.getByLabel('候选中的家具')).toBeVisible();

@@ -17,7 +17,7 @@ pnpm bootstrap    # .env、迁移、队列、出图浏览器、DXF 环境；每�
 ```sh
 SMS_PROVIDER=mock                 # 模拟短信：验证码显示在登录页；生产环境会拒绝启动
 HESTIA_REGISTRATION=closed        # 关闭工作台开放注册
-HESTIA_HOME_ENTRY=demo-home      # 根路径直接进入企业客户端，不显示工作台入口
+HESTIA_HOME_ENTRY=demo-home      # 根路径官网入口页的两扇门接到演示企业（客户端 / 工作台），见 ADR-0015
 HESTIA_OTP_MAX_PER_SOURCE=200     # 同一台电脑上的所有“客户”共用一个来源额度
 HESTIA_OTP_MAX_PER_PHONE=30
 NEXT_TELEMETRY_DISABLED=1

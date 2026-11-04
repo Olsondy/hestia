@@ -100,7 +100,7 @@ function AuthPanel({ invite, onAuthenticated }: { invite: string; onAuthenticate
         {mutation.isError && <p className="form-error" role="alert">{errorText(mutation.error)}</p>}
         <button className="button primary auth-submit" disabled={mutation.isPending}>{mutation.isPending ? '正在连接…' : accepting ? '接受邀请并进入' : registering ? '注册并进入' : '登录'}<Icon name="arrow" size={19}/></button>
         {!invite && <p className="form-note">{registering ? '已有账户？' : '还没有账户？'} <button type="button" className="text-button auth-switch" onClick={() => { setAcceptedEmail(''); setMode(registering ? 'login' : 'register'); mutation.reset(); }}>{registering ? '直接登录' : '免费注册'}</button></p>}
-        {accepting && <a className="auth-login-link" href="/">已有账户，直接登录</a>}
+        {accepting && <a className="auth-login-link" href="/studio">已有账户，直接登录</a>}
       </form></section></div><footer className="auth-footer">为自己的空间，留一点想象。</footer>
   </div>;
 }

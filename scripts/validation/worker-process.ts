@@ -75,7 +75,7 @@ try {
 
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext(), page = await context.newPage();
-  await page.goto(base); await page.getByLabel('邮箱').fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱').fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.folio').waitFor();
   const initialEvent = await page.evaluate(async ({ projectId, taskId }) => {
     const response = await fetch(`/api/projects/${projectId}/tasks/${taskId}/events?after=0`);
@@ -107,7 +107,7 @@ try {
   const allEvents = (await readTaskEvents(principal, project.id, task.id, 0)).events;
   assert.equal(allEvents.filter(event => event.type === 'operation').length, 1);
 
-  const reopened = await context.newPage(); await reopened.goto(base);
+  const reopened = await context.newPage(); await reopened.goto(`${base}/studio`);
   const resumed = await reopened.evaluate(async ({ projectId, taskId }) => {
     const taskResponse = await fetch(`/api/projects/${projectId}/tasks/${taskId}`);
     const eventResponse = await fetch(`/api/projects/${projectId}/tasks/${taskId}/events?after=0`, { headers: { 'Last-Event-ID': '1' } });

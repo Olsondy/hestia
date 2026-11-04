@@ -40,8 +40,8 @@ const model = (decision: unknown, reply?: string) => {
 try {
   const project = await createProject(principal, { name: '书桌旁的一点变化', template: 'angled', operationId: randomUUID() }); projectIds.push(project.id);
   const original = await getProject(principal, project.id), desk = original.scene.objects.find(item => item.id === 'desk-b')!;
-  const url = `${base}/?project=${project.id}&view=tasks`;
-  await page.goto(base); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.folio').waitFor();
+  const url = `${base}/studio?project=${project.id}&view=tasks`;
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.folio').waitFor();
   await page.goto(url); await expect(page.getByText('从一个具体的想法开始。')).toBeVisible(); await capture('empty');
   await page.getByLabel('本轮关注的物品', { exact: true }).selectOption('desk-b');
   const acceptedIds: string[] = [];
@@ -109,7 +109,7 @@ try {
   await submit('这条消息用于验证排队取消'); await page.getByRole('button', { name: '取消本轮', exact: true }).click(); await expect(page.locator('.conversation-state h4')).toHaveText('本轮已取消');
   await page.screenshot({ path: `${out}/cancelled-mobile.png`, fullPage: true });
   const empty = await createProject(principal, { name: '等待开始的空间', template: 'empty', operationId: randomUUID() }); projectIds.push(empty.id);
-  await page.goto(`${base}/?project=${empty.id}&view=tasks`); await expect(page.getByText('从一个具体的想法开始。')).toBeVisible(); await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
+  await page.goto(`${base}/studio?project=${empty.id}&view=tasks`); await expect(page.getByText('从一个具体的想法开始。')).toBeVisible(); await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
   assert.equal(await page.getByLabel('本轮关注的物品', { exact: true }).locator('option').count(), 1);
   await page.screenshot({ path: `${out}/blank-space-mobile.png`, fullPage: true });
   assert.equal(await page.evaluate(() => document.fonts.check('400 14px "Tsanger YuYang"')), true); assert.equal(await page.evaluate(() => document.getAnimations().length), 0); assert.deepEqual(errors, []);

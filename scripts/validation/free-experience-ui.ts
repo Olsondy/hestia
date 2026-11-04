@@ -33,7 +33,7 @@ try {
     await client.query('UPDATE credit_accounts SET available=7 WHERE user_id=$1', [secondUser.userId]);
     await client.query("UPDATE credit_ledger SET amount=7 WHERE user_id=$1 AND kind='registration_grant'", [secondUser.userId]);
   });
-  await page.goto(base); await expect(page.getByRole('heading', { name: '公开示例空间' })).toBeVisible();
+  await page.goto(`${base}/studio`); await expect(page.getByRole('heading', { name: '公开示例空间' })).toBeVisible();
   await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
   await expect(page.getByText('合成示例 · 非真实户型')).toBeVisible();
   await capture('guest');

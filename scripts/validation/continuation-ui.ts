@@ -39,14 +39,14 @@ const submit = async (message: string) => {
   await expect(page.locator('.conversation-state h4')).toHaveText('等待回复'); return new URL(page.url()).searchParams.get('task')!;
 };
 try {
-  await page.goto(base); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.empty-studio').waitFor();
   const project = await createProject(principal, { name: '合成续作空间', template: 'empty', operationId: randomUUID() }); projectId = project.id;
   const synthetic = syntheticPlanningInput();
   await pool.query('UPDATE projects SET snapshot=$1 WHERE id=$2 AND created_by=$3', [synthetic.state, projectId, identity.userId]);
   await pool.query('UPDATE project_revisions SET snapshot=$1 WHERE project_id=$2 AND revision=1', [synthetic.state, projectId]);
   const original = await getProject(principal, projectId);
-  await page.goto(`${base}/?project=${projectId}&view=tasks`);
+  await page.goto(`${base}/studio?project=${projectId}&view=tasks`);
   const taskId = await submit('请为这个房间生成会客和办公布局，保留现有家具');
   async function runCurrent() {
     const current = await read(taskId), brief = current.conversation!.brief!, last = brief.inputs.at(-1)!;
@@ -67,10 +67,10 @@ try {
   await expect(page.locator('.conversation-question')).toContainText('保留现有家具');
   await expect(page.getByRole('button', { name: '查看推荐候选' })).toBeVisible(); await capture('reused');
   await page.reload(); await expect(page.getByRole('button', { name: '查看推荐候选' })).toBeVisible();
-  await page.goto(`${base}/?project=${projectId}&view=candidates&candidate=${firstId}&task=${taskId}`);
+  await page.goto(`${base}/studio?project=${projectId}&view=candidates&candidate=${firstId}&task=${taskId}`);
   await expect(page.getByText('空间或需求已更新。这份历史候选仅供参考，原推荐与检查不能沿用于当前要求；请回到空间对话重新生成。')).toBeVisible();
   await expect(page.getByRole('button', { name: '采用这版方案', exact: true })).toBeDisabled(); await capture('stale');
-  await page.goto(`${base}/?project=${projectId}&view=tasks&task=${taskId}`);
+  await page.goto(`${base}/studio?project=${projectId}&view=tasks&task=${taskId}`);
   await expect(page.locator('.conversation-state h4')).toHaveText('候选已保存，等待你决定');
   assert.equal(await submit('原位保留沙发'), taskId);
   const third = await runCurrent(), outcome = third.conversation!.outcome!, newId = outcome.candidateId!;

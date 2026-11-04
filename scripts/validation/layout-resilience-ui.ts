@@ -38,14 +38,14 @@ const model = (reply: string, decision: unknown = { kind: 'answer', message: rep
 const read = async (projectId: string, taskId: string): Promise<TaskView> => (await (await context.request.get(`${base}/api/projects/${projectId}/tasks/${taskId}`)).json()).task;
 const submit = async (message: string) => { await page.locator('.conversation-compose textarea').fill(message); await page.getByRole('button', { name: '发送', exact: true }).click(); await expect(page.locator('.conversation-state h4')).toHaveText('等待回复'); return new URL(page.url()).searchParams.get('task')!; };
 try {
-  await page.goto(base); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.empty-studio').waitFor();
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.empty-studio').waitFor();
   const project = await createProject(principal, { name: '会客与办公之间', template: 'empty', operationId: randomUUID() }); projectIds.push(project.id);
   const synthetic = syntheticPlanningInput();
   // Seed only this test's synthetic geometry, never task results, checks, candidates or model outcomes.
   await pool.query('UPDATE projects SET snapshot=$1 WHERE id=$2 AND created_by=$3', [synthetic.state, project.id, identity.userId]);
   await pool.query('UPDATE project_revisions SET snapshot=$1 WHERE project_id=$2 AND revision=1', [synthetic.state, project.id]);
   const original = await getProject(principal, project.id);
-  await page.goto(`${base}/?project=${project.id}&view=tasks`);
+  await page.goto(`${base}/studio?project=${project.id}&view=tasks`);
   const taskId = await submit('保留现有家具。'); const sourced = await read(project.id, taskId);
   await runTask(taskId, { conversation: { model: model('固定协议样本：保留家具的要求已经记录。', undefined, { summary: '保留现有家具。', requirements: [{ content: '保留现有家具。', sourceKind: 'user_explicit', sourceInputIds: [sourced.conversation!.brief!.inputs[0].id] }], questions: [] }) } });
   await expect(page.locator('.conversation-state h4')).toHaveText('回答已完成');
@@ -76,7 +76,7 @@ try {
   await expect(page.getByText(/不按零用量处理/)).toBeVisible(); await expect(page.getByRole('button', { name: '查看已保存候选', exact: true })).toBeVisible();
   await capture('partial-unknown'); await page.reload(); await expect(page.getByRole('button', { name: '查看已保存候选', exact: true })).toBeVisible();
   const empty = await createProject(principal, { name: '尚待补充的空间', template: 'empty', operationId: randomUUID() }); projectIds.push(empty.id);
-  await page.goto(`${base}/?project=${empty.id}&view=tasks`); const unknownId = await submit('请为这个房间生成会客和办公布局'); const unknownInitial = await read(empty.id, unknownId);
+  await page.goto(`${base}/studio?project=${empty.id}&view=tasks`); const unknownId = await submit('请为这个房间生成会客和办公布局'); const unknownInitial = await read(empty.id, unknownId);
   await runTask(unknownId, { conversation: { model: model('固定协议样本：先检查空间是否具备可靠依据。', { ...synthetic.decision, sourceInputIds: [unknownInitial.conversation!.brief!.inputs[0].id] }) } });
   await expect(page.locator('.conversation-state h4')).toHaveText('等待你补充'); await expect(page.locator('.layout-plan-report')).toBeVisible();
   assert.equal((await read(empty.id, unknownId)).conversation?.outcome?.candidateId, undefined); await capture('needs-space', ['mobile']);
@@ -84,7 +84,7 @@ try {
   const failedId = await submit('回答一下这个空间目前的情况。'); await runTask(failedId, { conversation: { model: fixtureModel([]) } });
   await expect(page.locator('.conversation-state h4')).toHaveText('本轮未完成'); assert.equal((await read(empty.id, failedId)).conversation!.retained!.answerCount, 0); await capture('failed', ['mobile']);
   const limitProject = await createProject(principal, { name: '保留下来的沟通', template: 'angled', operationId: randomUUID() }); projectIds.push(limitProject.id);
-  await page.goto(`${base}/?project=${limitProject.id}&view=tasks`); let limitTask = '';
+  await page.goto(`${base}/studio?project=${limitProject.id}&view=tasks`); let limitTask = '';
   for (let i = 0; i < 7; i++) { limitTask = await submit(`第${i + 1}次补充：请说明空间当前状态。`); await runTask(limitTask, { conversation: { model: model(`固定协议样本：第${i + 1}次回答已保存，空间保持原状。`) } }); await expect(page.locator('.conversation-state h4')).toHaveText('回答已完成'); }
   await submit('继续回答，保留前面的记录。'); await runTask(limitTask, { conversation: { model: fixtureModel([], undefined, 429) } });
   await expect(page.locator('.conversation-state h4')).toHaveText('部分完成'); const limited = await read(limitProject.id, limitTask); assert.equal(limited.usage.used, 8); assert.equal(limited.conversation!.execution!.stopReason, 'USAGE_LIMIT'); assert.ok(limited.conversation!.retained!.answerCount >= 7);
@@ -93,13 +93,13 @@ try {
   const staleSpace = syntheticPlanningInput();
   await pool.query('UPDATE projects SET snapshot=$1 WHERE id=$2 AND created_by=$3', [staleSpace.state, staleProject.id, identity.userId]);
   await pool.query('UPDATE project_revisions SET snapshot=$1 WHERE project_id=$2 AND revision=1', [staleSpace.state, staleProject.id]);
-  await page.goto(`${base}/?project=${staleProject.id}&view=tasks`);
+  await page.goto(`${base}/studio?project=${staleProject.id}&view=tasks`);
   const staleTaskId = await submit('请为这个房间生成会客和办公布局，保留现有家具'), staleInitial = await read(staleProject.id, staleTaskId);
   await runTask(staleTaskId, { conversation: { model: model('固定协议样本：生成本轮候选。', { ...staleSpace.decision, sourceInputIds: [staleInitial.conversation!.brief!.inputs[0].id] }) } });
   await expect(page.locator('.conversation-state h4')).toHaveText('候选已保存，等待你决定');
   const staleCandidateId = (await read(staleProject.id, staleTaskId)).conversation!.outcome!.candidateId!;
   await submit('先不要生成新的方案，我要补充保留条件。');
-  await page.goto(`${base}/?project=${staleProject.id}&view=candidates&candidate=${staleCandidateId}&task=${staleTaskId}`);
+  await page.goto(`${base}/studio?project=${staleProject.id}&view=candidates&candidate=${staleCandidateId}&task=${staleTaskId}`);
   await expect(page.getByText('空间或需求已更新。这份历史候选仅供参考，原推荐与检查不能沿用于当前要求；请回到空间对话重新生成。')).toBeVisible();
   await expect(page.getByRole('button', { name: '采用这版方案', exact: true })).toBeDisabled();
   await capture('stale-candidate');

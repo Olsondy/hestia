@@ -21,11 +21,11 @@ page.on('pageerror', error => errors.push(error.message));
 const output = '.impeccable/review/t20'; await mkdir(output, { recursive: true });
 const post = async (path: string, data: unknown, status = 200) => { const response = await context.request.post(base + path, { headers: { Origin: base }, data }); assert.equal(response.status(), status, await response.text()); return response.json(); };
 try {
-  await page.goto(base); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click(); await expect(page.getByRole('button', { name: '创建第一个项目' })).toBeVisible();
   const project = (await post('/api/projects', { name: '静态成果测试空间', template: 'courtyard', operationId: randomUUID() }, 201)).project;
   projects.push(project.id);
-  await page.goto(`${base}/?project=${project.id}&view=renders`);
+  await page.goto(`${base}/studio?project=${project.id}&view=renders`);
   await expect(page.getByText('第一张空间图，从这里开始。')).toBeVisible();
   await page.screenshot({ path: `${output}/empty-desktop.png`, fullPage: true });
   let dropped = false; const ids: string[] = [];
@@ -48,7 +48,7 @@ try {
   assert.equal(renamed.status(), 200);
   await runRender(renderIds[0]);
   page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${base}/?project=${project.id}&view=renders&render=${renderIds[0]}`);
+  await page.goto(`${base}/studio?project=${project.id}&view=renders&render=${renderIds[0]}`);
   await expect(page.locator('.render-state h4')).toHaveText('已生成');
   await expect(page.getByText('来源方案已有更新。这张图保留的是提交时的版本。')).toBeVisible();
   const completed = (await (await context.request.get(`${base}/api/projects/${project.id}/renders/${renderIds[0]}`)).json()).render;
@@ -66,7 +66,7 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `${output}/completed-${name}.png`, fullPage: true });
   }
-  await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${base}/?project=${project.id}`);
+  await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${base}/studio?project=${project.id}`);
   await expect(page.locator('[data-scene-ready=true]')).toBeVisible(); await page.locator('canvas').screenshot({ path: `${output}/courtyard-interactive.png` });
 
   const angled = (await post('/api/projects', { name: '凹形概念空间', template: 'angled', operationId: randomUUID() }, 201)).project; projects.push(angled.id);
@@ -80,17 +80,17 @@ try {
   assert.equal((await pool.query('SELECT revision FROM projects WHERE id=$1', [angled.id])).rows[0].revision, 1);
   await writeFile(`${output}/angled-concept-static.png`, await (await context.request.get(base + candidateResult.contentHref)).body());
   page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${base}/?project=${angled.id}&view=renders&render=${created.id}`);
+  await page.goto(`${base}/studio?project=${angled.id}&view=renders&render=${created.id}`);
   await expect(page.getByText('概念图 · 尺寸未校准', { exact: true })).toBeVisible();
   await expect(page.locator('.render-image img')).toBeVisible();
   await page.screenshot({ path: `${output}/concept-desktop.png`, fullPage: true });
-  await page.goto(`${base}/?project=${angled.id}`); await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
+  await page.goto(`${base}/studio?project=${angled.id}`); await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
   await page.locator('canvas').screenshot({ path: `${output}/angled-interactive.png` });
   const broken = (await post(`/api/projects/${angled.id}/renders`, { operationId: randomUUID(), source: { kind: 'current', revision: 1 } }, 202)).render; renderIds.push(broken.id);
   await pool.query('UPDATE project_renders SET snapshot_hash=$2 WHERE id=$1 AND actor_id=$3', [broken.id, 'injected-invalid-digest', user.userId]);
   await runRender(broken.id);
   await page.setViewportSize({ width:390, height:844 });
-  await page.goto(`${base}/?project=${angled.id}&view=renders&render=${broken.id}`);
+  await page.goto(`${base}/studio?project=${angled.id}&view=renders&render=${broken.id}`);
   await expect(page.locator('.render-state h4')).toHaveText('生成未完成');
   await expect(page.getByRole('link', { name: '下载图片', exact: true })).toHaveCount(0);
   await expect(page.locator('.render-detail [role=alert]')).toContainText('来源快照校验失败');

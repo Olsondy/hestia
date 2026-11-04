@@ -37,9 +37,9 @@ const submit = async (text: string) => { await textBox().fill(text); await page.
 const model = (reply: string, decision: unknown = { kind: 'answer', message: reply }, brief?: unknown) => fixtureModel(toolChunks({ reply, decision, ...(brief ? { brief } : {}) }, 'resolve_turn').slice(1));
 try {
   const project = await createProject(principal, { name: '慢慢整理家的想法', template: 'angled', operationId: randomUUID() }); projectIds.push(project.id);
-  const original = await getProject(principal, project.id), url = `${base}/?project=${project.id}&view=tasks`;
+  const original = await getProject(principal, project.id), url = `${base}/studio?project=${project.id}&view=tasks`;
   const read = async (id: string): Promise<TaskView> => (await (await context.request.get(`${base}/api/projects/${project.id}/tasks/${id}`)).json()).task;
-  await page.goto(base); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.folio').waitFor();
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱', { exact: true }).fill(email); await page.getByLabel('密码', { exact: true }).fill(password); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.folio').waitFor();
   await page.goto(url); await expect(page.getByText('从一个具体的想法开始。')).toBeVisible(); await capture('empty', ['desktop', 'mobile']);
   const firstMessage = '我想保留现有书桌，并安排一个安静的阅读角。';
   const taskId = await submit(firstMessage), initial = await read(taskId), firstInputId = initial.conversation!.brief!.inputs[0].id;

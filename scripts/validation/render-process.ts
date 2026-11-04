@@ -49,7 +49,7 @@ try {
   const bImage = await createRender(principal, b.id, { operationId: randomUUID(), source: { kind: 'candidate', candidateId: candidate.id, revision: 1 } }, queue); renderIds.push(bImage.id);
   await renameProject(principal, a.id, { operationId: randomUUID(), expectedRevision: 1, name: '已继续编辑的方形空间' });
   browser = await chromium.launch({ headless: true }); const context = await browser.newContext(), page = await context.newPage();
-  await page.goto(base); await page.getByLabel('邮箱').fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.goto(`${base}/studio`); await page.getByLabel('邮箱').fill(email); await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click(); await page.locator('.folio').waitFor();
   const queued = await context.request.get(`${base}/api/projects/${a.id}/renders/${aImage.id}`);
   assert.equal(queued.status(), 200); assert.equal((await queued.json()).render.status, 'queued');

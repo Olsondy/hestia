@@ -28,7 +28,7 @@ async function commandClick(label: string, expectedStatus = 200) {
 }
 async function selectSofa(currentPage: Page) { await currentPage.getByRole('button', { name: /^沙发/ }).click(); }
 try {
-  await page.goto(origin);
+  await page.goto(`${origin}/studio`);
   await page.getByLabel('邮箱', { exact: true }).fill(email);
   await page.getByLabel('密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -36,7 +36,7 @@ try {
   const created = await context.request.post(`${origin}/api/projects`, { headers: { Origin: origin }, data: { name: '原木会客', template: 'courtyard', operationId: randomUUID() } });
   assert.equal(created.status(), 201);
   const project = (await created.json()).project; projectId = project.id;
-  await page.goto(`${origin}/?project=${projectId}`);
+  await page.goto(`${origin}/studio?project=${projectId}`);
   await expect(page.locator('[data-scene-ready=true]')).toBeVisible();
   await selectSofa(page);
   const beforeCanvas = await page.locator('canvas').screenshot();

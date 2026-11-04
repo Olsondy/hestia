@@ -33,8 +33,8 @@ try{
   const b=await createProject(principal,{name:'独立测试项目',template:'empty',operationId:randomUUID()});projectIds.push(b.id);
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',entry=>{if(/Text components|TypeError|ReactKonva/.test(entry.text()))errors.push(entry.text());});
-  await page.goto(base);await page.getByLabel('邮箱').fill(identities[0].email);await page.getByLabel('密码',{exact:true}).fill(identities[0].password);await page.getByRole('button',{name:'登录',exact:true}).click();await page.locator('.folio').waitFor();
-  await page.goto(`${base}/?project=${a.id}&view=drawing`);await page.locator('.drawing-panel').waitFor();
+  await page.goto(`${base}/studio`);await page.getByLabel('邮箱').fill(identities[0].email);await page.getByLabel('密码',{exact:true}).fill(identities[0].password);await page.getByRole('button',{name:'登录',exact:true}).click();await page.locator('.folio').waitFor();
+  await page.goto(`${base}/studio?project=${a.id}&view=drawing`);await page.locator('.drawing-panel').waitFor();
   await page.locator('.drawing-panel input[type=file]').setInputFiles(pdfPath);
   await page.getByLabel('PDF 页码').waitFor();await page.getByLabel('PDF 页码').selectOption('2');await page.locator('.drawing-paper-caption').filter({hasText:'PDF 第 2 页'}).waitFor();
   // Fast selections must not allow an earlier render to replace the latest chosen page.
@@ -75,7 +75,7 @@ try{
   await page.locator('.drawing-panel input[type=file]').setInputFiles({name:'broken.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF- broken synthetic')});await page.locator('.drawing-error').filter({hasText:'文件无法读取'}).waitFor();
   await page.screenshot({path:path.join(review,'invalid-pdf-mobile.png'),fullPage:true});
   assert.equal(await page.evaluate(()=>document.fonts.check('400 14px "Tsanger YuYang"')),true);
-  await page.goto(`${base}/?project=${b.id}&view=drawing`);await page.locator('.drawing-panel input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:png});await page.getByRole('button',{name:'保存所选底图',exact:true}).click();await page.getByRole('heading',{name:'已保存的底图'}).waitFor();await page.reload();await page.getByRole('heading',{name:'已保存的底图'}).waitFor();
+  await page.goto(`${base}/studio?project=${b.id}&view=drawing`);await page.locator('.drawing-panel input[type=file]').setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:png});await page.getByRole('button',{name:'保存所选底图',exact:true}).click();await page.getByRole('heading',{name:'已保存的底图'}).waitFor();await page.reload();await page.getByRole('heading',{name:'已保存的底图'}).waitFor();
   const imageUnderlay=(await (await context.request.get(`${base}/api/projects/${b.id}/underlay`)).json()).underlay;assert.equal(imageUnderlay.source.kind,'image');assert.equal(imageUnderlay.width,100);assert.equal(imageUnderlay.height,80);
   assert.deepEqual(errors,[]);
   underlay=(await (await context.request.get(`${base}/api/projects/${a.id}/underlay`)).json()).underlay;assert.equal(underlay.version,2);assert.equal(underlay.source.page,2);

@@ -20,8 +20,8 @@ try{
   const b=await createProject(principal,{name:'待确认的空间',template:'empty',operationId:randomUUID()});projectIds.push(b.id);
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(base);await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill(password);await page.getByRole('button',{name:'登录',exact:true}).click();await page.locator('.folio').waitFor();
-  await page.goto(`${base}/?project=${a.id}&view=tasks`);await page.locator('.task-panel').waitFor();await page.getByText('这里会留下执行记录。').waitFor();
+  await page.goto(`${base}/studio`);await page.getByLabel('邮箱').fill(email);await page.getByLabel('密码',{exact:true}).fill(password);await page.getByRole('button',{name:'登录',exact:true}).click();await page.locator('.folio').waitFor();
+  await page.goto(`${base}/studio?project=${a.id}&view=tasks`);await page.locator('.task-panel').waitFor();await page.getByText('这里会留下执行记录。').waitFor();
   await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:path.join(review,'empty-desktop.png'),fullPage:true});
   let committed='',posts=0;page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname===`/api/projects/${a.id}/tasks`)posts++;});
   await page.route(`**/api/projects/${a.id}/tasks`,async route=>{
@@ -46,7 +46,7 @@ try{
   const row=(await pool.query('SELECT steps,next_step,status FROM design_tasks WHERE id=$1 AND actor_id=$2',[secondId,identity.userId])).rows[0];
   const sofa=a.scene.objects.find(object=>object.id==='sofa-a')!;assert.equal(row.steps[1].command.objectId,sofa.id);assert.equal(row.steps[1].command.x,Number((sofa.position.x+.2).toFixed(6)));assert.equal(row.status,'queued');assert.equal(row.next_step,0);
   await page.getByRole('button',{name:'取消任务',exact:true}).click();await page.locator('#task-state-title').filter({hasText:'已取消'}).waitFor();assert.equal((await getProject(principal,a.id)).revision,a.revision,'queued test cannot modify scene');
-  await page.goto(`${base}/?project=${b.id}&view=tasks`);await page.locator('.task-panel').waitFor();assert.equal(await page.getByRole('radio',{name:/文字与固定移动/}).isDisabled(),true);assert.equal(await page.getByRole('radio',{name:/仅文字/}).isChecked(),true);
+  await page.goto(`${base}/studio?project=${b.id}&view=tasks`);await page.locator('.task-panel').waitFor();assert.equal(await page.getByRole('radio',{name:/文字与固定移动/}).isDisabled(),true);assert.equal(await page.getByRole('radio',{name:/仅文字/}).isChecked(),true);
   assert.equal(await page.evaluate(()=>document.fonts.check('400 14px "Tsanger YuYang"')),true);assert.deepEqual(errors,[]);
   tasks=(await (await context.request.get(`${base}/api/projects/${a.id}/tasks`)).json()).tasks;assert.equal(tasks.length,2);assert.equal(tasks.every((task:{status:string;checkpoint:{nextStep:number}})=>task.status==='cancelled'&&task.checkpoint.nextStep===0),true);
   await writeFile(path.join(review,'browser-result.json'),JSON.stringify({passed:true,scope:'accept-reopen-subscribe-cancel only; Worker not started or invoked',tasks:2,executedSteps:0,unchangedSceneRevision:true,widths:[1440,1100,390],reducedMotion:true,fontLoaded:true,pageErrors:errors},null,2));

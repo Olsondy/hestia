@@ -43,9 +43,12 @@ async function step(name: string, work: () => Promise<void>) {
 const browser = await chromium.launch();
 try {
   const visitor = await phone(browser);
-  await step('根路径进入企业入口（HESTIA_HOME_ENTRY 已设置时）', async () => {
+  await step('根路径官网入口 → 客户端（ADR-0015，HESTIA_HOME_ENTRY 已设置时）', async () => {
     await visitor.goto(base);
-    if (process.env.HESTIA_HOME_ENTRY && !/\/c\//.test(visitor.url())) throw new Error(`未跳转：${visitor.url()}`);
+    if (process.env.HESTIA_HOME_ENTRY) {
+      await visitor.getByRole('link', { name: /进入客户端/ }).click();
+      await visitor.waitForURL(/\/c\//);
+    }
   });
 
   // Targeted share code (ADR-0012): pasted as the member's share message on the H5 home, anonymous preview, gate,

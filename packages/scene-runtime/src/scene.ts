@@ -9,7 +9,7 @@ import { prototypeFurniture } from '../../catalog/src/prototype-visual';
 import { resolveLighting, resolveMaterial } from '../../styles/src/catalog';
 import { defaultVisualStyle } from '../../contracts/src/styles';
 import { ambienceProp } from './props';
-import { addArchitecturalDetail } from './architecture';
+import { addArchitecturalDetail, isOutdoorRoom } from './architecture';
 import { RenderStage, type LightingState } from './stage';
 import { detectQuality, type QualityTier } from './quality';
 import { cameraPresets, mainLevelId, type CameraPreset } from './cameras';
@@ -18,7 +18,9 @@ import { Cutaway, CUT_HEIGHT, roomAnchor } from './dollhouse';
 
 export type CameraState = { position: number[]; target: number[] };
 /** A room of the shown storey as listed by the overview: label anchor (world) and its eye-level shot, if any. */
-export type RoomEntry = { id: string; name: string; anchor: [number, number, number]; interiorPreset: string | null };
+export type RoomEntry = { id: string; name: string; anchor: [number, number, number]; interiorPreset: string | null; design: boolean };
+/** Utility spaces with nothing to design (garage, plant room, storage, laundry). */
+const utility = /车库|设备|储藏|储物|杂物|洗衣|garage|storage|utility|plant/i;
 export type Presentation = 'standard' | 'overview' | 'interior';
 export type { SceneView, LightingState, QualityTier, CameraPreset };
 const wallColor = '#f4efe6', slabEdgeColor = '#d9d0c3', stairColor = '#cfc4b4';
@@ -202,6 +204,9 @@ export class SpatialScene {
   private cutaway?: Cutaway;
   private presentation: Presentation = 'standard';
   private listeners = new Set<() => void>();
+  /** Set by focusOnDesign: overview framing covers the design rooms only. */
+  private focusBounds?: T.Box3;
+  private designFocus = false;
   private frameId = 0;
   private settleTimer?: ReturnType<typeof setTimeout>;
   private dragging = false;
@@ -232,8 +237,10 @@ export class SpatialScene {
     const next = createSceneModel(snapshot, requested); // Validate before replacing a working scene.
     this.view = requested;
     if (this.model) { this.cutaway?.dispose(); this.scene.remove(this.model.root); disposeModel(this.model.root); }
+    this.focusBounds = undefined;
     this.model = next; this.scene.add(next.root);
     this.cutaway = new Cutaway(next.data, next.objects, next.levels);
+    this.applyDesignFocus();
     this.stage.setModel(next.root, next.lamps, light);
     if (!preserveCamera) this.fit();
     this.setSelection(this.selectedId);
@@ -302,10 +309,38 @@ export class SpatialScene {
     if (!this.model) throw new Error('No scene loaded');
     const shots = new Map(this.mainLevelPresets().flatMap(preset => preset.kind === 'interior' ? [[preset.roomId, preset.id] as const] : []));
     const levels = effectiveLevels(this.model.data), main = mainLevelId(this.model.data);
-    return this.model.data.rooms.filter(room => room.name && (!this.model!.data.levels || levelOf(room, levels) === main)).map(room => {
+    const data = this.model.data, tiled = new Set(data.surfaceDesign?.tilings.map(tiling => tiling.finishId) ?? []);
+    return data.rooms.filter(room => room.name && (!data.levels || levelOf(room, levels) === main)).map(room => {
       const anchor = roomAnchor(room.outline);
-      return { id: room.id, name: room.name!, anchor: [anchor.x, this.elevationOf(room) + .25, anchor.z], interiorPreset: shots.get(room.id) ?? null };
+      const stone = (data.finishes ?? []).some(finish => finish.kind === 'floor' && finish.roomId === room.id && tiled.has(finish.id));
+      // Rooms worth showing in the viewer: stone-floored, or indoor living space (not yards, terraces or utility rooms).
+      const design = stone || (!isOutdoorRoom(room) && !utility.test(room.name!));
+      return { id: room.id, name: room.name!, anchor: [anchor.x, this.elevationOf(room) + .25, anchor.z], interiorPreset: shots.get(room.id) ?? null, design };
     });
+  }
+  /**
+   * Viewer focus on design content: hides furniture and props standing in rooms without design (yard cars, pools,
+   * garage shelving, boilers). The snapshot and stills are unchanged. Call after `load`.
+   */
+  focusOnDesign() {
+    if (!this.model) throw new Error('No scene loaded');
+    this.designFocus = true; this.applyDesignFocus(); this.stage.invalidate(); this.draw();
+  }
+  /** Re-applied after every (re)load while the viewer focuses on design content. */
+  private applyDesignFocus() {
+    if (!this.model || !this.designFocus) return;
+    const data = this.model.data, levels = effectiveLevels(data);
+    const hidden = this.rooms().filter(room => !room.design).map(id => data.rooms.find(room => room.id === id.id)!);
+    for (const object of data.objects) {
+      const node = this.model.objects.get(object.id); if (!node) continue;
+      node.visible = !hidden.some(room => levelOf(room, levels) === levelOf(object, levels) && pointInPolygon(object.position, room.outline));
+    }
+    const shown = this.rooms().filter(room => room.design).map(entry => data.rooms.find(room => room.id === entry.id)!);
+    if (shown.length) {
+      const box = new T.Box3();
+      for (const room of shown) for (const p of room.outline) box.expandByPoint(new T.Vector3(p.x, this.elevationOf(room), p.z));
+      box.max.y += Math.max(2.4, ...data.walls.map(wall => wall.height)); this.focusBounds = box;
+    }
   }
   getPresentation(): Presentation { return this.presentation; }
   /** Screen position (CSS pixels within the host) of a world point; `visible` is false behind the camera or off-canvas. */
@@ -357,7 +392,7 @@ export class SpatialScene {
     return { x: (point.x + 1) * this.host.clientWidth / 2, y: (1 - point.y) * this.host.clientHeight / 2 };
   }
   private fit(direction = new T.Vector3(7, 11, 10)) {
-    const bounds = new T.Box3().setFromObject(this.model!.root);
+    const bounds = this.focusBounds?.clone() ?? new T.Box3().setFromObject(this.model!.root);
     if (bounds.isEmpty()) bounds.set(new T.Vector3(-2, 0, -2), new T.Vector3(2, 1, 2));
     const center = bounds.getCenter(new T.Vector3()), size = bounds.getSize(new T.Vector3());
     const radius = size.length() / 2;
@@ -371,7 +406,7 @@ export class SpatialScene {
   /** Tight framing for aerial presets: the closest distance at which every bounding-box corner stays in view. */
   private frame(direction: T.Vector3) {
     this.fit(direction);
-    const bounds = new T.Box3().setFromObject(this.model!.root), center = this.controls.target.clone(), dir = direction.clone().normalize();
+    const bounds = this.focusBounds?.clone() ?? new T.Box3().setFromObject(this.model!.root), center = this.controls.target.clone(), dir = direction.clone().normalize();
     const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new T.Vector3(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z));
     const fits = (distance: number) => {
       this.camera.position.copy(center).addScaledVector(dir, distance); this.camera.lookAt(center); this.camera.updateMatrixWorld(true);
@@ -463,7 +498,7 @@ export class SpatialScene {
     this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     // Rays pass through the removed upper part of cut walls in the overview.
-    const hits = this.model ? this.raycaster.intersectObject(this.model.root, true).filter(item => !this.cutaway?.clipped(item.object, item.point)) : [];
+    const hits = this.model ? this.raycaster.intersectObject(this.model.root, true).filter(item => visibleChain(item.object) && !this.cutaway?.clipped(item.object, item.point)) : [];
     let hit: T.Object3D | null = hits[0]?.object ?? null;
     while (hit && !hit.userData.id) hit = hit.parent;
     this.onSelect(hit?.userData.id ?? null);
@@ -479,3 +514,5 @@ export class SpatialScene {
     this.stage.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }
+
+function visibleChain(object: T.Object3D | null) { for (let node = object; node; node = node.parent) if (!node.visible) return false; return true; }

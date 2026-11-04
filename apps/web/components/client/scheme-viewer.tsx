@@ -32,7 +32,8 @@ export function SchemeViewer({ scene }: { scene: SceneSnapshot | undefined }) {
       instance.setBackdrop('#ebe6dc'); // Warm off-white behind the model, like a scale model on paper.
       instance.load(scene);
       instance.renderer.domElement.setAttribute('aria-label', '可拖动旋转、双指缩放的方案 3D 视图');
-      const list = instance.rooms(), first = instance.mainLevelPresets().find(preset => preset.kind === 'aerial');
+      instance.focusOnDesign();
+      const list = instance.rooms().filter(room => room.design), first = instance.mainLevelPresets().find(preset => preset.kind === 'aerial');
       setRooms(list); setOverview(first?.id ?? null);
       unsubscribe = instance.onFrame(() => {
         const shown = instance.getPresentation() === 'overview';

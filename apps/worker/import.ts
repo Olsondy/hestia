@@ -2,7 +2,11 @@ import { PgBoss } from 'pg-boss';
 import { pool } from '../../packages/persistence/src/client';
 import { IMPORT_QUEUE, IMPORT_SCHEMA } from '../../packages/drawing-imports/src/queue';
 import { validatedQueueSchema } from '../../packages/tasks/src/queue';
+import { eq } from 'drizzle-orm';
+import { db } from '../../packages/persistence/src/client';
+import { floorplanImports } from '../../packages/persistence/src/schema';
 import { runImport } from '../../packages/drawing-imports/src/runner';
+import { logged } from './job-log';
 import { generateForImport } from '../../packages/finish-requests/src/service';
 import { initializeRenderQueue } from '../../packages/renders/src/queue';
 
@@ -15,7 +19,8 @@ boss.on('error', error => console.error('import_queue_error', { type: error.name
 await boss.start();
 const renderQueue = await initializeRenderQueue();
 await boss.work<{ importId: string }>(IMPORT_QUEUE, { batchSize: 1, pollingIntervalSeconds: 1 }, async jobs => {
-  for (const job of jobs) { await runImport(job.data.importId); await generateForImport(job.data.importId, { renderQueue }); }
+  for (const job of jobs) await logged('图纸转换', job.data.importId, async () => { await runImport(job.data.importId); await generateForImport(job.data.importId, { renderQueue }); },
+    async () => (await db.select({ status: floorplanImports.status, error: floorplanImports.error }).from(floorplanImports).where(eq(floorplanImports.id, job.data.importId)))[0]);
 });
 console.log('Floorplan import Worker ready. DXF only; no model calls.');
 async function stop() { await boss.stop({ graceful: true, timeout: 90000 }); await pool.end(); }

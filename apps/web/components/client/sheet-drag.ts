@@ -12,11 +12,13 @@ export type SheetState = 'min' | 'normal' | 'expanded';
  */
 export function useSheetDrag(state: SheetState, setState: (next: SheetState) => void) {
   const panel = useRef<HTMLElement>(null);
-  const drag = useRef<{ y: number; height: number; id: number; moved: boolean }>(undefined);
+  const drag = useRef<{ y: number; height: number; floor: number; id: number; moved: boolean }>(undefined);
   const suppressClick = useRef(false);
   const onPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     const element = panel.current; if (!element || event.button > 0) return;
-    drag.current = { y: event.clientY, height: element.getBoundingClientRect().height, id: event.pointerId, moved: false };
+    // Never drag below the grip plus the pinned action bar.
+    const floor = event.currentTarget.offsetHeight + (element.querySelector<HTMLElement>('.panel__actions')?.offsetHeight ?? 0);
+    drag.current = { y: event.clientY, height: element.getBoundingClientRect().height, floor, id: event.pointerId, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onPointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -26,7 +28,7 @@ export function useSheetDrag(state: SheetState, setState: (next: SheetState) => 
     if (!d.moved && Math.abs(dy) < 6) return;
     d.moved = true;
     element.style.transition = 'none'; element.style.maxHeight = 'none';
-    element.style.height = `${Math.min(innerHeight * .86, Math.max(72, d.height - dy))}px`;
+    element.style.height = `${Math.min(innerHeight * .86, Math.max(d.floor, d.height - dy))}px`;
   };
   const onPointerUp = (event: React.PointerEvent<HTMLElement>) => {
     const d = drag.current, element = panel.current; drag.current = undefined;

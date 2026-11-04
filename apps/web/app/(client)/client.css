@@ -424,8 +424,9 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 .stage__room-text b{font:var(--t-label)}
 .stage__room-text small{font:var(--t-small);color:#5f5b54;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stage__room-enter{flex-shrink:0;height:36px;padding:0 var(--s-4);border-radius:var(--r-pill);background:#161514;color:#fff;font:var(--t-label);font-size:14px}
-/* Draggable sheet (sheet-drag.ts): the grip takes vertical drags itself; the minimized sheet leaves the stage nearly full screen. */
+/* Draggable sheet (sheet-drag.ts): the grip takes vertical drags itself; the action bar stays pinned at every height. */
 .panel__grip{height:28px;touch-action:none;cursor:grab}
 .panel__grip:active{cursor:grabbing}
-.immersive.is-min .panel{max-height:calc(132px + env(safe-area-inset-bottom))}
-.immersive.is-min .panel__actions{display:none}
+/* Minimized: only the grip and the pinned action bar remain; the actions never leave the screen. */
+.immersive.is-min .panel__scroll{display:none}
+.panel__actions{flex-shrink:0}

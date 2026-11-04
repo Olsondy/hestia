@@ -24,15 +24,20 @@ export function normalizePhone(value: string) {
 const secret = () => process.env.BETTER_AUTH_SECRET!;
 const hmac = (value: string) => createHmac('sha256', secret()).update(value).digest('hex');
 const codeHash = (challengeId: string, code: string) => hmac(`hestia:otp:${challengeId}:${code}`);
+/**
+ * Client address from the trusted proxy header. For a list (X-Forwarded-For) the last entry is the one our own proxy
+ * appended; earlier entries come from the client and can be forged. Single-value headers are unaffected.
+ */
+const sourceOf = (headers: Headers | null | undefined, header: string | null) => header && headers ? headers.get(header)?.split(',').at(-1)?.trim() : undefined;
 function sourceHash(headers: Headers, config: OtpConfig) {
-  const raw = config.sourceHeader ? headers.get(config.sourceHeader)?.split(',')[0]?.trim() : undefined;
+  const raw = sourceOf(headers, config.sourceHeader);
   return hmac(`hestia:otp-source:${raw || 'shared'}`);
 }
 /** Keyed hash of a secret value (share codes); not reversible without the server secret. */
 export const keyedHash = (purpose: string, value: string) => hmac(`hestia:${purpose}:${value}`);
 /** Request source for rate limits, from the trusted proxy header shared with phone codes; one bucket without it. */
 export function requestSource(headers: Headers | null | undefined, purpose: string) {
-  const header = otpConfig().sourceHeader, raw = header && headers ? headers.get(header)?.split(',')[0]?.trim() : undefined;
+  const raw = sourceOf(headers, otpConfig().sourceHeader);
   return hmac(`hestia:${purpose}-source:${raw || 'shared'}`);
 }
 const now = sql`clock_timestamp()`, interval = (secs: number) => sql`make_interval(secs => ${secs})`;

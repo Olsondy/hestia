@@ -99,7 +99,7 @@ function PreviewView({ token, preview, gate }: { token: string; preview: SharePr
   const [open, setOpen] = useState(gate);
   const dialog = useRef<HTMLDialogElement>(null);
   const bound = preview.viewer?.boundToMe;
-  useEffect(() => { if (bound) go(`/c/${encodeURIComponent(preview.workspace.slug)}/r/${preview.request.id}`, true); }, [bound, go, preview]);
+  useEffect(() => { if (bound) go(`/c/r/${preview.request.id}`, true); }, [bound, go, preview]);
   useEffect(() => { const d = dialog.current; if (!d) return; if (open && !d.open) { d.showModal(); d.querySelector<HTMLElement>('.sheet__body')?.focus(); } if (!open && d.open) d.close(); }, [open]);
   const bindPath = `/s/${encodeURIComponent(token)}/bind`;
   const onGate = () => { if (user) go(bindPath); else setOpen(true); };
@@ -116,7 +116,7 @@ function PreviewView({ token, preview, gate }: { token: string; preview: SharePr
           {preview.binding === 'phone' && <div className="row"><RowMain icon="user" title="换了号码？" sub="用其他号码登录可以提交绑定申请，由企业批准"/></div>}
         </Group>
         <div className="btn-stack">
-          <button className="btn btn--primary btn--block" onClick={() => { setOpen(false); go(`/c/${encodeURIComponent(preview.workspace.slug)}/login?next=${encodeURIComponent(bindPath)}`); }}>手机号登录</button>
+          <button className="btn btn--primary btn--block" onClick={() => { setOpen(false); go(`/c/login?next=${encodeURIComponent(bindPath)}`); }}>手机号登录</button>
           <button className="btn btn--secondary btn--block" onClick={() => setOpen(false)}>继续预览</button>
         </div>
       </div>
@@ -133,7 +133,7 @@ function BindView({ token, preview, apply }: { token: string; preview: SharePrev
   const [name, setName] = useState(''), [note, setNote] = useState('');
   const [ops] = useState(() => ({ bind: operationId(), apply: operationId() }));
   const tried = useRef(false);
-  useEffect(() => { if (user === null) go(`/c/${encodeURIComponent(slug)}/login?next=${encodeURIComponent(`${back}/bind`)}`, true); }, [user, go, slug, back]);
+  useEffect(() => { if (user === null) go(`/c/login?next=${encodeURIComponent(`${back}/bind`)}`, true); }, [user, go, slug, back]);
   const settle = async () => { await queries.invalidateQueries({ queryKey: ['share', token] }); queries.invalidateQueries({ queryKey: ['requests', slug] }); };
   const bind = useMutation({
     mutationFn: () => api.bind(token, { operationId: ops.bind }),
@@ -152,8 +152,8 @@ function BindView({ token, preview, apply }: { token: string; preview: SharePrev
     tried.current = true; bind.mutate();
   }, [user, viewer, apply, bind]);
   if (!user || !viewer) return <LoadingScreen back={back}/>;
-  const projects = `/c/${encodeURIComponent(slug)}/projects`;
-  const requestPath = `/c/${encodeURIComponent(slug)}/r/${preview.request.id}`;
+  const projects = `/c/projects`;
+  const requestPath = `/c/r/${preview.request.id}`;
   const phone = <span className="num">{maskPhone(user.phoneNumber)}</span>;
   if (viewer.boundToMe || state.how) return <StatusScreen back={projects} seal={<span className="seal" aria-hidden="true"><Icon name="check" size={28}/></span>} title="已绑定到你的账号"
     sub={`${state.how === 'phone' ? '你登录的手机号与企业分享时指定的一致，方案已自动绑定。' : state.how === 'open' ? '方案已绑定到你登录的手机号，分享码随之失效。' : '这个方案已绑定到你的账号。'}以后从「项目」进入，现在可以调整、确认和留言。`}>
@@ -188,7 +188,7 @@ function BindView({ token, preview, apply }: { token: string; preview: SharePrev
   return <StatusScreen back={back} seal={<span className="seal seal--quiet" aria-hidden="true"><Icon name="phone" size={26}/></span>} title="手机号与分享指定的不一致"
     sub={<>这个方案是企业指定分享给另一个手机号的。为保护方案，用 {phone} 登录不能直接绑定，只能预览。</>}>
     <div className="section"><Group>
-      <button className="row" onClick={async () => { await signOut().catch(() => {}); queries.clear(); await refreshSession(); go(`/c/${encodeURIComponent(slug)}/login?next=${encodeURIComponent(`${back}/bind`)}`, true); }}>
+      <button className="row" onClick={async () => { await signOut().catch(() => {}); queries.clear(); await refreshSession(); go(`/c/login?next=${encodeURIComponent(`${back}/bind`)}`, true); }}>
         <RowMain icon="logout" title="换一个手机号登录" sub="如果企业分享时填写的是你的另一个号码" chevron/></button>
       <Link className="row" href={`${back}/bind?apply=1`}><RowMain icon="user" title="提交绑定申请" sub="由企业成员核对后批准" chevron/></Link>
     </Group></div>

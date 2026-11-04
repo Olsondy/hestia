@@ -25,7 +25,7 @@ function Door({ href, children, variant = 'primary' }: { href: string | null; ch
 
 export default function SitePage() {
   const { enterprise, invalid } = siteEntry(), demo = isDemoDeployment();
-  const client = enterprise ? `/c/${enterprise}` : null, workbench = enterprise ? `/w/${enterprise}` : null;
+  const client = enterprise ? '/c' : null, workbench = enterprise ? '/w' : null;
   return <div className="site">
     <header className="top">
       <a className="top__brand" href="/"><span className="mark" aria-hidden="true"/><b>Hestia</b><span>空间设计工作台</span></a>

@@ -1,5 +1,5 @@
 'use client';
-// H5 客户端：企业入口 /c/{entry}/… 与分享码页面 /s/{分享码}/…（应用内部打开，ADR-0012）。按定稿原型 client-h5-v2（P03）实现，只调用公开接口。
+// H5 客户端：本部署企业的入口 /c/…（ADR-0016）与分享码页面 /s/{分享码}/…（应用内部打开，ADR-0012）。按定稿原型 client-h5-v2（P03）实现，只调用公开接口。
 import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -35,7 +35,7 @@ function Router({ entry: entryProp, share }: { entry?: string; share?: string })
   const entry = entryProp ?? shareEntry?.slug ?? '';
   const catalog = useQuery({ queryKey: ['catalog', entry], queryFn: () => clientApi(entry).catalog(), enabled: !!entry, staleTime: 5 * 60_000 });
   const workspaceName = catalog.data?.workspace.name ?? shareEntry?.name ?? '';
-  const ctx = useMemo<Ctx>(() => ({ entry, base: `/c/${encodeURIComponent(entry)}`, user: user.data, workspaceName, go, toast, refreshSession }),
+  const ctx = useMemo<Ctx>(() => ({ entry, base: '/c', user: user.data, workspaceName, go, toast, refreshSession }),
     [entry, user.data, workspaceName, go, toast, refreshSession]);
 
   // Page title and scroll position follow route changes.
@@ -45,7 +45,7 @@ function Router({ entry: entryProp, share }: { entry?: string; share?: string })
   let page: React.ReactNode;
   if (share) page = <ShareRoute token={share} sub={pathname.split('/')[3]} query={search} onWorkspace={setShareEntry}/>;
   else {
-    const parts = pathname.split('/').filter(Boolean).slice(2);
+    const parts = pathname.split('/').filter(Boolean).slice(1);
     page = parts[0] === 'login' ? <LoginView next={search.get('next')}/>
       : parts[0] === 'new' ? <NewRequestView/>
       : parts[0] === 'projects' ? <ProjectsView/>
@@ -55,7 +55,7 @@ function Router({ entry: entryProp, share }: { entry?: string; share?: string })
   }
   return <ClientContext.Provider value={ctx}>
     <div className="client-app">
-      {catalog.error instanceof ClientError && catalog.error.status === 404 && !share ? <NotFound title="找不到这个企业入口" text="入口不存在或已停用。请确认链接是否完整。"/> : page}
+      {!entry && !share ? <NotFound title="还没有配置企业入口" text="这套部署还没有指定企业（HESTIA_HOME_ENTRY）。"/> : catalog.error instanceof ClientError && catalog.error.status === 404 && !share ? <NotFound title="找不到这个企业入口" text="入口不存在或已停用。请确认链接是否完整。"/> : page}
       <div className={`toast${toastText ? ' is-on' : ''}`} role="status" aria-live="polite">{toastText}</div>
     </div>
   </ClientContext.Provider>;

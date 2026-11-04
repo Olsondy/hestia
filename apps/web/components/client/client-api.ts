@@ -85,6 +85,6 @@ export const maskPhone = (phone: string | null | undefined) => {
 };
 /** Internal client paths only: rejects absolute URLs, protocol-relative and backslash tricks (open redirect). */
 export function safeNext(value: string | null | undefined, fallback: string) {
-  if (!value || !/^\/(c|s)\/[^/\\]/.test(value) || value.includes('//') || value.includes('\\')) return fallback;
+  if (!value || !/^\/(c|s)(\/[^/\\]|\?|$)/.test(value) || value.includes('//') || value.includes('\\')) return fallback;
   return value;
 }

@@ -56,7 +56,7 @@ try {
   const owner = await phone(browser);
   await step('定向分享码：首页粘贴分享口令 → 未登录预览', async () => {
     await owner.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
-    await owner.goto(`${base}/c/demo-home`);
+    await owner.goto(`${base}/c`);
     await owner.evaluate(text => navigator.clipboard.writeText(text), `【演示家装企业】方案分享码 ${seed.targeted.code}，在企业的小程序或 H5 首页输入即可查看。`);
     await owner.getByRole('button', { name: /收到企业的分享码/ }).click();
     await shot(owner, '00-code-sheet');
@@ -102,12 +102,12 @@ try {
   // Another phone on the used targeted code, then the open share code typed by hand.
   const other = await phone(browser);
   await step('另一手机号打开已绑定的定向分享码 → 已使用', async () => {
-    await other.goto(`${base}/c/demo-home/login?next=${encodeURIComponent(`/s/${canonical(seed.targeted.code)}/bind`)}`);
+    await other.goto(`${base}/c/login?next=${encodeURIComponent(`/s/${canonical(seed.targeted.code)}/bind`)}`);
     await login(other, phones.open);
     await other.getByRole('heading', { name: '这个分享码已使用' }).waitFor({ timeout: 30000 }); await shot(other, '06-code-used');
   });
   await step('分享码：错误码提示 → 手动输入正确码 → 登录即绑定', async () => {
-    await other.goto(`${base}/c/demo-home/projects`);
+    await other.goto(`${base}/c/projects`);
     await other.getByRole('button', { name: /输入分享码/ }).first().click();
     await other.getByPlaceholder('例如 HX7K-9QP2').fill('ABCD-EFGH'); await other.getByRole('button', { name: '打开方案' }).click();
     await other.getByText('分享码不正确或已失效').waitFor({ timeout: 30000 });
@@ -120,7 +120,7 @@ try {
   // Self-service request with the demo villa.
   const self = await phone(browser);
   await step('客户自助：登录 → 示例别墅 → 饰面 → 石材 → 提交 → 出图', async () => {
-    await self.goto(`${base}/c/demo-home`); await self.getByRole('button', { name: /提交方案需求/ }).click();
+    await self.goto(`${base}/c`); await self.getByRole('button', { name: /提交方案需求/ }).click();
     await self.waitForURL(/login/); await login(self, phones.selfService);
     await self.waitForURL(/\/new$/); await self.getByRole('radio', { name: /示例别墅/ }).click();
     await self.getByRole('button', { name: /下一步：选择饰面/ }).click(); await shot(self, '08-finishes');
@@ -132,7 +132,7 @@ try {
     await self.reload(); await self.getByText('正在排版出图').waitFor({ timeout: 30000 }); await shot(self, '09-generating');
   });
   await step('我的项目：自己提交的与企业分享的分组', async () => {
-    await other.goto(`${base}/c/demo-home/projects`); await other.getByText('企业分享给我的').waitFor();
+    await other.goto(`${base}/c/projects`); await other.getByText('企业分享给我的').waitFor();
     await other.locator('.project').first().waitFor(); await shot(other, '10-projects');
   });
   await step('不存在的分享码 → 不正确或已失效', async () => {

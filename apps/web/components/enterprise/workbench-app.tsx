@@ -28,6 +28,8 @@ export const leadsOf = (workspaceId: string) => get<{ leads: LeadView[] }>(`/api
 export function WorkbenchApp({ slug }: { slug: string }) {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: {
     retry: (count, error) => count < 2 && !(error instanceof ClientError && error.status >= 400 && error.status < 500), refetchOnWindowFocus: true } } }));
+  // One enterprise per deployment (ADR-0016): without HESTIA_HOME_ENTRY there is no workbench to open.
+  if (!slug) return <AuthFrame><h1>还没有配置企业工作台</h1><p className="muted" style={{ marginTop: 8 }}>这套部署还没有指定企业（HESTIA_HOME_ENTRY）。</p></AuthFrame>;
   return <QueryClientProvider client={client}><Suspense fallback={<p className="page-loading">正在打开…</p>}><Router slug={slug}/></Suspense></QueryClientProvider>;
 }
 
@@ -37,7 +39,7 @@ const safeNext = (value: string | null, base: string) =>
 
 function Router({ slug }: { slug: string }) {
   const pathname = usePathname(), search = useSearchParams(), router = useRouter();
-  const base = `/w/${encodeURIComponent(slug)}`, parts = pathname.split('/').filter(Boolean).slice(2);
+  const base = '/w', parts = pathname.split('/').filter(Boolean).slice(1);
   const go = useCallback((path: string, replace = false) => { if (replace) router.replace(path); else router.push(path); }, [router]);
   const user = useQuery({ queryKey: ['session'], queryFn: sessionUser, staleTime: 30_000 });
   const membership = useQuery({ queryKey: ['membership', slug, user.data?.id], queryFn: () => memberOf(slug), enabled: !!user.data, staleTime: 60_000 });

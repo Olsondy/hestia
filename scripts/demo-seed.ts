@@ -151,13 +151,13 @@ async function main() {
   const base = (process.env.BETTER_AUTH_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
   log('');
   log('演示数据已就绪（短信为模拟发送，验证码显示在登录页）：');
-  log(`  客户自助入口      ${base}/c/${DEMO.slug}        演示手机号 ${DEMO.phones.selfService}`);
+  log(`  客户自助入口      ${base}/c                  演示手机号 ${DEMO.phones.selfService}`);
   log(`  定向分享码        ${saved.targeted!.code}`);
   log(`                    指定手机号 ${DEMO.phones.targeted}（用其他号码登录会提示不一致，可提交绑定申请）`);
   log(`  分享码            ${saved.open!.code}`);
   log(`                    任一手机号登录即绑定，如 ${DEMO.phones.open}`);
   log(`                    在 H5 首页「收到企业的分享码？」输入或粘贴；应用内部地址 ${base}/s/<分享码>`);
-  log(`  企业工作台        ${base}/w/${DEMO.slug}        成员 ${DEMO.member.email} / ${password}`);
+  log(`  企业工作台        ${base}/w                  成员 ${DEMO.member.email} / ${password}`);
   if (failed) log(`注意：有 ${failed} 张效果图生成失败，可运行 pnpm demo:seed --reset 重新准备。`);
   log(`分享码与成员密码另存于 ${path.relative(process.cwd(), path.dirname(stateFile))}/（不提交仓库）。`);
 }

@@ -49,6 +49,8 @@ export class RenderStage {
   private focus?: T.Box3;
   /** Point whose nearest lamps are lit at night (overview / plan); defaults to a point ahead of the camera. */
   lampFocus?: T.Vector3;
+  /** Horizontal azimuth of the overview camera (from the model towards the camera); the side sun keeps its angle to it. */
+  private overviewAzimuth = Math.atan2(.9, .62);
   state: LightingState = { mode: 'day', interiorLights: false };
   /** Page colour shown behind the model in daylight (host pages may match their own surface). */
   private dayBackdrop = day.background;
@@ -101,6 +103,12 @@ export class RenderStage {
 
   /** Region for the overview's shadow map (tighter map, crisper furniture shadows); undefined covers the model. */
   setFocus(box?: T.Box3) { this.focus = box?.clone(); this.aimSun(); }
+  /** The overview camera's direction (model → camera); the sun stays ~77° round from it. */
+  setOverviewView(direction: T.Vector3) {
+    const azimuth = Math.atan2(direction.z, direction.x);
+    if (Math.abs(azimuth - this.overviewAzimuth) < 1e-6) return;
+    this.overviewAzimuth = azimuth; this.aimSun();
+  }
 
   /** Sun position and shadow frustum for the current look and focus. */
   private aimSun() {
@@ -108,7 +116,8 @@ export class RenderStage {
     // Overview: side light like the hestia-creation demo. The default overview camera looks from (.62, ·, .9); a sun
     // ~74° round from it at ~50° elevation throws shadows sideways across the floor, where they model the
     // furniture. Presets light from near the camera's side, which hides every shadow behind its own object.
-    const direction = this.overview ? new T.Vector3(.93, 1.19, -.37).normalize() : new T.Vector3(...this.preset.directional.position).normalize();
+    const sunAzimuth = this.overviewAzimuth - T.MathUtils.degToRad(77);
+    const direction = this.overview ? new T.Vector3(Math.cos(sunAzimuth), 1.19, Math.sin(sunAzimuth)).normalize() : new T.Vector3(...this.preset.directional.position).normalize();
     const focus = this.overview && this.focus && !this.focus.isEmpty() ? this.focus : undefined;
     const centre = focus ? focus.getCenter(new T.Vector3()) : this.centre;
     const radius = focus ? Math.max(3, focus.getSize(new T.Vector3()).length() / 2) : this.radius, shadow = this.sun.shadow.camera;

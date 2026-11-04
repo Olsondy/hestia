@@ -429,3 +429,8 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .stage__room-text b{font:var(--t-head)}
 .stage__room-text small{font:var(--t-small);color:var(--c-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stage__room-enter{flex-shrink:0;height:32px;padding:0 14px;border-radius:var(--r-pill);background:var(--c-primary);color:var(--c-on-primary);font:var(--t-small)}
+/* Crowded labels shrink to a dot (scheme-viewer.tsx); the name returns when there is room. */
+.room-label.room-label--dot{width:12px;height:12px;padding:0;border-radius:50%;border:2px solid #fffdf8;background:#5f5b54}
+.room-label.room-label--dot span{display:none}
+.room-label.room-label--dot[aria-pressed=true]{background:#161514}
+.room-label.room-label--dot::after{content:"";position:absolute;inset:-12px}

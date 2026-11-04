@@ -73,7 +73,7 @@ def polygon_area(poly):
     s = 0.0
     for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1]): s += x0 * y1 - x1 * y0
     return abs(s) / 2
-ROOM_RE = re.compile(r'(主卧|次卧|卧室|老人房|儿童房|客房|保姆房|客厅|起居|餐厅|客餐厅|厨房|主卫|次卫|公卫|卫生间|洗手间|淋浴|阳台|生活阳台|景观阳台|露台|书房|茶室|衣帽间|玄关|门厅|过道|走廊|储藏|储物|杂物|设备平台|空调位|洗衣|多功能|影音|健身|入户花园)')
+ROOM_RE = re.compile(r'(主卧|次卧|卧室|老人房|儿童房|客房|保姆房|客厅|起居|餐厅|客餐厅|厨房|主卫|次卫|公卫|卫生间|洗手间|淋浴|阳台|生活阳台|景观阳台|露台|书房|茶室|衣帽间|玄关|门厅|过道|走廊|储藏|储物|杂物|设备平台|空调位|洗衣|多功能|影音|健身|入户花园|庭院|院子|花园)')
 CODE_RE = re.compile(r'^(FM|TLM|MLC|JLM|M|TC|GC|PC|BYC|LC|C)[A-Z]?(\d{2})(\d{2})')
 LAYER = {
     'wall': re.compile(r'wall|墙|^a-wall|qiang|^wa', re.I), 'window': re.compile(r'wind|窗|glaz|chuang', re.I),

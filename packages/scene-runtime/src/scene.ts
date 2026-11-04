@@ -291,7 +291,14 @@ export class SpatialScene {
     this.endTween();
     const from = { ...this.getCamera(), fov: this.camera.fov };
     if (JSON.stringify(preset.view) !== JSON.stringify(this.view)) this.setView(preset.view, true);
-    if (preset.kind === 'aerial') { this.camera.fov = 38; this.camera.updateProjectionMatrix(); this.frame(new T.Vector3(...preset.direction)); }
+    if (preset.kind === 'aerial') {
+      this.camera.fov = 38; this.camera.updateProjectionMatrix();
+      const base = new T.Vector3(...preset.direction);
+      // Interactive overviews turn to whichever of four square-on directions shows the floor largest on this canvas
+      // (a long plan stands upright on a portrait phone); the side sun turns with the view. Stills keep the preset.
+      const direction = (options.interactive ?? options.animate) ? this.largestView(base) : base;
+      this.frame(direction); this.stage.setOverviewView(direction);
+    }
     else {
       // Keep the horizontal field of view across aspects, within a sane vertical range.
       const half = T.MathUtils.degToRad(preset.horizontalFov / 2);
@@ -547,13 +554,29 @@ export class SpatialScene {
     if (next !== 'overview' && this.cutaway?.clear()) this.stage.invalidate();
     this.stage.setOverview(next === 'overview' || next === 'plan');
   }
-  /** Straight-down shot fitting `box` (its floor at box.min.y), north up. */
+  /** Of the base direction turned by 0/90/180/270°, the one whose tight framing comes closest (largest on screen). */
+  private largestView(base: T.Vector3) {
+    let best = base, bestDistance = Infinity;
+    for (let k = 0; k < 4; k++) {
+      const direction = base.clone().applyAxisAngle(new T.Vector3(0, 1, 0), k * Math.PI / 2);
+      this.frame(direction);
+      // Prefer the default direction unless another frames the floor clearly (8 %) larger.
+      const distance = this.camera.position.distanceTo(this.controls.target) * (k ? 1.08 : 1);
+      if (distance < bestDistance) { bestDistance = distance; best = direction; }
+    }
+    return best;
+  }
+  /** Straight-down shot fitting `box` (its floor at box.min.y). North up, or turned 90° when that fits a long
+   * plan on a portrait canvas (or a deep plan on a landscape one) noticeably larger. */
   private framePlan(box: T.Box3) {
     this.camera.fov = 12; this.camera.updateProjectionMatrix();
-    const size = box.getSize(new T.Vector3()), half = Math.tan(T.MathUtils.degToRad(this.camera.fov / 2));
-    const distance = Math.max(size.z / 2 / half, size.x / 2 / (half * this.camera.aspect)) * 1.12 + PLAN_CUT;
+    const size = box.getSize(new T.Vector3()), half = Math.tan(T.MathUtils.degToRad(this.camera.fov / 2)), aspect = this.camera.aspect;
+    const upright = Math.max(size.z / 2 / half, size.x / 2 / (half * aspect)), turned = Math.max(size.x / 2 / half, size.z / 2 / (half * aspect));
+    const turn = turned < upright * .9, distance = Math.min(upright, turned * (turn ? 1 : Infinity)) * 1.12 + PLAN_CUT;
     const centre = box.getCenter(new T.Vector3()).setY(box.min.y);
-    this.controls.target.copy(centre); this.camera.position.set(centre.x, centre.y + distance, centre.z + distance * 1e-4); this.controls.update();
+    // The tiny horizontal offset sets which way is up on screen: -z (north) normally, -x when turned.
+    this.controls.target.copy(centre);
+    this.camera.position.set(centre.x + (turn ? distance * 1e-4 : 0), centre.y + distance, centre.z + (turn ? 0 : distance * 1e-4)); this.controls.update();
   }
   private dropEdges() {
     for (const edge of this.edges) { edge.geometry.dispose(); edge.removeFromParent(); }

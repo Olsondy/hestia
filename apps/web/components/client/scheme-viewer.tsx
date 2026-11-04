@@ -28,6 +28,7 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
   const [surface, setSurface] = useState<MaterialMode>('real');
   const planRef = useRef(plan); planRef.current = plan;
   const focus = useRef<(id: string) => void>(() => {});
+  const selected = useRef<string | null>(null);
   useEffect(() => {
     if (!scene) return;
     let disposed = false, unsubscribe = () => {};
@@ -43,13 +44,31 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
       instance.focusOnDesign();
       const list = instance.rooms().filter(room => room.design), first = instance.mainLevelPresets().find(preset => preset.kind === 'aerial');
       setRooms(list); setOverview(first?.id ?? null);
+      // Label priority on crowded (phone) screens: stone-floored rooms, then larger rooms; the selected room first.
+      const tiled = new Set(scene.surfaceDesign?.tilings.map(tiling => tiling.finishId) ?? []);
+      const weight = new Map(list.map(room => {
+        const outline = scene.rooms.find(item => item.id === room.id)?.outline ?? [];
+        const stone = (scene.finishes ?? []).some(finish => finish.kind === 'floor' && finish.roomId === room.id && tiled.has(finish.id));
+        return [room.id, (stone ? 1000 : 0) + polygonArea(outline)] as const;
+      }));
+      const ordered = [...list].sort((a, b) => weight.get(b.id)! - weight.get(a.id)!), widths = new Map<string, number>();
       unsubscribe = instance.onFrame(() => {
         const presentation = instance.getPresentation(), shown = presentation === 'overview' || presentation === 'plan';
-        for (const room of list) {
+        const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+        const order = selected.current ? [...ordered].sort((a, b) => Number(b.id === selected.current) - Number(a.id === selected.current)) : ordered;
+        for (const room of order) {
           const label = labels.current.get(room.id); if (!label) continue;
           const p = instance.projectPoint(room.anchor);
           label.hidden = !shown || !p.visible;
-          if (!label.hidden) label.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
+          if (label.hidden) continue;
+          // A label that would overlap one already placed shrinks to a dot (still tappable).
+          if (!label.classList.contains('room-label--dot')) widths.set(room.id, label.offsetWidth);
+          const w = (widths.get(room.id) ?? 60) / 2 + 3, h = 16;
+          const box = { x0: p.x - w, y0: p.y - h, x1: p.x + w, y1: p.y + h };
+          const crowded = placed.some(other => box.x0 < other.x1 && box.x1 > other.x0 && box.y0 < other.y1 && box.y1 > other.y0);
+          label.classList.toggle('room-label--dot', crowded);
+          if (!crowded) placed.push(box);
+          label.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
         }
       });
       if (first) instance.applyCameraPreset(first.id, { interactive: true });
@@ -84,13 +103,14 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
   const pick = (room: RoomEntry) => mode.kind === 'interior' && room.interiorPreset ? enter(room) : toRoom(room.id);
 
   const current = mode.kind === 'overview' ? null : rooms.find(room => room.id === mode.id) ?? null;
+  selected.current = current?.id ?? null;
   const summary = useMemo(() => current && scene ? roomFinishes(scene, current.id) : [], [current, scene]);
   const rail = useRail<HTMLDivElement>(mode.kind === 'overview' ? 'overview' : mode.id);
   return <>
     <div className="stage__viewer" ref={host}/>
     <div className="stage__labels" aria-hidden={mode.kind === 'interior'}>
       {rooms.map(room => <button key={room.id} hidden ref={node => { if (node) labels.current.set(room.id, node); else labels.current.delete(room.id); }}
-        className="room-label" aria-pressed={current?.id === room.id} onClick={() => toRoom(room.id)}>{room.name}</button>)}
+        className="room-label" aria-pressed={current?.id === room.id} aria-label={room.name} onClick={() => toRoom(room.id)}><span>{room.name}</span></button>)}
     </div>
     {(!scene || error) && <div className="stage__msg" role={error ? 'alert' : 'status'}>{error || '正在打开 3D…'}</div>}
     {mode.kind === 'room' && current && <div className="stage__room" data-stage-ui>
@@ -128,4 +148,8 @@ function roomFinishes(scene: SceneSnapshot, roomId: string) {
     const border = tiling.border ? ` · ${stone(tiling.border)}波打线` : '';
     return [`${stone(tiling)} · ${mm(tiling.tile.length)}×${mm(tiling.tile.width)} · ${patternName[tiling.pattern] ?? tiling.pattern}${border}`];
   });
+}
+
+function polygonArea(points: { x: number; z: number }[]) {
+  return Math.abs(points.reduce((sum, p, i) => { const q = points[(i + 1) % points.length]; return sum + p.x * q.z - q.x * p.z; }, 0) / 2);
 }

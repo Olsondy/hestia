@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { isDemoDeployment, siteEnterprise } from '../../lib/site-entry';
+import { isDemoDeployment, siteEntry } from '../../lib/site-entry';
 import { TilingStage } from '../../components/site/tiling-stage';
 import { ClosingTile } from '../../components/site/closing-tile';
 
@@ -24,7 +24,7 @@ function Door({ href, children, variant = 'primary' }: { href: string | null; ch
 }
 
 export default function SitePage() {
-  const enterprise = siteEnterprise(), demo = isDemoDeployment();
+  const { enterprise, invalid } = siteEntry(), demo = isDemoDeployment();
   const client = enterprise ? `/c/${enterprise}` : null, workbench = enterprise ? `/w/${enterprise}` : null;
   return <div className="site">
     <header className="top">
@@ -45,7 +45,10 @@ export default function SitePage() {
             <Door href={client}>进入客户端</Door>
             <Door href={workbench} variant="quiet">我是企业成员</Door>
           </div>
-          {!enterprise && <p className="hero__note">请使用合作企业提供的链接或分享码进入。</p>}
+          {!enterprise && (invalid && demo
+            // A misconfigured demo says what is wrong rather than showing greyed-out doors.
+            ? <p className="hero__note hero__note--error" role="alert">入口未接通：<code>HESTIA_HOME_ENTRY</code> 的值「{invalid}」无效，应为企业标识，例如 <code>demo-home</code>。改好后重启服务。</p>
+            : <p className="hero__note">请使用合作企业提供的链接或分享码进入。</p>)}
         </div>
         <div className="hero__stage" data-rise style={rise(3)}><TilingStage/></div>
       </section>

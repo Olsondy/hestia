@@ -54,6 +54,8 @@ ul,ol{list-style:none}
 .hero__lede{max-width:30em;margin-top:28px;color:var(--muted);font-size:18px}
 .hero__doors{display:flex;flex-wrap:wrap;gap:12px;margin-top:36px}
 .hero__note{margin-top:14px;color:var(--muted);font-size:14px}
+.hero__note--error{padding:10px 14px;border-radius:12px;background:#f8ece8;color:#a33f2b}
+.hero__note code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
 
 /* ---------- tiling stage ---------- */
 .stage{border:1px solid var(--line);border-radius:22px;background:var(--paper);overflow:hidden}

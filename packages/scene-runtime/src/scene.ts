@@ -1,7 +1,8 @@
 import * as T from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import polygonClipping, { type Polygon } from 'polygon-clipping';
-import { effectiveLevels, levelOf, stairBlocks, type Level, type SceneView } from '../../contracts/src/building';
+import { effectiveLevels, levelOf, pointInPolygon, stairBlocks, type Level, type SceneView } from '../../contracts/src/building';
+import { FLOOR_RAISE } from '../../finishes/src/surfaces';
 import { sceneSnapshotSchema, type SceneSnapshot } from './snapshot';
 import { resolveCatalog } from '../../catalog/src/catalog';
 import { prototypeFurniture } from '../../catalog/src/prototype-visual';
@@ -130,6 +131,17 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
     }
     root.add(group); objects.set(wall.id, group);
   }
+  // Stone floors are laid FLOOR_RAISE above the slab; things standing on them sit on the stone, not inside it
+  // (a rug at slab level would be buried and flicker against the stone from a distance).
+  const tiled = new Set(data.surfaceDesign?.tilings.map(tiling => tiling.finishId) ?? []);
+  const stoneFloors = (data.finishes ?? []).flatMap(finish => {
+    if (finish.kind !== 'floor' || !tiled.has(finish.id)) return [];
+    const room = finish.roomId ? data.rooms.find(item => item.id === finish.roomId) : undefined;
+    const outline = finish.outline ?? room?.outline;
+    return outline ? [{ levelId: finish.levelId ?? (room ? levelOf(room, levels) : levels[0]?.id), outline }] : [];
+  });
+  const onStone = (object: { levelId?: string; position: { x: number; y: number; z: number } }) => object.position.y < .05
+    && stoneFloors.some(floor => floor.levelId === levelOf(object, levels) && pointInPolygon(object.position, floor.outline));
   for (const object of data.objects) {
     const entry = placement(object); if (!entry) continue;
     const group = new T.Group(); group.userData = { id: object.id, kind: object.kind };
@@ -144,7 +156,7 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
       if (prop) group.add(prop);
       else { const mesh = box(object.size.width, object.size.height, object.size.depth, color); mesh.position.y = object.size.height / 2; group.add(mesh); }
     }
-    group.position.set(object.position.x, entry.level.elevation + object.position.y, object.position.z); group.rotation.y = object.yaw;
+    group.position.set(object.position.x, entry.level.elevation + object.position.y + (onStone(object) ? FLOOR_RAISE : 0), object.position.z); group.rotation.y = object.yaw;
     root.add(group); objects.set(object.id, group);
   }
   // Stone finishes (D04): one group per tiled finish, built from the shared layout engine.
@@ -388,6 +400,9 @@ export class SpatialScene {
   private draw = () => {
     if (this.disposed) return;
     if (this.presentation === 'overview' && this.cutaway?.update(this.camera, this.controls.target)) this.stage.invalidate();
+    // Depth precision: from far away a 5 cm near plane leaves too few depth steps for thin layers (rugs on stone).
+    const near = this.presentation === 'overview' ? T.MathUtils.clamp(this.camera.position.distanceTo(this.controls.target) * .03, .05, .6) : .05;
+    if (Math.abs(this.camera.near - near) > .005) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
     this.stage.render();
     for (const listener of this.listeners) listener();
   };

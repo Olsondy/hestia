@@ -10,6 +10,7 @@ import { Icon, PatternGlyph, patternName } from './client-icons';
 import { Alert, Badge, dateText, Group, Palette, PlanDrawing, Row, RowMain, Section, Segmented, Stepper, StyleOptions, Swatch, SwatchChip, Switch, type BadgeKind } from './client-parts';
 import { SchemeViewer } from './scheme-viewer';
 import { useRail } from './rail';
+import { useSheetDrag, type SheetState } from './sheet-drag';
 import { softOf, styleKey } from './soft-styles';
 
 // ---------- 状态 ----------
@@ -342,7 +343,7 @@ function UploadAgainView({ request: r }: { request: FinishRequestView }) {
 }
 
 // ---------- 方案页：Stage（效果图 / 3D）+ Panel ----------
-type ResultUi = { scheme: string | null; level: string | null; view: 'image' | '3d' | 'plan'; expanded: boolean };
+type ResultUi = { scheme: string | null; level: string | null; view: 'image' | '3d' | 'plan'; expanded: boolean; minimized?: boolean };
 const resultUi: ResultUi = { scheme: null, level: null, view: 'image', expanded: false };
 function useSwipe(onSwipe: (direction: 1 | -1) => void) {
   const start = useRef<number | null>(null);
@@ -362,6 +363,8 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   const index = Math.max(0, r.schemes.indexOf(s));
   const shift = (d: 1 | -1) => setUi(u => ({ ...u, scheme: r.schemes[(index + d + r.schemes.length) % r.schemes.length].id }));
   const swipe = useSwipe(shift);
+  const sheet: SheetState = ui.expanded ? 'expanded' : ui.minimized ? 'min' : 'normal';
+  const { panel, grip } = useSheetDrag(sheet, next => setUi(u => ({ ...u, expanded: next === 'expanded', minimized: next === 'min' })));
   if (!s) return <NotFound title="还没有可查看的方案" text="这个项目还没有发布方案。"/>;
   const conf = r.confirmation, mine = conf?.schemeId === s.id;
   const here = r.finishes.filter(f => !level || f.levelId === level);
@@ -398,7 +401,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
     </Section>}
     {issues.map(i => <Alert key={i.code + i.objectId} kind="hint" title="提示">{i.message}</Alert>)}
   </>;
-  return <Screen className={`immersive${ui.expanded ? ' is-expanded' : ''}`}>
+  return <Screen className={`immersive${ui.expanded ? ' is-expanded' : ''}${sheet === 'min' ? ' is-min' : ''}`}>
     <div className={`stage${reRendering && ui.view === 'image' ? ' stage--busy' : ''}`} {...swipe}>
       {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`}/> : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data} plan={ui.view === 'plan'}/>}
       {ui.view !== 'image' && scene.error ? <div className="stage__msg" role="alert">{scene.error instanceof Error ? scene.error.message : '3D 暂时打不开'}</div> : null}
@@ -418,8 +421,8 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
       </>}
     </div>
     <AppBar back={preview ? undefined : `${base}/projects`} title={shortName(r.title)} overlay/>
-    <section className="panel" aria-label="方案详情">
-      <button className="panel__grip" onClick={() => setUi(u => ({ ...u, expanded: !u.expanded }))} aria-expanded={ui.expanded} aria-label={ui.expanded ? '收起详情' : '展开详情'}/>
+    <section className="panel" aria-label="方案详情" ref={panel}>
+      <button className="panel__grip" {...grip} aria-expanded={ui.expanded} aria-label={sheet === 'expanded' ? '收起详情（可拖动）' : sheet === 'min' ? '显示方案（可拖动）' : '展开详情（可拖动）'}/>
       <div className="panel__scroll">
         {r.schemes.length > 1 && <Segmented label="切换方案" value={s.id} onChange={id => setUi(u => ({ ...u, scheme: id }))} options={r.schemes.map(x => [x.id, schemeTitle(x)])}/>}
         <div className="panel__head"><div><h1 className="panel__title">方案 {schemeTitle(s)}</h1><p className="meta">修订 {s.revision}{r.schemes.length > 1 ? ' · 左右滑动效果图也可切换' : ''}</p></div>

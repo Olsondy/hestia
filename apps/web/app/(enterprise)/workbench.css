@@ -434,3 +434,14 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .room-label.room-label--dot span{display:none}
 .room-label.room-label--dot[aria-pressed=true]{background:#161514}
 .room-label.room-label--dot::after{content:"";position:absolute;inset:-12px}
+/* Scheme info overlay (scheme-info.tsx): the caption no longer clips, so the card can open below it. */
+.caption{overflow:visible}
+.caption span{min-width:0}
+.caption__info{display:inline-flex;align-items:center;gap:4px;font:var(--t-small);color:var(--c-ink-2)}
+.caption__info:hover{color:var(--c-ink)}
+.scheme-info{position:relative}
+.scheme-info__card{position:absolute;z-index:6;top:calc(100% + 12px);right:-16px;width:340px;display:grid;gap:6px;padding:14px 16px;border-radius:var(--r-md);background:var(--c-surface);color:var(--c-ink);box-shadow:var(--e-pop);white-space:normal;text-align:left}
+.scheme-info__card b{font:var(--t-head)}
+.scheme-info__card p{font:var(--t-small);color:var(--c-ink-2)}
+.scheme-info__trace{font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:12px!important}
+.scheme-info__card small{font:var(--t-small);font-size:12px;color:var(--c-ink-2)}

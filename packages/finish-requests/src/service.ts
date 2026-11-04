@@ -125,7 +125,9 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
       const render = s.render_id ? renders.get(s.render_id) : undefined;
       const imageHref = render?.status === 'completed' ? (audience === 'customer' ? `/api/client/${slug}/requests/${row.id}/schemes/${s.id}/image` : render.contentHref) : null;
       return { id: s.id, ordinal: s.ordinal, name: s.name, summary: s.summary, revision: s.revision, adoptable: s.report.adoptable, issues: s.report.issues,
-        surfaceDesign: s.surface_design, render: render ? { id: render.id, status: render.status, width: render.width, height: render.height, error: render.error, imageHref } : null,
+        surfaceDesign: s.surface_design, render: render ? { id: render.id, status: render.status, width: render.width, height: render.height, error: render.error, imageHref,
+          label: render.label, updatedAt: render.updatedAt,
+          trace: audience === 'member' ? { snapshotHash: render.snapshotHash, assetVersion: render.assetVersion, rendererVersion: render.rendererVersion } : null } : null,
         softStyle: summary(s.soft_style), softChoices: (s.soft_choices ?? []).map(summary).filter((x): x is NonNullable<typeof x> => !!x) };
     }),
     confirmation: await confirmationOf(client, row.id, schemes),

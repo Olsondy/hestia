@@ -94,9 +94,10 @@ test('candidate output freezes its version, preserves current layout, and marks 
   // Candidate editing checks are independent; this controlled fixture emulates a subsequent candidate revision.
   await pool.query('UPDATE candidates SET revision=revision+1 WHERE id=$1', [candidate.id]);
   const labeled = await labelPng(png, image.label, '项目修订 1　快照核对');
-  assert.equal((await sharp(labeled).metadata()).height, 192);
-  const pixels = await sharp(labeled).extract({ left: 20, top: 12, width: 1200, height: 80 }).stats();
-  assert.ok(pixels.channels[0].min < 150, 'text is rasterized in the header, not an external viewer label');
+  const before = await sharp(png).metadata(), after = await sharp(labeled).metadata();
+  assert.deepEqual([after.width, after.height], [before.width, before.height], 'the watermark adds no banner');
+  const corner = await sharp(labeled).extract({ left: after.width! - 320, top: after.height! - 46, width: 300, height: 40 }).stats();
+  assert.ok(corner.channels[0].min < 150, 'the disclaimer is rasterized into the corner, not an external viewer label');
   await runRender(image.id, { store, render: async () => labeled });
   const result = await getRender(owner, p.id, image.id);
   assert.equal(result.stale, true); assert.equal(result.currentCandidateRevision, 2);

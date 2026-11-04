@@ -25,7 +25,13 @@ export type FinishSchemeView = {
   id: string; ordinal: number; name: string; summary: string; revision: number; adoptable: boolean;
   issues: { code: string; objectId: string; message: string }[];
   surfaceDesign: SurfaceDesign;
-  render: Pick<RenderView, 'id' | 'status' | 'width' | 'height' | 'error'> & { imageHref: string | null } | null;
+  /**
+   * `label` and `updatedAt` feed the scheme info overlay (the image itself only carries a corner disclaimer);
+   * `trace` (snapshot, asset and renderer versions) is for enterprise members only, null for customers.
+   */
+  render: Pick<RenderView, 'id' | 'status' | 'width' | 'height' | 'error' | 'label' | 'updatedAt'> & {
+    imageHref: string | null; trace: Pick<RenderView, 'snapshotHash' | 'assetVersion' | 'rendererVersion'> | null;
+  } | null;
   /** K02: the revision's soft style and the styles the customer may switch to (empty for schemes made before soft styles). */
   softStyle: SoftStyleSummary | null;
   softChoices: SoftStyleSummary[];

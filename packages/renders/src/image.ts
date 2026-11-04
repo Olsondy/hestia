@@ -9,17 +9,24 @@ import type { SceneView } from '../../scene-runtime/src/scene';
 import { fontFile } from './versions';
 
 const pango = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-/** The banner is rasterized into the PNG itself; no external font or viewer label is required. */
-export async function labelPng(png: Uint8Array, label: string, sourceLine: string) {
+/**
+ * Small translucent watermark in the bottom-right corner, rasterized into the PNG itself (no external font or viewer):
+ * the disclaimer part of the label ("合成示例 · 非实测住宅", "概念草稿 · 尺寸未校准", …) travels with a saved or
+ * forwarded image. The full label and trace (revision, snapshot, asset and renderer versions) are shown by the app's
+ * scheme info overlay instead of a banner, so phone crops lose nothing. `sourceLine` is kept for callers; unused.
+ */
+export async function labelPng(png: Uint8Array, label: string, _sourceLine?: string) {
   const meta = await sharp(png).metadata();
   if (!meta.width || !meta.height || meta.width > 4096 || meta.height > 4096) throw new Error('Invalid render dimensions');
-  const width = meta.width, bannerHeight = 112;
-  const title = await sharp({ text: { text: `<span foreground="#733b46">${pango(label)}</span>`, font: 'TsangerYuYangT W02 24',
-    fontfile: fontFile(), width: width - 56, rgba: true, wrap: 'word' } }).png().toBuffer();
-  const subtitle = await sharp({ text: { text: `<span foreground="#62514b">${pango(sourceLine)}</span>`, font: 'TsangerYuYangT W02 16',
-    fontfile: fontFile(), width: width - 56, rgba: true, wrap: 'word' } }).png().toBuffer();
-  return sharp({ create: { width, height: meta.height + bannerHeight, channels: 4, background: '#f5efe5' } })
-    .composite([{ input: title, top: 20, left: 28 }, { input: subtitle, top: 66, left: 28 }, { input: Buffer.from(png), top: bannerHeight, left: 0 }])
+  const scale = meta.width / 1280, state = label.split('　|　')[1]?.trim() || label;
+  const text = await sharp({ text: { text: `<span foreground="#4a3f38">${pango(`效果示意 · ${state}`)}</span>`, font: `TsangerYuYangT W02 ${Math.round(14 * scale)}`,
+    fontfile: fontFile(), rgba: true } }).png().toBuffer();
+  const size = await sharp(text).metadata(), padX = Math.round(10 * scale), padY = Math.round(5 * scale), inset = Math.round(16 * scale);
+  const w = (size.width ?? 0) + padX * 2, h = (size.height ?? 0) + padY * 2;
+  const pill = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" rx="${h / 2}" fill="#fffdf8" fill-opacity=".62"/></svg>`);
+  const left = Math.max(0, meta.width - w - inset), top = Math.max(0, meta.height - h - inset);
+  return sharp(Buffer.from(png))
+    .composite([{ input: pill, left, top }, { input: text, left: left + padX, top: top + padY }])
     .png().toBuffer();
 }
 /**

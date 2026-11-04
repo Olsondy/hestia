@@ -10,6 +10,7 @@ import { Icon, PatternGlyph, patternName } from './client-icons';
 import { Alert, Badge, dateText, Group, Palette, PlanDrawing, Row, RowMain, Section, Segmented, Stepper, StyleOptions, Swatch, SwatchChip, Switch, type BadgeKind } from './client-parts';
 import { SchemeViewer } from './scheme-viewer';
 import { useRail } from './rail';
+import { SchemeInfo } from './scheme-info';
 import { useSheetDrag, type SheetState } from './sheet-drag';
 import { softOf, styleKey } from './soft-styles';
 
@@ -411,6 +412,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
           {ui.view === '3d' && <span className="media-tag"><Icon name="cube" size={14}/>实时 3D · 以效果图为准</span>}
           {ui.view === 'plan' && <span className="media-tag"><Icon name="plan" size={14}/>平面图 · 示意</span>}
           {reRendering && <span className="media-tag"><Icon name="clock" size={14}/>修订 {s.revision} 出图中</span>}
+          <SchemeInfo scheme={s} title={schemeTitle(s)}/>
         </div>
         {r.schemes.length > 1 && <><button className="icon-btn icon-btn--media stage__nav stage__nav--prev" onClick={() => shift(-1)} aria-label="上一个方案"><Icon name="left" size={18}/></button>
           <button className="icon-btn icon-btn--media stage__nav stage__nav--next" onClick={() => shift(1)} aria-label="下一个方案"><Icon name="right" size={18}/></button></>}

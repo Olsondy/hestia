@@ -435,3 +435,9 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 .room-label.room-label--dot span{display:none}
 .room-label.room-label--dot[aria-pressed=true]{background:#161514}
 .room-label.room-label--dot::after{content:"";position:absolute;inset:-12px}
+/* Scheme info overlay (scheme-info.tsx) under the stage's top tags. */
+.scheme-info{position:relative;pointer-events:auto}
+.scheme-info__card{position:absolute;z-index:6;top:calc(100% + 8px);left:50%;transform:translateX(-50%);width:min(320px,calc(100vw - 32px));display:grid;gap:6px;padding:var(--s-3) var(--s-4);border-radius:var(--r-md);background:#fffdf8f5;color:#161514;box-shadow:var(--e-2);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);text-align:left}
+.scheme-info__card b{font:var(--t-label)}
+.scheme-info__card p{font:var(--t-small);color:#5f5b54}
+.scheme-info__card small{font:var(--t-small);font-size:12px;color:#5f5b54}

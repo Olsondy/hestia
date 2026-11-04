@@ -8,6 +8,7 @@ import { followStatusNames, followStatuses, type FinishSchemeView, type FollowSt
 import { ClientError, get, maskPhone, operationId, post } from '../client/client-api';
 import { Icon, type IconName } from '../client/client-icons';
 import { finishLine, letter } from '../client/client-request';
+import { SchemeInfo } from '../client/scheme-info';
 import { SchemeViewer } from '../client/scheme-viewer';
 import type { SceneSnapshot } from '../client/client-api';
 import { actionsOf, ago, leadsOf, Note, Shell, tidy, useWorkbench, who } from './workbench-app';
@@ -159,7 +160,8 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
   return <Shell nav="leads"><section className={`canvas${left ? ' has-left' : ''}`}>
     <div className="stage">{media}</div>
     <div className="caption"><b>{scheme ? `方案 ${letter(scheme)} · ${scheme.name}` : '还没有方案'}</b>
-      {scheme && <span>{lead.status !== 'published' ? '待审 · 客户不可见' : `修订 ${scheme.revision}${scheme.id === confirmedId ? (reconfirm ? ' · 确认后又调整过' : ' · 客户已确认') : ''}`} · {view === 'image' ? '效果图示意' : '拖动旋转'}</span>}</div>
+      {scheme && <span>{lead.status !== 'published' ? '待审 · 客户不可见' : `修订 ${scheme.revision}${scheme.id === confirmedId ? (reconfirm ? ' · 确认后又调整过' : ' · 客户已确认') : ''}`} · {view === 'image' ? '效果图示意' : view === 'plan' ? '平面图 · 拖动平移' : '拖动旋转'}</span>}
+      {scheme && <SchemeInfo scheme={scheme} title={`${letter(scheme)} · ${scheme.name}`} className="caption__info"/>}</div>
     {left && <aside className="float float--left" aria-label="方案与客户">
       <header className="float__head"><Link className="back" href={`${base}/leads`}><Icon name="back" size={16}/> 线索</Link>
         <h1 className="lead-title">{lead.title}</h1>

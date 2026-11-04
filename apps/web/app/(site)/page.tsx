@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { isDemoDeployment, siteEnterprise } from '../../lib/site-entry';
 
 export const dynamic = 'force-dynamic';
@@ -23,9 +22,11 @@ export default function SitePage() {
       <p className="site__lede">导入户型图纸，由设计助手完成布局、风格与石材铺贴，在 3D 里走进每个房间，再出效果图。企业与客户在同一份方案上沟通、调整和确认。</p>
       <nav className="site__doors" aria-label="入口">
         {doors.map(door => door.href
-          ? <Link key={door.title} className="door" href={door.href}>
+          // Plain links: the doors lead into other root layouts (client, workbench), which always load as a full page;
+          // next/link's client navigation adds nothing there and can swallow the click if its fetch fails.
+          ? <a key={door.title} className="door" href={door.href}>
               <small>{door.kicker}</small><b>{door.title}</b><span>{door.text}</span><em>{door.action} <i aria-hidden="true">→</i></em>
-            </Link>
+            </a>
           : <div key={door.title} className="door door--off" aria-disabled="true">
               <small>{door.kicker}</small><b>{door.title}</b><span>{door.text}</span><em>请使用合作企业提供的链接或分享码进入</em>
             </div>)}

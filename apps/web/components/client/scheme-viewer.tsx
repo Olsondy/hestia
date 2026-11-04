@@ -16,7 +16,11 @@ type Mode = { kind: 'overview' } | { kind: 'room'; id: string } | { kind: 'inter
 
 const surfaces: [MaterialMode, string][] = [['real', '真实材质'], ['white', '白模'], ['line', '线框']];
 
-export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | undefined; plan?: boolean }) {
+/**
+ * `night` / `onNightChange` let the page own the 日景 / 夜景 switch (H5 puts it in the stage's top row); without them
+ * the viewer shows its own switch (workbench).
+ */
+export function SchemeViewer({ scene, plan = false, night: nightProp, onNightChange }: { scene: SceneSnapshot | undefined; plan?: boolean; night?: boolean; onNightChange?: (night: boolean) => void }) {
   const host = useRef<HTMLDivElement>(null), view = useRef<SpatialScene | null>(null);
   const labels = useRef(new Map<string, HTMLButtonElement>());
   const [rooms, setRooms] = useState<RoomEntry[]>([]);
@@ -26,7 +30,9 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
   /** Visible loading step: the first open builds textures on the main thread, so every step must paint first. */
   const [step, setStep] = useState<{ label: string; progress: number } | null>({ label: '正在下载 3D 场景', progress: .05 });
   const [loaded, setLoaded] = useState(0);
-  const [night, setNight] = useState(false);
+  const [ownNight, setOwnNight] = useState(false);
+  const controlled = onNightChange !== undefined, night = controlled ? !!nightProp : ownNight;
+  const setNight = (value: boolean) => { if (controlled) onNightChange(value); else setOwnNight(value); };
   const [surface, setSurface] = useState<MaterialMode>('real');
   const planRef = useRef(plan); planRef.current = plan;
   const focus = useRef<(id: string) => void>(() => {});
@@ -78,7 +84,7 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
       });
       if (first) instance.applyCameraPreset(first.id, { interactive: true });
       if (planRef.current) instance.setPlan(true);
-      setNight(false); setSurface('real'); setLoaded(n => n + 1); setStep(null);
+      setOwnNight(false); setSurface('real'); setLoaded(n => n + 1); setStep(null);
     }).catch(() => { if (!disposed) { setStep(null); setError('此浏览器暂时无法显示 3D。请以效果图为准。'); } });
     return () => { disposed = true; unsubscribe(); view.current?.dispose(); view.current = null; };
   }, [scene]);
@@ -91,7 +97,7 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
     const inPlan = instance.getPresentation() === 'plan';
     if (plan && !inPlan) {
       // A plan reads in daylight; the 夜景 toggle belongs to the 3D view.
-      if (instance.getLighting().mode === 'night') { instance.setLighting({ mode: 'day' }); setNight(false); }
+      if (night) setNight(false);
       instance.setPlan(true, { animate: true }); setMode({ kind: 'overview' });
     }
     if (!plan && inPlan) {
@@ -99,7 +105,12 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
       if (overview) instance.applyCameraPreset(overview, { animate: true });
     }
   }, [plan, loaded, overview]);
-  const toggleNight = () => { const next = !night; view.current?.setLighting({ mode: next ? 'night' : 'day' }); setNight(next); };
+  const toggleNight = () => setNight(!night);
+  // Lighting follows the switch (whoever owns it), including right after the scene has loaded.
+  useEffect(() => {
+    const instance = view.current; if (!instance || !loaded) return;
+    if ((instance.getLighting().mode === 'night') !== night) instance.setLighting({ mode: night ? 'night' : 'day' });
+  }, [night, loaded]);
   const pickSurface = (next: MaterialMode) => { view.current?.setMaterialMode(next); setSurface(next); };
   const toOverview = () => { if (!overview) return; try { if (plan) view.current?.setPlan(false); view.current?.applyCameraPreset(overview, { animate: true }); setMode({ kind: 'overview' }); } catch { /* scene was replaced */ } };
   const toRoom = (id: string) => { try { view.current?.focusRoom(id, { animate: true }); setMode({ kind: 'room', id }); } catch { /* not a room of this storey */ } };
@@ -123,8 +134,8 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
         <span>{scene ? step?.label : '正在下载 3D 场景'}…</span>
         <span className="stage__progress" aria-hidden="true"><i style={{ transform: `scaleX(${scene ? step?.progress ?? 1 : .05})` }}/></span>
       </div>}
-    {!plan && rooms.length > 0 && <button type="button" className="stage__light" aria-pressed={night} aria-label={night ? '切换到日景' : '切换到夜景（开灯）'} onClick={toggleNight}>
-      <Icon name={night ? 'moon' : 'sun'} size={18}/></button>}
+    {!controlled && !plan && rooms.length > 0 && <button type="button" className="media-tag stage__light" aria-pressed={night} onClick={toggleNight}>
+      <Icon name={night ? 'moon' : 'sun'} size={14}/>{night ? '夜景' : '日景'}</button>}
     {mode.kind === 'room' && current && <div className="stage__room" data-stage-ui>
       <div className="stage__room-text"><b>{current.name}</b>{summary.length ? summary.map(line => <small key={line}>{line}</small>) : <small>这个房间没有铺石材</small>}</div>
       {current.interiorPreset && !plan && <button className="stage__room-enter" onClick={() => enter(current)}>入户查看</button>}

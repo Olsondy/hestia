@@ -377,6 +377,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   const shift = (d: 1 | -1) => setUi(u => ({ ...u, scheme: r.schemes[(index + d + r.schemes.length) % r.schemes.length].id }));
   const swipe = useSwipe(shift);
   const sheet: SheetState = ui.expanded ? 'expanded' : ui.minimized ? 'min' : 'normal';
+  const [night, setNight] = useState(false);
   const { panel, grip } = useSheetDrag(sheet, next => setUi(u => ({ ...u, expanded: next === 'expanded', minimized: next === 'min' })));
   if (!s) return <NotFound title="还没有可查看的方案" text="这个项目还没有发布方案。"/>;
   const conf = r.confirmation, mine = conf?.schemeId === s.id;
@@ -416,7 +417,7 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   </>;
   return <Screen className={`immersive${ui.expanded ? ' is-expanded' : ''}${sheet === 'min' ? ' is-min' : ''}`}>
     <div className={`stage${reRendering && ui.view === 'image' ? ' stage--busy' : ''}`} {...swipe}>
-      {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`}/> : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data} plan={ui.view === 'plan'}/>}
+      {ui.view === 'image' ? <SchemeImage scheme={s} alt={`方案 ${letter(s)} 效果图（示意）`}/> : <SchemeViewer key={`${s.id}:${s.revision}`} scene={scene.data} plan={ui.view === 'plan'} night={night} onNightChange={setNight}/>}
       {ui.view !== 'image' && scene.error ? <div className="stage__msg" role="alert">{scene.error instanceof Error ? scene.error.message : '3D 暂时打不开'}</div> : null}
       {!ui.expanded && <>
         <div className="stage__top">
@@ -424,6 +425,8 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
           {ui.view === '3d' && <span className="media-tag"><Icon name="cube" size={14}/>实时 3D · 以效果图为准</span>}
           {ui.view === 'plan' && <span className="media-tag"><Icon name="plan" size={14}/>平面图 · 示意</span>}
           {reRendering && <span className="media-tag"><Icon name="clock" size={14}/>修订 {s.revision} 出图中</span>}
+          {ui.view === '3d' && scene.data && <button type="button" className="media-tag" aria-pressed={night} onClick={() => setNight(!night)}>
+            <Icon name={night ? 'moon' : 'sun'} size={14}/>{night ? '夜景' : '日景'}</button>}
           <SchemeInfo scheme={s} title={schemeTitle(s)}/>
         </div>
         {r.schemes.length > 1 && <><button className="icon-btn icon-btn--media stage__nav stage__nav--prev" onClick={() => shift(-1)} aria-label="上一个方案"><Icon name="left" size={18}/></button>

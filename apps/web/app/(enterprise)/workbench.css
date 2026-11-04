@@ -451,6 +451,5 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .stage__progress{width:160px;height:3px;border-radius:2px;background:var(--c-line);overflow:hidden}
 .stage__progress i{display:block;height:100%;background:var(--c-ink);transform-origin:left;transition:transform .3s ease}
 @keyframes stage-spin{to{transform:rotate(1turn)}}
-.stage__light{position:absolute;z-index:4;top:72px;right:16px;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--c-surface);color:var(--c-ink-2);box-shadow:var(--e-pop)}
-.stage__light[aria-pressed=true]{background:var(--c-ink);color:var(--c-bg)}
+.stage__light{position:absolute;z-index:4;top:72px;right:16px}
 .canvas.has-right .stage__light{right:calc(var(--panel-r) + 32px)}

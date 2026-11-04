@@ -448,8 +448,3 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 .stage__progress i{display:block;height:100%;background:#fff;transform-origin:left;transition:transform var(--d-base) var(--ease)}
 @keyframes stage-spin{to{transform:rotate(1turn)}}
 @media (prefers-reduced-motion:reduce){.stage__spinner{animation-duration:2.4s}}
-/* Day / night: a light switch of its own, apart from the view chips. */
-.stage__light{position:absolute;z-index:3;top:calc(var(--h-appbar) + env(safe-area-inset-top) + 48px);right:var(--s-3);display:grid;place-items:center;width:40px;height:40px;border-radius:50%;
-  background:var(--c-media-ctl);color:var(--c-on-media);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:background var(--d-fast)}
-.stage__light[aria-pressed=true]{background:#fff;color:#161514}
-.immersive.is-expanded .stage__light{display:none}

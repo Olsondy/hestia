@@ -27,7 +27,21 @@ export function mainLevelId(snapshot: SceneSnapshot) {
   return [...levels].sort((a, b) => weight(b.id) - weight(a.id))[0]?.id;
 }
 
-/** `levelId` limits the shots to one storey and drops the storey name from their labels. */
+/**
+ * Names the interactive viewer shows for the rooms of one storey: a room's own name, else a fallback “房间 N”
+ * (largest first) so drawings without room text still get labels and shots. Faces under 1.5 m² (shafts, closets)
+ * get none. Not stored in the snapshot; stills keep using named rooms only.
+ */
+export function viewerRoomNames(snapshot: SceneSnapshot, levelId: string) {
+  const levels = effectiveLevels(snapshot), names = new Map<string, string>();
+  const rooms = snapshot.rooms.filter(room => levelOf(room, levels) === levelId);
+  for (const room of rooms) if (room.name) names.set(room.id, room.name);
+  rooms.filter(room => !room.name).map(room => ({ room, size: area(room.outline) })).filter(item => item.size >= 1.5)
+    .sort((a, b) => b.size - a.size).forEach((item, index) => names.set(item.room.id, `房间 ${index + 1}`));
+  return names;
+}
+
+/** `levelId` limits the shots to one storey (viewer use: unnamed rooms get fallback names) and drops the storey name. */
 export function cameraPresets(snapshot: SceneSnapshot, levelId?: string): CameraPreset[] {
   const all = effectiveLevels(snapshot), presets: CameraPreset[] = [];
   const levels = levelId ? all.filter(level => level.id === levelId) : all;
@@ -43,11 +57,12 @@ export function cameraPresets(snapshot: SceneSnapshot, levelId?: string): Camera
     const main = rooms.filter(room => room !== stairRoom).map(room => ({ room, area: area(room.outline) })).sort((a, b) => b.area - a.area)[0]?.room;
     // Main room and stair hall first (stills pick the first shot of a storey); then every other named indoor room,
     // service rooms included, so each room label in the overview can be entered.
-    const others = snapshot.rooms.filter(room => levelOf(room, all) === level.id && room.name && !isOutdoorRoom(room) && room !== main && room !== stairRoom);
+    const names = levelId ? viewerRoomNames(snapshot, level.id) : new Map(snapshot.rooms.flatMap(room => room.name ? [[room.id, room.name] as const] : []));
+    const others = snapshot.rooms.filter(room => levelOf(room, all) === level.id && names.has(room.id) && !isOutdoorRoom(room) && room !== main && room !== stairRoom);
     for (const room of [main, stairRoom, ...others]) {
       if (!room) continue;
       const shot = interiorShot(snapshot, room, level.elevation, level.id, all, room === stairRoom);
-      if (shot) presets.push({ id: `interior-${room.id}`, name: `${many && level.name ? `${level.name} · ` : ''}${room.name}`, kind: 'interior', view: levelView(level.id), ...shot, horizontalFov: interiorFov, roomId: room.id });
+      if (shot) presets.push({ id: `interior-${room.id}`, name: `${many && level.name ? `${level.name} · ` : ''}${names.get(room.id) ?? room.name}`, kind: 'interior', view: levelView(level.id), ...shot, horizontalFov: interiorFov, roomId: room.id });
     }
   }
   return presets;

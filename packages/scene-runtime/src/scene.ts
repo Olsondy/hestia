@@ -12,7 +12,7 @@ import { ambienceProp } from './props';
 import { addArchitecturalDetail, isOutdoorRoom } from './architecture';
 import { RenderStage, type LightingState } from './stage';
 import { detectQuality, type QualityTier } from './quality';
-import { cameraPresets, mainLevelId, type CameraPreset } from './cameras';
+import { cameraPresets, mainLevelId, viewerRoomNames, type CameraPreset } from './cameras';
 import { createFinishMeshes } from './finish-surfaces';
 import { Cutaway, CUT_HEIGHT, roomAnchor } from './dollhouse';
 
@@ -20,7 +20,7 @@ export type CameraState = { position: number[]; target: number[] };
 /** A room of the shown storey as listed by the overview: label anchor (world) and its eye-level shot, if any. */
 export type RoomEntry = { id: string; name: string; anchor: [number, number, number]; interiorPreset: string | null; design: boolean };
 /** Utility spaces with nothing to design (garage, plant room, storage, laundry). */
-const utility = /车库|设备|储藏|储物|杂物|洗衣|garage|storage|utility|plant/i;
+const utility = /车库|设备|储藏|储物|杂物|洗衣|空调位|garage|storage|utility|plant/i;
 export type Presentation = 'standard' | 'overview' | 'interior';
 export type { SceneView, LightingState, QualityTier, CameraPreset };
 const wallColor = '#f4efe6', slabEdgeColor = '#d9d0c3', stairColor = '#cfc4b4';
@@ -310,12 +310,13 @@ export class SpatialScene {
     const shots = new Map(this.mainLevelPresets().flatMap(preset => preset.kind === 'interior' ? [[preset.roomId, preset.id] as const] : []));
     const levels = effectiveLevels(this.model.data), main = mainLevelId(this.model.data);
     const data = this.model.data, tiled = new Set(data.surfaceDesign?.tilings.map(tiling => tiling.finishId) ?? []);
-    return data.rooms.filter(room => room.name && (!data.levels || levelOf(room, levels) === main)).map(room => {
+    const names = viewerRoomNames(data, main ?? levels[0].id);
+    return data.rooms.filter(room => names.has(room.id) && (!data.levels || levelOf(room, levels) === main)).map(room => {
       const anchor = roomAnchor(room.outline);
       const stone = (data.finishes ?? []).some(finish => finish.kind === 'floor' && finish.roomId === room.id && tiled.has(finish.id));
       // Rooms worth showing in the viewer: stone-floored, or indoor living space (not yards, terraces or utility rooms).
-      const design = stone || (!isOutdoorRoom(room) && !utility.test(room.name!));
-      return { id: room.id, name: room.name!, anchor: [anchor.x, this.elevationOf(room) + .25, anchor.z], interiorPreset: shots.get(room.id) ?? null, design };
+      const name = names.get(room.id)!, design = stone || (!isOutdoorRoom(room) && !utility.test(name));
+      return { id: room.id, name, anchor: [anchor.x, this.elevationOf(room) + .25, anchor.z], interiorPreset: shots.get(room.id) ?? null, design };
     });
   }
   /**

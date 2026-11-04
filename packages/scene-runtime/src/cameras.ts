@@ -35,13 +35,16 @@ export function cameraPresets(snapshot: SceneSnapshot, levelId?: string): Camera
   const levelView = (id: string): SceneView => snapshot.levels ? { mode: 'level', levelId: id } : { mode: 'building' };
   levels.forEach((level, index) => {
     const name = many ? `${level.name ?? `${index + 1} 层`} · 全层` : '全层浏览';
-    presets.push({ id: many ? `overview-${level.id}` : 'overview', name, kind: 'aerial', view: levelView(level.id), direction: [.55, 1.1, .8] });
+    presets.push({ id: many ? `overview-${level.id}` : 'overview', name, kind: 'aerial', view: levelView(level.id), direction: [.62, .78, .9] });
   });
   for (const level of levels) {
     const rooms = snapshot.rooms.filter(room => levelOf(room, all) === level.id && room.name && !isOutdoorRoom(room) && !service.test(room.name));
     const stairRoom = rooms.find(room => /楼梯|stair/i.test(room.name!) && (snapshot.stairs ?? []).some(stair => stair.fromLevelId === level.id && inside(stair.position, room.outline)));
     const main = rooms.filter(room => room !== stairRoom).map(room => ({ room, area: area(room.outline) })).sort((a, b) => b.area - a.area)[0]?.room;
-    for (const room of [main, stairRoom]) {
+    // Main room and stair hall first (stills pick the first shot of a storey); then every other named indoor room,
+    // service rooms included, so each room label in the overview can be entered.
+    const others = snapshot.rooms.filter(room => levelOf(room, all) === level.id && room.name && !isOutdoorRoom(room) && room !== main && room !== stairRoom);
+    for (const room of [main, stairRoom, ...others]) {
       if (!room) continue;
       const shot = interiorShot(snapshot, room, level.elevation, level.id, all, room === stairRoom);
       if (shot) presets.push({ id: `interior-${room.id}`, name: `${many && level.name ? `${level.name} · ` : ''}${room.name}`, kind: 'interior', view: levelView(level.id), ...shot, horizontalFov: interiorFov, roomId: room.id });

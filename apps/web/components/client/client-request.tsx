@@ -347,7 +347,7 @@ const resultUi: ResultUi = { scheme: null, level: null, view: 'image', expanded:
 function useSwipe(onSwipe: (direction: 1 | -1) => void) {
   const start = useRef<number | null>(null);
   return {
-    onPointerDown: (e: React.PointerEvent) => { start.current = (e.target as HTMLElement).closest('button, canvas, [data-rail]') ? null : e.clientX; },
+    onPointerDown: (e: React.PointerEvent) => { start.current = (e.target as HTMLElement).closest('button, canvas, [data-rail], [data-stage-ui]') ? null : e.clientX; },
     onPointerUp: (e: React.PointerEvent) => { if (start.current !== null && Math.abs(e.clientX - start.current) > 40) onSwipe(e.clientX < start.current ? 1 : -1); start.current = null; },
   };
 }

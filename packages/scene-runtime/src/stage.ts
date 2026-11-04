@@ -41,6 +41,10 @@ export class RenderStage {
   private interior = false;
   /** While the camera moves, frames skip ambient occlusion and probe recapture to stay smooth. */
   private moving = false;
+  /** Overview (dollhouse) look: bright, soft and low-contrast like a scale model; interiors keep the realistic look. */
+  private overview = false;
+  private centre = new T.Vector3();
+  private radius = 4;
   state: LightingState = { mode: 'day', interiorLights: false };
   /** Page colour shown behind the model in daylight (host pages may match their own surface). */
   private dayBackdrop = day.background;
@@ -73,16 +77,34 @@ export class RenderStage {
     this.lampAnchors = []; this.ceilings = [];
     root.traverse(node => { if (node.userData.lightAnchor) this.lampAnchors.push(node); if (node.userData.ceiling && node instanceof T.Mesh) this.ceilings.push(node); });
     const centre = this.bounds.getCenter(new T.Vector3()), radius = Math.max(4, this.bounds.getSize(new T.Vector3()).length() / 2);
+    this.centre.copy(centre); this.radius = radius;
     this.ground.scale.setScalar(radius * 12); this.ground.position.set(centre.x, this.bounds.min.y - .015, centre.z);
-    const direction = new T.Vector3(...preset.directional.position).normalize();
-    this.sun.position.copy(centre).addScaledVector(direction, radius * 2.5); this.sun.target.position.copy(centre);
-    const shadow = this.sun.shadow.camera;
-    shadow.left = shadow.bottom = -radius * 1.1; shadow.right = shadow.top = radius * 1.1; shadow.near = radius * .5; shadow.far = radius * 4.5;
-    shadow.updateProjectionMatrix();
+    this.aimSun();
     this.camera.far = Math.max(200, radius * 30); this.camera.updateProjectionMatrix();
     this.interiorShadows = null;
     this.dropProbe();
     this.applyLighting();
+  }
+
+  /** Switches between the overview look and the realistic look (interiors, stills). */
+  setOverview(on: boolean) {
+    if (this.overview === on) return;
+    this.overview = on;
+    if (on) this.dropProbe();
+    this.interiorShadows = null; this.sun.shadow.radius = this.quality.shadowRadius * (on ? 2.5 : 1);
+    this.aimSun(); this.applyLighting();
+  }
+
+  /** The overview lowers the sun for longer, softer shadows that model the furniture. */
+  private aimSun() {
+    if (!this.preset) return;
+    const direction = new T.Vector3(...this.preset.directional.position).normalize();
+    if (this.overview) { direction.y *= .55; direction.normalize(); }
+    const radius = this.radius, shadow = this.sun.shadow.camera;
+    this.sun.position.copy(this.centre).addScaledVector(direction, radius * 2.5); this.sun.target.position.copy(this.centre);
+    shadow.left = shadow.bottom = -radius * 1.1; shadow.right = shadow.top = radius * 1.1; shadow.near = radius * .5; shadow.far = radius * 4.5;
+    shadow.updateProjectionMatrix(); this.sun.target.updateMatrixWorld();
+    this.invalidate();
   }
 
   setBackdrop(color: string) { this.dayBackdrop = color; this.applyLighting(); }
@@ -127,7 +149,7 @@ export class RenderStage {
     if (q.shadowMapSize && this.sun.shadow.mapSize.x !== q.shadowMapSize) {
       this.sun.shadow.mapSize.set(q.shadowMapSize, q.shadowMapSize); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null;
     }
-    this.sun.shadow.radius = q.shadowRadius;
+    this.sun.shadow.radius = q.shadowRadius * (this.overview ? 2.5 : 1);
     this.composer?.dispose(); this.ao?.dispose(); this.bloom?.dispose(); this.composer = this.ao = this.bloom = undefined;
     if (q.ambientOcclusion || q.bloom) {
       const size = renderer.getDrawingBufferSize(new T.Vector2());
@@ -138,7 +160,7 @@ export class RenderStage {
         this.ao = new GTAOPass(this.scene, this.camera, size.x || 1, size.y || 1);
         this.ao.updateGtaoMaterial({ radius: .5, distanceExponent: 1.5, thickness: 1.5, scale: 1.1, samples: this.tier === 'ultra' ? 16 : 8, distanceFallOff: 1 });
         this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: this.tier === 'ultra' ? 16 : 8 });
-        this.ao.blendIntensity = .85;
+        this.ao.blendIntensity = this.overview ? .45 : .85;
         this.composer.addPass(this.ao);
       }
       if (q.bloom) { this.bloom = new UnrealBloomPass(new T.Vector2(size.x / 2, size.y / 2), .35, .6, .92); this.composer.addPass(this.bloom); }
@@ -151,20 +173,22 @@ export class RenderStage {
 
   private applyLighting() {
     const preset = this.preset, isNight = this.state.mode === 'night', look = isNight ? night : day;
-    (this.ground.material as T.ShadowMaterial).opacity = isNight ? .1 : .22;
+    const soft = this.overview && !isNight;
+    (this.ground.material as T.ShadowMaterial).opacity = isNight ? .1 : soft ? .16 : .22;
+    if (this.ao) this.ao.blendIntensity = soft ? .45 : .85;
     // With post-processing the backdrop is tone mapped too; pre-compensate so the page colour is shown unchanged.
     const background = isNight ? look.background : this.dayBackdrop;
     const backdrop = this.composer ? untoneMapped(background, (preset?.exposure ?? 1) * look.exposure) : new T.Color(background);
     if (this.scene.background instanceof T.Color) this.scene.background.copy(backdrop); else this.scene.background = backdrop;
-    this.scene.environmentIntensity = look.environment;
-    this.renderer.toneMappingExposure = (preset?.exposure ?? 1) * look.exposure;
+    this.scene.environmentIntensity = look.environment * (soft ? 1.5 : 1);
+    this.renderer.toneMappingExposure = (preset?.exposure ?? 1) * look.exposure * (soft ? 1.08 : 1);
     if (preset) {
       // Style presets keep their colours and relative strength; the environment now carries most of the fill.
       this.sun.color.set(isNight ? '#9fb4d8' : preset.directional.color);
-      this.sun.intensity = isNight ? .12 : preset.directional.intensity * .95;
+      this.sun.intensity = isNight ? .12 : preset.directional.intensity * (soft ? .8 : .95);
       // The hemisphere's ground colour stands in for bounce light onto ceilings and undersides.
       this.sky.color.set(isNight ? '#30445a' : preset.hemisphere.sky); this.sky.groundColor.set(isNight ? '#141b20' : '#e8dccb');
-      this.sky.intensity = isNight ? .25 : preset.hemisphere.intensity * .45;
+      this.sky.intensity = isNight ? .25 : preset.hemisphere.intensity * (soft ? 1 : .45);
     }
     const lit = this.state.interiorLights;
     for (const material of lampMaterials(this.scene)) {
@@ -199,7 +223,7 @@ export class RenderStage {
    * room itself. Recaptured after moving ~2.5 m or any scene/lighting change; aerial views use the studio map.
    */
   private updateProbe() {
-    const wanted = this.interior && this.tier !== 'low';
+    const wanted = this.interior && !this.overview && this.tier !== 'low';
     if (!wanted) { if (this.probe) this.dropProbe(); return; }
     if (this.probe && this.probe.position.distanceTo(this.camera.position) < 2.5) return;
     this.dropProbe();
@@ -225,7 +249,7 @@ export class RenderStage {
 
   /** Ceilings shade the sun only for views from inside; aerial views look into the open storeys. */
   private updateInteriorShadows() {
-    const interior = this.camera.position.y < this.bounds.max.y - .2 && this.bounds.containsPoint(this.camera.position);
+    const interior = !this.overview && this.camera.position.y < this.bounds.max.y - .2 && this.bounds.containsPoint(this.camera.position);
     this.interior = interior;
     if (interior === this.interiorShadows) return;
     this.interiorShadows = interior;

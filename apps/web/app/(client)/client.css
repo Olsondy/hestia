@@ -415,3 +415,12 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 [data-rail][data-more-start]{--rail-mask:linear-gradient(to right,transparent,#000 40px)}
 [data-rail][data-more-start][data-more-end]{--rail-mask:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent)}
 @media (pointer:coarse){[data-rail]{cursor:auto}}
+/* 3D overview: room labels follow the model; the focused room's card sits above the view chips. */
+.stage__labels{position:absolute;inset:0;z-index:2;overflow:hidden;pointer-events:none}
+.room-label{position:absolute;left:0;top:0;pointer-events:auto;height:26px;padding:0 10px;border-radius:var(--r-sm);background:#fffdf8;color:#2b2925;font:var(--t-small);font-size:12px;line-height:26px;white-space:nowrap;box-shadow:0 1px 2px #1615141a,0 4px 12px #16151414;transition:background var(--d-fast) var(--ease),color var(--d-fast) var(--ease)}
+.room-label[aria-pressed=true]{background:#161514;color:#fff}
+.stage__room{position:absolute;z-index:3;left:var(--s-4);right:var(--s-4);bottom:calc(var(--r-xl) + var(--s-3) + 96px);display:flex;align-items:center;gap:var(--s-3);padding:var(--s-3) var(--s-3) var(--s-3) var(--s-4);border-radius:var(--r-md);background:#fffdf8f2;color:#161514;box-shadow:var(--e-2);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.stage__room-text{flex:1;min-width:0;display:grid;gap:2px}
+.stage__room-text b{font:var(--t-label)}
+.stage__room-text small{font:var(--t-small);color:#5f5b54;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage__room-enter{flex-shrink:0;height:36px;padding:0 var(--s-4);border-radius:var(--r-pill);background:#161514;color:#fff;font:var(--t-label);font-size:14px}

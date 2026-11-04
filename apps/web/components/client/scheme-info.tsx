@@ -24,7 +24,7 @@ export function SchemeInfo({ scheme, title, className = 'media-tag' }: { scheme:
       {state && <p>{state}</p>}
       <p className="num">修订 {scheme.revision}{render?.status === 'completed' ? ` · 出图 ${when(render.updatedAt)}` : ''}</p>
       {render?.trace && <p className="scheme-info__trace num">快照 {render.trace.snapshotHash.slice(0, 12)}　资产 {render.trace.assetVersion.slice(0, 8)}　渲染 {render.trace.rendererVersion.slice(0, 8)}</p>}
-      <small>效果图、3D 与平面图均为示意，石材纹理为示意素材；尺寸与铺贴以现场复尺和实物为准。</small>
+      <small>实时 3D 与平面图以效果图为准；三者均为示意，石材纹理为示意素材，尺寸与铺贴以现场复尺和实物为准。</small>
     </div>}
   </div>;
 }

@@ -249,6 +249,8 @@ export class SpatialScene {
   private swapped = new Map<T.Mesh, T.Material | T.Material[]>();
   private edges: T.LineSegments[] = [];
   private planPlane = new T.Plane(new T.Vector3(0, -1, 0), 0);
+  /** Canvas pixels covered by page controls at the top and bottom; overview framing keeps the model between them. */
+  private safe = { top: 0, bottom: 0 };
   private frameId = 0;
   private settleTimer?: ReturnType<typeof setTimeout>;
   private dragging = false;
@@ -467,6 +469,13 @@ export class SpatialScene {
     this.stage.invalidate(); this.draw();
   }
   getMaterialMode(): MaterialMode { return this.materialMode; }
+  /** Pixels at the top and bottom of the canvas covered by overlaid controls (applies to the next framing). */
+  setSafeArea(area: { top: number; bottom: number }) { this.safe = { top: Math.max(0, area.top), bottom: Math.max(0, area.bottom) }; }
+  /** Usable vertical band in NDC: [bottom, top], with the overlays taken out (default ±0.9). */
+  private band() {
+    const h = this.host.clientHeight || 1, top = this.safe.top ? 1 - 2 * this.safe.top / h - .04 : .9, bottom = this.safe.bottom ? -1 + 2 * this.safe.bottom / h + .04 : -.9;
+    return top - bottom > .5 ? { top, bottom } : { top: .9, bottom: -.9 }; // Overlays leaving too little room are ignored.
+  }
   getPresentation(): Presentation { return this.presentation; }
   /** Screen position (CSS pixels within the host) of a world point; `visible` is false behind the camera or off-canvas. */
   projectPoint(point: [number, number, number]) {
@@ -535,7 +544,8 @@ export class SpatialScene {
     const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new T.Vector3(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y, i & 4 ? bounds.max.z : bounds.min.z));
     const fits = (distance: number) => {
       this.camera.position.copy(center).addScaledVector(dir, distance); this.camera.lookAt(center); this.camera.updateMatrixWorld(true);
-      return corners.every(corner => { const p = corner.clone().project(this.camera); return Math.abs(p.x) < .92 && Math.abs(p.y) < .9 && p.z < 1; });
+      const band = this.band();
+      return corners.every(corner => { const p = corner.clone().project(this.camera); return Math.abs(p.x) < .92 && p.y < band.top && p.y > band.bottom && p.z < 1; });
     };
     const start = this.camera.position.distanceTo(center);
     for (let pass = 0; pass < 3; pass++) {
@@ -544,7 +554,9 @@ export class SpatialScene {
       fits(high);
       // Re-centre on the projected extent so the margin is even, then search the distance again.
       const ndc = corners.map(corner => corner.clone().project(this.camera));
-      const mid = new T.Vector3((Math.min(...ndc.map(p => p.x)) + Math.max(...ndc.map(p => p.x))) / 2, (Math.min(...ndc.map(p => p.y)) + Math.max(...ndc.map(p => p.y))) / 2, center.clone().project(this.camera).z);
+      // …centred in the band left free by the overlays, not in the whole canvas.
+      const band = this.band(), offset = (band.top + band.bottom) / 2;
+      const mid = new T.Vector3((Math.min(...ndc.map(p => p.x)) + Math.max(...ndc.map(p => p.x))) / 2, (Math.min(...ndc.map(p => p.y)) + Math.max(...ndc.map(p => p.y))) / 2 - offset, center.clone().project(this.camera).z);
       center.copy(mid.unproject(this.camera));
     }
     let low = 0, high = start;

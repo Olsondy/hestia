@@ -274,7 +274,8 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 .stage__presets{position:absolute;z-index:3;left:0;right:0;bottom:calc(var(--r-xl) + var(--s-3) + 52px);display:flex;gap:var(--s-2);overflow-x:auto;padding:0 var(--s-4);scrollbar-width:none}
 .stage__presets::-webkit-scrollbar{display:none}
 .stage__presets .media-tag{flex-shrink:0}
-.stage__top{position:absolute;z-index:3;top:calc(var(--h-appbar) + env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:center;flex-wrap:wrap;gap:var(--s-2);padding:0 var(--s-4);pointer-events:none}
+.stage__top{position:absolute;z-index:3;top:calc(var(--h-appbar) + env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:center;flex-wrap:nowrap;gap:var(--s-2);padding:0 var(--s-4);pointer-events:none}
+.stage__top>*{flex-shrink:0}
 .stage__top button{pointer-events:auto}
 .stage__nav{position:absolute;z-index:3;top:50%;transform:translateY(-50%)}
 .stage__nav--prev{left:var(--s-2)}.stage__nav--next{right:var(--s-2)}
@@ -380,7 +381,8 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 /* 沉浸页：Stage 占满剩余高度，Panel 按内容高度贴底 */
 .immersive{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .immersive .stage{flex:1 1 auto;min-height:30dvh}
-.immersive .panel{flex:0 1 auto;max-height:58dvh;transition:max-height var(--d-slow) var(--ease)}
+/* First open: the stage (still or 3D) takes about two thirds of the screen; the sheet scrolls or is dragged up. */
+.immersive .panel{flex:0 1 auto;max-height:36dvh;transition:max-height var(--d-slow) var(--ease)}
 .immersive.is-expanded .panel{max-height:80dvh}
 .immersive.is-expanded .stage{min-height:20dvh}
 .adjust .panel{max-height:62dvh}

@@ -421,9 +421,8 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
       {ui.view !== 'image' && scene.error ? <div className="stage__msg" role="alert">{scene.error instanceof Error ? scene.error.message : '3D 暂时打不开'}</div> : null}
       {!ui.expanded && <>
         <div className="stage__top">
-          {preview && <span className="media-tag"><Icon name="eye" size={14}/>企业分享给你的方案 · 仅预览</span>}
-          {ui.view === '3d' && <span className="media-tag"><Icon name="cube" size={14}/>实时 3D · 以效果图为准</span>}
-          {ui.view === 'plan' && <span className="media-tag"><Icon name="plan" size={14}/>平面图 · 示意</span>}
+          {/* One short row so it never covers the model; the longer notes live in 方案说明. */}
+          {preview && <span className="media-tag" title="企业分享给你的方案，登录绑定后才能调整和确认"><Icon name="eye" size={14}/>仅预览</span>}
           {reRendering && <span className="media-tag"><Icon name="clock" size={14}/>修订 {s.revision} 出图中</span>}
           {ui.view === '3d' && scene.data && <button type="button" className="media-tag" aria-pressed={night} onClick={() => setNight(!night)}>
             <Icon name={night ? 'moon' : 'sun'} size={14}/>{night ? '夜景' : '日景'}</button>}

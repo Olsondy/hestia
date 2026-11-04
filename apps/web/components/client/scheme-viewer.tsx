@@ -82,6 +82,7 @@ export function SchemeViewer({ scene, plan = false, night: nightProp, onNightCha
           label.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
         }
       });
+      instance.setSafeArea(overlayInsets(host.current));
       if (first) instance.applyCameraPreset(first.id, { interactive: true });
       if (planRef.current) instance.setPlan(true);
       setOwnNight(false); setSurface('real'); setLoaded(n => n + 1); setStep(null);
@@ -112,7 +113,7 @@ export function SchemeViewer({ scene, plan = false, night: nightProp, onNightCha
     if ((instance.getLighting().mode === 'night') !== night) instance.setLighting({ mode: night ? 'night' : 'day' });
   }, [night, loaded]);
   const pickSurface = (next: MaterialMode) => { view.current?.setMaterialMode(next); setSurface(next); };
-  const toOverview = () => { if (!overview) return; try { if (plan) view.current?.setPlan(false); view.current?.applyCameraPreset(overview, { animate: true }); setMode({ kind: 'overview' }); } catch { /* scene was replaced */ } };
+  const toOverview = () => { if (!overview) return; try { if (plan) view.current?.setPlan(false); if (host.current) view.current?.setSafeArea(overlayInsets(host.current)); view.current?.applyCameraPreset(overview, { animate: true }); setMode({ kind: 'overview' }); } catch { /* scene was replaced */ } };
   const toRoom = (id: string) => { try { view.current?.focusRoom(id, { animate: true }); setMode({ kind: 'room', id }); } catch { /* not a room of this storey */ } };
   const enter = (room: RoomEntry) => { if (!room.interiorPreset) return; try { view.current?.applyCameraPreset(room.interiorPreset, { animate: true }); setMode({ kind: 'interior', id: room.id }); } catch { /* scene was replaced */ } };
   focus.current = id => { const room = scene && roomOf(scene, id); if (room && rooms.some(item => item.id === room)) toRoom(room); };
@@ -174,4 +175,18 @@ function roomFinishes(scene: SceneSnapshot, roomId: string) {
 
 function polygonArea(points: { x: number; z: number }[]) {
   return Math.abs(points.reduce((sum, p, i) => { const q = points[(i + 1) % points.length]; return sum + p.x * q.z - q.x * p.z; }, 0) / 2);
+}
+
+/**
+ * Canvas pixels covered by the page's own controls: the top tag row (H5) or caption (workbench), and the bottom bar
+ * plus the view-chip row above it. The overview frames the model in the band between them.
+ */
+function overlayInsets(host: HTMLElement) {
+  const scope = host.closest('.canvas') ?? host.closest('.stage') ?? host.parentElement;
+  if (!scope) return { top: 0, bottom: 0 };
+  const box = host.getBoundingClientRect(), chips = 52;
+  let top = 0, bottom = 0;
+  scope.querySelectorAll('.stage__top, .caption').forEach(el => { const r = el.getBoundingClientRect(); if (r.height) top = Math.max(top, r.bottom - box.top); });
+  scope.querySelectorAll('.stage__bottom, .toolbar').forEach(el => { const r = el.getBoundingClientRect(); if (r.height) bottom = Math.max(bottom, box.bottom - r.top); });
+  return { top, bottom: bottom ? bottom + chips : chips };
 }

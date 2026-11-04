@@ -359,8 +359,20 @@ export function ResultView({ request: r, preview, onGate, loadScene }: { request
   const s = pickScheme(r, ui.scheme);
   const soft = softOf(s);
   const levels = levelsOf(r), level = levels.find(l => l.id === ui.level)?.id ?? levels[0]?.id ?? null;
-  const scene = useQuery({ queryKey: ['scene', r.id, s?.id, s?.revision], queryFn: () => (loadScene ?? (id => clientApi(entry).scene(r.id, id)))(s!.id),
-    enabled: ui.view !== 'image' && !!s, staleTime: Infinity });
+  const sceneQuery = { queryKey: ['scene', r.id, s?.id, s?.revision], queryFn: () => (loadScene ?? (id => clientApi(entry).scene(r.id, id)))(s!.id), staleTime: Infinity };
+  const scene = useQuery({ ...sceneQuery, enabled: ui.view !== 'image' && !!s });
+  // While the still is on screen, fetch the scene and the 3D runtime when the page is idle, so the first switch to
+  // 3D / plan starts from local data. Textures are not built here: that would cost the phone CPU while browsing.
+  const prefetch = useQueryClient();
+  useEffect(() => {
+    if (ui.view !== 'image' || !s) return;
+    const timer = setTimeout(() => {
+      void prefetch.prefetchQuery(sceneQuery);
+      void import('../../../../packages/scene-runtime/src/scene').catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ui.view, s?.id, s?.revision]);
   const index = Math.max(0, r.schemes.indexOf(s));
   const shift = (d: 1 | -1) => setUi(u => ({ ...u, scheme: r.schemes[(index + d + r.schemes.length) % r.schemes.length].id }));
   const swipe = useSwipe(shift);

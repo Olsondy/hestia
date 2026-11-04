@@ -445,3 +445,12 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .scheme-info__card p{font:var(--t-small);color:var(--c-ink-2)}
 .scheme-info__trace{font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:12px!important}
 .scheme-info__card small{font:var(--t-small);font-size:12px;color:var(--c-ink-2)}
+/* 3D loading and the day / night switch (scheme-viewer.tsx). */
+.stage__loading{display:grid;justify-items:center;gap:12px;padding:16px 22px;border-radius:16px}
+.stage__spinner{width:24px;height:24px;border-radius:50%;border:2.5px solid var(--c-line);border-top-color:var(--c-ink);animation:stage-spin .9s linear infinite}
+.stage__progress{width:160px;height:3px;border-radius:2px;background:var(--c-line);overflow:hidden}
+.stage__progress i{display:block;height:100%;background:var(--c-ink);transform-origin:left;transition:transform .3s ease}
+@keyframes stage-spin{to{transform:rotate(1turn)}}
+.stage__light{position:absolute;z-index:4;top:72px;right:16px;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--c-surface);color:var(--c-ink-2);box-shadow:var(--e-pop)}
+.stage__light[aria-pressed=true]{background:var(--c-ink);color:var(--c-bg)}
+.canvas.has-right .stage__light{right:calc(var(--panel-r) + 32px)}

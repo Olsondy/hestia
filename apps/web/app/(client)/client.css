@@ -441,3 +441,15 @@ button.media-tag[aria-pressed=true]{background:#fff;color:#161514}
 .scheme-info__card b{font:var(--t-label)}
 .scheme-info__card p{font:var(--t-small);color:#5f5b54}
 .scheme-info__card small{font:var(--t-small);font-size:12px;color:#5f5b54}
+/* 3D loading (scheme-viewer.tsx): shown from the tap until the scene is ready, one visible step at a time. */
+.stage__loading{display:grid;place-content:center;justify-items:center;gap:var(--s-3);z-index:2}
+.stage__spinner{width:28px;height:28px;border-radius:50%;border:2.5px solid #ffffff40;border-top-color:#fff;animation:stage-spin .9s linear infinite}
+.stage__progress{width:160px;height:3px;border-radius:2px;background:#ffffff33;overflow:hidden}
+.stage__progress i{display:block;height:100%;background:#fff;transform-origin:left;transition:transform var(--d-base) var(--ease)}
+@keyframes stage-spin{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){.stage__spinner{animation-duration:2.4s}}
+/* Day / night: a light switch of its own, apart from the view chips. */
+.stage__light{position:absolute;z-index:3;top:calc(var(--h-appbar) + env(safe-area-inset-top) + 48px);right:var(--s-3);display:grid;place-items:center;width:40px;height:40px;border-radius:50%;
+  background:var(--c-media-ctl);color:var(--c-on-media);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:background var(--d-fast)}
+.stage__light[aria-pressed=true]{background:#fff;color:#161514}
+.immersive.is-expanded .stage__light{display:none}

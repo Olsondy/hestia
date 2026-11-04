@@ -15,7 +15,9 @@ import { detectQuality, type QualityTier } from './quality';
 import { cameraPresets, mainLevelId, viewerRoomNames, type CameraPreset } from './cameras';
 import { createFinishMeshes } from './finish-surfaces';
 import { Cutaway, CUT_HEIGHT, roomAnchor } from './dollhouse';
-import { projectUV, SURFACE_TILE, surfaceDetail } from './surface-texture';
+import { projectUV, SURFACE_TILE, surfaceDetail, surfaceTexture, type SurfaceKind } from './surface-texture';
+import { detailTexture, stoneTexture } from './stone-texture';
+import { stoneOf } from '../../finishes/src/plan';
 
 export type CameraState = { position: number[]; target: number[] };
 /** A room of the shown storey as listed by the overview: label anchor (world) and its eye-level shot, if any. */
@@ -179,6 +181,28 @@ export function createSceneModel(input: SceneSnapshot, view: SceneView = buildin
   const { lamps } = addArchitecturalDetail({ root, objects, data }, levels, shown.map(level => level.id));
   root.updateMatrixWorld(true);
   return { root, objects, data, levels: shown.map(level => level.id), view, lamps };
+}
+
+/**
+ * Builds the procedural textures a snapshot needs (stone slabs, their detail maps, fabric / wood / plaster) one at a
+ * time, yielding to the browser between them. They are cached, so a following `load` does not stall the page: on a
+ * phone the stone slabs alone can take several seconds, during which taps would get no feedback at all.
+ */
+export async function warmScene(snapshot: SceneSnapshot, onStep: (step: { label: string; done: number; total: number }) => void = () => {}) {
+  const design = snapshot.surfaceDesign, stones = new Map<string, { texture: Parameters<typeof stoneTexture>[0] }>();
+  for (const tiling of design?.tilings ?? []) for (const ref of [tiling, tiling.border].filter(Boolean)) {
+    const stone = design && stoneOf(design, ref!); if (stone) stones.set(`${stone.id}@${stone.version}`, stone);
+  }
+  const kinds: SurfaceKind[] = ['plaster', 'fabric', 'linen', 'wood'];
+  const total = stones.size + kinds.length;
+  const yieldFrame = () => new Promise<void>(resolve => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => setTimeout(resolve, 0)) : setTimeout(resolve, 0));
+  let done = 0;
+  for (const stone of stones.values()) {
+    onStep({ label: `准备石材纹理 ${done + 1}/${stones.size}`, done, total }); await yieldFrame();
+    stoneTexture(stone.texture); detailTexture(stone.texture.seed % 997); done++;
+  }
+  for (const kind of kinds) { onStep({ label: '准备软装材质', done, total }); await yieldFrame(); surfaceTexture(kind); done++; }
+  onStep({ label: '搭建空间', done, total }); await yieldFrame();
 }
 
 export function disposeModel(root: T.Object3D) {

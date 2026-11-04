@@ -23,6 +23,8 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
   const [overview, setOverview] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: 'overview' });
   const [error, setError] = useState('');
+  /** Visible loading step: the first open builds textures on the main thread, so every step must paint first. */
+  const [step, setStep] = useState<{ label: string; progress: number } | null>({ label: '正在下载 3D 场景', progress: .05 });
   const [loaded, setLoaded] = useState(0);
   const [night, setNight] = useState(false);
   const [surface, setSurface] = useState<MaterialMode>('real');
@@ -32,8 +34,11 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
   useEffect(() => {
     if (!scene) return;
     let disposed = false, unsubscribe = () => {};
-    setError(''); setRooms([]); setMode({ kind: 'overview' });
-    import('../../../../packages/scene-runtime/src/scene').then(({ SpatialScene }) => {
+    setError(''); setRooms([]); setMode({ kind: 'overview' }); setStep({ label: '载入 3D 引擎', progress: .12 });
+    import('../../../../packages/scene-runtime/src/scene').then(async ({ SpatialScene, warmScene }) => {
+      if (disposed || !host.current) return;
+      // Textures first, one per frame with a visible step, so taps keep getting feedback on slow phones.
+      await warmScene(scene, ({ label, done, total }) => { if (!disposed) setStep({ label, progress: .15 + .75 * done / Math.max(1, total) }); });
       if (disposed || !host.current) return;
       // Clicking a room's floor (or anything in it) in the overview brings that room closer.
       const instance = new SpatialScene(host.current, id => { const shown = instance.getPresentation(); if (id && (shown === 'overview' || shown === 'plan')) focus.current(id); });
@@ -73,8 +78,8 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
       });
       if (first) instance.applyCameraPreset(first.id, { interactive: true });
       if (planRef.current) instance.setPlan(true);
-      setNight(false); setSurface('real'); setLoaded(n => n + 1);
-    }).catch(() => { if (!disposed) setError('此浏览器暂时无法显示 3D。请以效果图为准。'); });
+      setNight(false); setSurface('real'); setLoaded(n => n + 1); setStep(null);
+    }).catch(() => { if (!disposed) { setStep(null); setError('此浏览器暂时无法显示 3D。请以效果图为准。'); } });
     return () => { disposed = true; unsubscribe(); view.current?.dispose(); view.current = null; };
   }, [scene]);
 
@@ -112,7 +117,14 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
       {rooms.map(room => <button key={room.id} hidden ref={node => { if (node) labels.current.set(room.id, node); else labels.current.delete(room.id); }}
         className="room-label" aria-pressed={current?.id === room.id} aria-label={room.name} onClick={() => toRoom(room.id)}><span>{room.name}</span></button>)}
     </div>
-    {(!scene || error) && <div className="stage__msg" role={error ? 'alert' : 'status'}>{error || '正在打开 3D…'}</div>}
+    {error ? <div className="stage__msg" role="alert">{error}</div>
+      : (!scene || step) && <div className="stage__msg stage__loading" role="status" aria-live="polite">
+        <span className="stage__spinner" aria-hidden="true"/>
+        <span>{scene ? step?.label : '正在下载 3D 场景'}…</span>
+        <span className="stage__progress" aria-hidden="true"><i style={{ transform: `scaleX(${scene ? step?.progress ?? 1 : .05})` }}/></span>
+      </div>}
+    {!plan && rooms.length > 0 && <button type="button" className="stage__light" aria-pressed={night} aria-label={night ? '切换到日景' : '切换到夜景（开灯）'} onClick={toggleNight}>
+      <Icon name={night ? 'moon' : 'sun'} size={18}/></button>}
     {mode.kind === 'room' && current && <div className="stage__room" data-stage-ui>
       <div className="stage__room-text"><b>{current.name}</b>{summary.length ? summary.map(line => <small key={line}>{line}</small>) : <small>这个房间没有铺石材</small>}</div>
       {current.interiorPreset && !plan && <button className="stage__room-enter" onClick={() => enter(current)}>入户查看</button>}
@@ -121,7 +133,6 @@ export function SchemeViewer({ scene, plan = false }: { scene: SceneSnapshot | u
       {surfaces.map(([id, name]) => <button key={id} className="media-tag" aria-pressed={surface === id} onClick={() => pickSurface(id)}>{name}</button>)}
     </div>}
     {rooms.length > 0 && !plan && <div className="stage__presets" ref={rail} role="group" aria-label="视角">
-      <button className="media-tag" aria-pressed={night} onClick={toggleNight}><Icon name={night ? 'moon' : 'sun'} size={14}/>{night ? '夜景' : '日景'}</button>
       {overview && <button className="media-tag" aria-pressed={mode.kind === 'overview'} onClick={toOverview}>全层立体浏览</button>}
       {rooms.map(room => <button key={room.id} className="media-tag" aria-pressed={current?.id === room.id} onClick={() => pick(room)}>
         {mode.kind === 'interior' && current?.id === room.id ? `入户 · ${room.name}` : room.name}</button>)}

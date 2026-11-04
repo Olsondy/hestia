@@ -460,22 +460,39 @@ const lastImages = new Map<string, { revision: number; url: string }>();
 function SchemeImage({ scheme, alt, className = 'stage__img' }: { scheme: FinishSchemeView; alt: string; className?: string }) {
   const href = scheme.render?.imageHref, failed = scheme.render?.status === 'failed';
   const [url, setUrl] = useState(() => lastImages.get(scheme.id)?.url ?? null);
+  // A finished still is *downloaded* here, which is not the same as being rendered: say which, time out, retry.
+  const [load, setLoad] = useState<'idle' | 'loading' | 'error'>('idle'), [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const cached = lastImages.get(scheme.id);
-    if (!href) { setUrl(cached?.url ?? null); return; }
-    if (cached?.revision === scheme.revision) { setUrl(cached.url); return; }
-    let live = true;
-    fetch(href, { credentials: 'same-origin', cache: 'no-store' }).then(r => r.ok ? r.blob() : Promise.reject()).then(blob => {
-      const next = URL.createObjectURL(blob), old = lastImages.get(scheme.id);
-      lastImages.set(scheme.id, { revision: scheme.revision, url: next });
-      if (old) setTimeout(() => URL.revokeObjectURL(old.url), 5000);
-      if (live) setUrl(next);
-    }).catch(() => { if (live) setUrl(cached?.url ?? null); });
-    return () => { live = false; };
-  }, [href, scheme.id, scheme.revision]);
+    if (!href) { setUrl(cached?.url ?? null); setLoad('idle'); return; }
+    if (cached?.revision === scheme.revision) { setUrl(cached.url); setLoad('idle'); return; }
+    let live = true, tries = 0, timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const get = () => {
+      const timeout = setTimeout(() => controller.abort(), 45_000);
+      setLoad('loading');
+      // fetch() sends Accept: */* by default; ask for WebP so the server sends the ~50 KB version, not the 1 MB PNG.
+      fetch(href, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers: { Accept: 'image/webp,image/png;q=0.9,*/*;q=0.5' } })
+        .then(r => r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))).then(blob => {
+          const next = URL.createObjectURL(blob), old = lastImages.get(scheme.id);
+          lastImages.set(scheme.id, { revision: scheme.revision, url: next });
+          if (old) setTimeout(() => URL.revokeObjectURL(old.url), 5000);
+          if (live) { setUrl(next); setLoad('idle'); }
+        }).catch(() => {
+          if (!live) return;
+          if (++tries <= 2 && !controller.signal.aborted) { timer = setTimeout(get, 1500 * tries); return; }
+          setUrl(cached?.url ?? null); setLoad('error');
+        }).finally(() => clearTimeout(timeout));
+    };
+    get();
+    return () => { live = false; clearTimeout(timer); controller.abort(); };
+  }, [href, scheme.id, scheme.revision, attempt]);
   if (url) return <img className={className} src={url} alt={alt}/>;
   if (className !== 'stage__img') return null;
-  return <div className="stage__msg" role="status">{failed ? '这张效果图暂时没有生成，企业会处理。可以先看 3D。' : <>正在出图…每张约 1–2 分钟<span className="progress"><i/></span></>}</div>;
+  if (load === 'error') return <div className="stage__msg" role="alert">效果图加载失败，可能是网络不稳定。
+    <button type="button" className="media-tag" onClick={() => setAttempt(n => n + 1)}>重试</button></div>;
+  return <div className="stage__msg" role="status">{failed ? '这张效果图暂时没有生成，企业会处理。可以先看 3D。'
+    : href ? <>正在加载效果图…<span className="progress"><i/></span></> : <>正在出图…每张约 1–2 分钟<span className="progress"><i/></span></>}</div>;
 }
 
 // ---------- 调整：修改先累积在本机，「重新出图」一次提交（ADR-0010） ----------

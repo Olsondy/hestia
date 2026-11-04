@@ -407,7 +407,7 @@ dialog.modal::backdrop{background:#0c0c0e66}
 [data-rail][data-more-end]{--rail-mask:linear-gradient(to right,#000 calc(100% - 40px),transparent)}
 [data-rail][data-more-start]{--rail-mask:linear-gradient(to right,transparent,#000 40px)}
 [data-rail][data-more-start][data-more-end]{--rail-mask:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent)}
-.media-tag{height:28px;padding:0 12px;border-radius:var(--r-pill);background:var(--c-surface);box-shadow:var(--e-pop);font:var(--t-small);color:var(--c-ink-2)}
+.media-tag{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:var(--r-pill);background:var(--c-surface);box-shadow:var(--e-pop);font:var(--t-small);color:var(--c-ink-2)}
 .media-tag[aria-pressed=true]{background:var(--c-ink);color:var(--c-bg)}
 .scheme__thumb{display:block;flex-shrink:0}
 .chev{color:var(--c-ink-2)}

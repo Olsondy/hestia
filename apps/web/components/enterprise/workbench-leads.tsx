@@ -129,17 +129,17 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
   const { base, workspace } = useWorkbench();
   const confirmedId = lead.confirmation?.schemeId;
   const [schemeId, setSchemeId] = useState(confirmedId ?? lead.schemes[0]?.id);
-  const [tab, setTab] = useState<Tab>('scheme'), [left, setLeft] = useState(true), [view, setView] = useState<'image' | '3d'>('image');
+  const [tab, setTab] = useState<Tab>('scheme'), [left, setLeft] = useState(true), [view, setView] = useState<'image' | '3d' | 'plan'>('image');
   const levels = levelsOf(lead.finishes), [level, setLevel] = useState(levels[0]?.[0] ?? '');
   const scheme = lead.schemes.find(s => s.id === schemeId) ?? lead.schemes[0];
   const image = imageOf(scheme), a = actionsOf(lead);
-  const scene = useQuery({ queryKey: ['lead-scene', lead.id, scheme?.id, scheme?.revision], enabled: view === '3d' && !!scheme?.render,
+  const scene = useQuery({ queryKey: ['lead-scene', lead.id, scheme?.id, scheme?.revision], enabled: view !== 'image' && !!scheme?.render,
     queryFn: () => get<{ scene: SceneSnapshot }>(`/api/workspaces/${workspace.id}/leads/${lead.id}/schemes/${scheme!.id}/scene`).then(r => r.scene) });
   const levelName = levels.find(([key]) => key === level)?.[1] ?? '';
   const follow = useFollow(lead);
 
   const media = !scheme ? <div className="stage__plan"><p>{lead.status === 'assisted_conversion' ? '图纸在排队，整理户型并出方案后在这里显示' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸' : lead.status === 'conversion_failed' ? '客户的图纸没能自动识别' : '方案生成后在这里显示'}</p></div>
-    : view === '3d' ? <div className="stage__3d"><SchemeViewer scene={scene.data}/></div>
+    : view !== 'image' ? <div className="stage__3d"><SchemeViewer scene={scene.data} plan={view === 'plan'}/></div>
       // eslint-disable-next-line @next/next/no-img-element
       : image ? <img className="stage__img" src={image} alt={`方案 ${letter(scheme)} 效果图（示意）`}/>
         : <div className="stage__plan"><p>{scheme.render?.status === 'failed' ? '效果图生成失败' : '效果图生成中，完成后在这里显示'}</p></div>;
@@ -178,7 +178,8 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
         <button key={key} aria-pressed={level === key} onClick={() => setLevel(key)}>{name}</button>)}</div></>}
       {scheme && <><span className="toolbar__sep"/><div className="segmented segmented--bare" role="group" aria-label="查看方式">
         <button aria-pressed={view === 'image'} onClick={() => setView('image')}><Icon name="image" size={15} strokeWidth={1.6}/>效果图</button>
-        <button aria-pressed={view === '3d'} onClick={() => setView('3d')} disabled={!scheme.render}><Icon name="cube" size={15} strokeWidth={1.6}/>3D</button></div></>}
+        <button aria-pressed={view === '3d'} onClick={() => setView('3d')} disabled={!scheme.render}><Icon name="cube" size={15} strokeWidth={1.6}/>3D</button>
+        <button aria-pressed={view === 'plan'} onClick={() => setView('plan')} disabled={!scheme.render}><Icon name="plan" size={15} strokeWidth={1.6}/>平面图</button></div></>}
     </div>
   </section></Shell>;
 }

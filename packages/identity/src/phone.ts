@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql, type SQL } from 'drizzle-orm';
 import { advisoryXactLock, transaction } from '../../persistence/src/client';
 import { hestiaAuthUser, phoneOtpChallenges as otp } from '../../persistence/src/schema';
 import { DomainError } from '../../contracts/src/project';
@@ -40,6 +40,7 @@ export function requestSource(headers: Headers | null | undefined, purpose: stri
   const raw = sourceOf(headers, otpConfig().sourceHeader);
   return hmac(`hestia:${purpose}-source:${raw || 'shared'}`);
 }
+const phoneLock = (workspaceId: string, phoneNumber: string) => `hestia:otp:phone:${workspaceId}:${phoneNumber}`;
 const now = sql`clock_timestamp()`, interval = (secs: number) => sql`make_interval(secs => ${secs})`;
 const seconds = (value: number | string | null) => Math.max(1, Math.ceil(Number(value ?? 0)));
 
@@ -53,25 +54,26 @@ export async function sendPhoneCode(input: unknown, headers: Headers): Promise<S
   const config = otpConfig(), source = sourceHash(headers, config);
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0'), id = randomUUID();
   await transaction(async (client, tx) => {
-    await customerEntry(client, request.entry);
-    // Phone before source in every request, so concurrent sends never wait on each other in a cycle.
-    await advisoryXactLock(tx, `hestia:otp:phone:${phoneNumber}`);
+    const entry = await customerEntry(client, request.entry);
+    // Phone before source in every request, so concurrent sends never wait on each other in a cycle. Codes, their
+    // limits and the account they sign in to are per enterprise (ADR-0017).
+    await advisoryXactLock(tx, phoneLock(entry.id, phoneNumber));
     await advisoryXactLock(tx, `hestia:otp:source:${source}`);
-    const recent = async (column: typeof otp.phoneNumber | typeof otp.sourceHash, value: string) => (await tx.select({
+    const recent = async (scope: SQL) => (await tx.select({
       n: sql<number>`count(*)::int`,
       cooldown: sql<string | null>`extract(epoch FROM max(${otp.createdAt}) + ${interval(config.resendSeconds)} - clock_timestamp())`,
       reset: sql<string | null>`extract(epoch FROM min(${otp.createdAt}) + ${interval(config.windowSeconds)} - clock_timestamp())`,
-    }).from(otp).where(and(eq(column, value), gt(otp.createdAt, sql`clock_timestamp() - ${interval(config.windowSeconds)}`))))[0];
-    const byPhone = await recent(otp.phoneNumber, phoneNumber);
+    }).from(otp).where(and(scope, gt(otp.createdAt, sql`clock_timestamp() - ${interval(config.windowSeconds)}`))))[0];
+    const byPhone = await recent(and(eq(otp.workspaceId, entry.id), eq(otp.phoneNumber, phoneNumber))!);
     if (byPhone.n > 0 && Number(byPhone.cooldown) > 0)
       throw new DomainError('OTP_COOLDOWN', '验证码已发送，请稍后再重新获取。', 429, { retryAfterSeconds: seconds(byPhone.cooldown) });
     if (byPhone.n >= config.perPhone)
       throw new DomainError('OTP_RATE_LIMITED', '获取验证码过于频繁，请稍后再试。', 429, { scope: 'phone', retryAfterSeconds: seconds(byPhone.reset) });
-    const bySource = await recent(otp.sourceHash, source);
+    const bySource = await recent(eq(otp.sourceHash, source));
     if (bySource.n >= config.perSource)
       throw new DomainError('OTP_RATE_LIMITED', '获取验证码过于频繁，请稍后再试。', 429, { scope: 'source', retryAfterSeconds: seconds(bySource.reset) });
-    await tx.update(otp).set({ supersededAt: now }).where(and(eq(otp.phoneNumber, phoneNumber), isNull(otp.consumedAt), isNull(otp.supersededAt)));
-    await tx.insert(otp).values({ id, phoneNumber, sourceHash: source, codeHash: codeHash(id, code), maxAttempts: config.maxAttempts,
+    await tx.update(otp).set({ supersededAt: now }).where(and(eq(otp.workspaceId, entry.id), eq(otp.phoneNumber, phoneNumber), isNull(otp.consumedAt), isNull(otp.supersededAt)));
+    await tx.insert(otp).values({ id, phoneNumber, workspaceId: entry.id, sourceHash: source, codeHash: codeHash(id, code), maxAttempts: config.maxAttempts,
       expiresAt: sql`clock_timestamp() + ${interval(config.ttlSeconds)}` });
   });
   // The send is recorded (and counts toward limits) even if delivery then fails.
@@ -95,9 +97,9 @@ export async function verifyPhoneCode(input: unknown): Promise<PhoneSignIn> {
   const request = signInSchema.parse(input), phoneNumber = normalizePhone(request.phoneNumber);
   const outcome = await transaction(async (client, tx) => {
     const entry = await customerEntry(client, request.entry);
-    await advisoryXactLock(tx, `hestia:otp:phone:${phoneNumber}`);
+    await advisoryXactLock(tx, phoneLock(entry.id, phoneNumber));
     const [challenge] = await tx.select({ id: otp.id, codeHash: otp.codeHash, attempts: otp.attempts, maxAttempts: otp.maxAttempts, expired: sql<boolean>`${otp.expiresAt} <= clock_timestamp()` })
-      .from(otp).where(and(eq(otp.phoneNumber, phoneNumber), isNull(otp.consumedAt), isNull(otp.supersededAt))).orderBy(desc(otp.createdAt)).limit(1).for('update');
+      .from(otp).where(and(eq(otp.workspaceId, entry.id), eq(otp.phoneNumber, phoneNumber), isNull(otp.consumedAt), isNull(otp.supersededAt))).orderBy(desc(otp.createdAt)).limit(1).for('update');
     if (!challenge) return new DomainError('OTP_NOT_REQUESTED', '请先获取验证码。', 400);
     if (challenge.expired) return new DomainError('OTP_EXPIRED', '验证码已过期，请重新获取。', 400);
     if (challenge.attempts >= challenge.maxAttempts) return new DomainError('OTP_LOCKED', '错误次数过多，此验证码已失效，请重新获取。', 429);
@@ -110,9 +112,11 @@ export async function verifyPhoneCode(input: unknown): Promise<PhoneSignIn> {
         : new DomainError('OTP_LOCKED', '错误次数过多，此验证码已失效，请重新获取。', 429);
     }
     await tx.update(otp).set({ consumedAt: now }).where(eq(otp.id, challenge.id));
-    await tx.insert(hestiaAuthUser).values({ id: randomUUID(), name: `手机用户 ${phoneNumber.slice(-4)}`, phoneNumber })
-      .onConflictDoNothing({ target: hestiaAuthUser.phoneNumber, where: sql`${hestiaAuthUser.phoneNumber} IS NOT NULL` });
-    const [{ id: userId }] = await tx.select({ id: hestiaAuthUser.id }).from(hestiaAuthUser).where(eq(hestiaAuthUser.phoneNumber, phoneNumber));
+    // The (enterprise, number) lock above serializes sign-ins, so find-or-create cannot race.
+    const account = and(eq(hestiaAuthUser.workspaceId, entry.id), eq(hestiaAuthUser.phoneNumber, phoneNumber));
+    const [existing] = await tx.select({ id: hestiaAuthUser.id }).from(hestiaAuthUser).where(account);
+    const userId = existing?.id ?? randomUUID();
+    if (!existing) await tx.insert(hestiaAuthUser).values({ id: userId, name: `手机用户 ${phoneNumber.slice(-4)}`, phoneNumber, workspaceId: entry.id });
     const customer = await ensureCustomer(client, entry.id, userId);
     return { userId, phoneNumber, entry: { slug: entry.slug, name: entry.name }, customer };
   });

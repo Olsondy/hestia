@@ -76,3 +76,11 @@ export async function workspaceSlugOf(workspaceId: string): Promise<string | nul
   const [row] = await db.select({ slug: workspaces.slug }).from(workspaces).where(eq(workspaces.id, workspaceId));
   return row?.slug ?? null;
 }
+
+/** Workspace that registered this host, or null. */
+export async function workspaceForHost(host: string | null): Promise<{ id: string; slug: string } | null> {
+  if (!host) return null;
+  const [row] = await db.select({ id: workspaces.id, slug: workspaces.slug }).from(workspaceDomains)
+    .innerJoin(workspaces, eq(workspaces.id, workspaceDomains.workspaceId)).where(eq(workspaceDomains.host, host));
+  return row?.slug ? { id: row.id, slug: row.slug } : null;
+}

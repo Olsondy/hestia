@@ -1,6 +1,7 @@
 // Generated from the legacy SQL migrations by drizzle-kit pull, then edited by hand. Keep in step with the database.
 import { pgTable, index, uniqueIndex, foreignKey, unique, check, uuid, text, timestamp, integer, boolean } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { workspaces } from './workspaces';
 
 export const hestiaAuthUser = pgTable("hestia_auth_user", {
 	id: text().primaryKey().notNull(),
@@ -11,8 +12,13 @@ export const hestiaAuthUser = pgTable("hestia_auth_user", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	phoneNumber: text("phone_number"),
+	// Customer accounts belong to one enterprise (ADR-0017): the same number at two enterprises is two accounts.
+	// Null for platform accounts (members' e-mail accounts, personal users).
+	workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: 'cascade' }),
 }, (table) => [
-	uniqueIndex("hestia_auth_user_phone_number").on(table.phoneNumber).where(sql`(phone_number IS NOT NULL)`),
+	uniqueIndex("hestia_auth_user_phone_scope").on(sql`COALESCE(workspace_id, '00000000-0000-0000-0000-000000000000'::uuid)`, table.phoneNumber).where(sql`(phone_number IS NOT NULL)`),
+	index("hestia_auth_user_workspace").on(table.workspaceId),
+	check("hestia_auth_user_customer_scope", sql`(workspace_id IS NULL) OR ((phone_number IS NOT NULL) AND (email IS NULL))`),
 	unique("hestia_auth_user_email_key").on(table.email),
 	check("hestia_auth_email_normalized", sql`email = lower(email)`),
 	check("hestia_auth_user_identifier", sql`(email IS NOT NULL) OR (phone_number IS NOT NULL)`),
@@ -94,6 +100,8 @@ export const hestiaInvitation = pgTable("hestia_invitation", {
 export const phoneOtpChallenges = pgTable("phone_otp_challenges", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	phoneNumber: text("phone_number").notNull(),
+	/** Enterprise whose entry asked for the code; a code is used and counted only there (ADR-0017). */
+	workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: 'cascade' }),
 	sourceHash: text("source_hash").notNull(),
 	codeHash: text("code_hash").notNull(),
 	attempts: integer().default(0).notNull(),
@@ -104,6 +112,7 @@ export const phoneOtpChallenges = pgTable("phone_otp_challenges", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).default(sql`clock_timestamp()`).notNull(),
 }, (table) => [
 	index("phone_otp_challenges_phone").on(table.phoneNumber, table.createdAt.desc().nullsFirst()),
+	index("phone_otp_challenges_workspace_phone").on(table.workspaceId, table.phoneNumber, table.createdAt.desc().nullsFirst()),
 	index("phone_otp_challenges_source").on(table.sourceHash, table.createdAt.desc().nullsFirst()),
 	check("phone_otp_challenges_attempts_check", sql`attempts >= 0`),
 	check("phone_otp_challenges_max_attempts_check", sql`max_attempts > 0`),

@@ -1,10 +1,10 @@
 import { ZodError } from 'zod';
 import { DomainError } from '../../../packages/contracts/src/project';
-import { auth } from '../../../packages/identity/src/auth';
 import { trustedOriginFor } from '../../../packages/identity/src/origins';
+import { sessionFor } from '../../../packages/identity/src/session';
 
 export async function principal(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await sessionFor(request.headers);
   if (!session) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   return { userId: session.user.id };
 }

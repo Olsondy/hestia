@@ -43,6 +43,20 @@
       "when": 1794289450123,
       "tag": "0005_workspace_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794292938551,
+      "tag": "0006_customer_accounts_per_enterprise",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794292949340,
+      "tag": "0007_backfill_customer_accounts",
+      "breakpoints": true
     }
   ]
 }

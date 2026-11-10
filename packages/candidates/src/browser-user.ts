@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { auth } from '../../identity/src/auth';
+import { sessionFor } from '../../identity/src/session';
 import { trustedOriginFor } from '../../identity/src/origins';
 import { DomainError } from '../../contracts/src/project';
 
@@ -9,7 +9,7 @@ export type BrowserUser = { readonly userId: string; readonly sessionHash: strin
 const capabilities = new WeakSet<object>();
 export async function browserUser(request: Request): Promise<BrowserUser> {
   if (!(await trustedOriginFor(request.headers))) throw new DomainError('ORIGIN_REJECTED', '请从应用页面选择方案。', 403);
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await sessionFor(request.headers);
   if (!session) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   const user = Object.freeze({ userId: session.user.id, sessionHash: createHash('sha256').update(session.session.id).digest('hex') });
   capabilities.add(user);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdir, rmdir } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { pool } from '../../persistence/src/client';
@@ -98,7 +98,8 @@ test('private underlay persistence and scope against PostgreSQL',async t=>{
   }finally{
     for(const projectId of projects){await pool.query('DELETE FROM project_underlays WHERE project_id=$1',[projectId]);await pool.query('DELETE FROM underlay_operations WHERE project_id=$1',[projectId]);await pool.query('DELETE FROM resources WHERE project_id=$1',[projectId]);await pool.query('DELETE FROM operations WHERE project_id=$1',[projectId]);await pool.query('DELETE FROM project_revisions WHERE project_id=$1',[projectId]);await pool.query('DELETE FROM projects WHERE id=$1',[projectId]);}
     for(const key of keys)await store.remove(key);
-    for(const projectId of projects){await rmdir(path.join(root,'projects',projectId,'resources')).catch(()=>{});await rmdir(path.join(root,'projects',projectId)).catch(()=>{});}
-    await rmdir(path.join(root,'projects')).catch(()=>{});await rmdir(root);await pool.end();
+    // Every file was removed above; only the empty directories of this test's own root remain.
+    assert.deepEqual((await readdir(root,{recursive:true,withFileTypes:true})).filter(e=>e.isFile()).map(e=>e.name),[],'no underlay file is left behind');
+    await rm(root,{recursive:true});await pool.end();
   }
 });

@@ -1,7 +1,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rmdir } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import sharp from 'sharp';
@@ -37,11 +37,11 @@ after(async () => {
   await pool.query('DELETE FROM operations WHERE actor_id=$1', [owner.userId]);
   await pool.query('DELETE FROM project_revisions WHERE project_id IN (SELECT id FROM projects WHERE created_by=$1)', [owner.userId]);
   await pool.query('DELETE FROM projects WHERE created_by=$1', [owner.userId]);
-  for (const project of projects) {
-    await rmdir(path.join(directory, 'projects', project.id, 'resources')).catch(e => { if (e.code !== 'ENOENT') throw e; });
-    await rmdir(path.join(directory, 'projects', project.id)).catch(e => { if (e.code !== 'ENOENT') throw e; });
-  }
-  await rmdir(path.join(directory, 'projects')).catch(e => { if (e.code !== 'ENOENT') throw e; }); await rmdir(directory);
+  // Every file was removed above; only empty directories of this test's temporary root remain.
+  void projects;
+  const left = (await readdir(directory, { recursive: true, withFileTypes: true })).filter(entry => entry.isFile());
+  assert.deepEqual(left.map(entry => entry.name), [], 'no render file is left behind');
+  await rm(directory, { recursive: true });
   assert.match(schema, /^render_test_[a-f0-9]{32}$/); await pool.query(`DROP SCHEMA ${schema} CASCADE`); await pool.end();
 });
 

@@ -13,6 +13,7 @@ import { floorplanCandidates, floorplanImportOperations, floorplanImports, proje
 import { privateStore, type PrivateFileStore } from '../../files/src/storage';
 import { buildFloorplanCandidate } from '../../floorplan-import/src/dxf';
 import { enqueueImport } from './queue';
+import { resourceKey } from '../../files/src/keys';
 
 export type ImportRow = typeof floorplanImports.$inferSelect;
 export type CandidateRow = typeof floorplanCandidates.$inferSelect;
@@ -114,7 +115,7 @@ export async function createFloorplanImport(principal: Principal, projectId: str
       await access();
       const row = await previous();
       if (row) return row;
-      resourceId = randomUUID(); key = `projects/${id}/resources/${resourceId}.src`;
+      resourceId = randomUUID(); key = await resourceKey(leaseDb, id, resourceId, 'src');
       await leaseDb.insert(resources).values({ id: resourceId, projectId: id, objectKey: key, mediaType: floorplanFormats[format].mediaType, state: 'pending' });
       return null;
     });

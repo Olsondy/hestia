@@ -9,6 +9,7 @@ import { MAX_IMAGE_PIXELS, MAX_UPLOAD_BYTES, saveUnderlaySchema, sourceToImage, 
 import { getProject, getResource, type Principal } from '../../projects/src/service';
 import { canAccessProject } from '../../workspaces/src/access';
 import { privateStore, type PrivateFileStore } from './storage';
+import { resourceKey } from './keys';
 
 async function leaseTransaction<T>(client: PoolClient, work: (tx: Database) => Promise<T>) {
   await client.query('BEGIN');
@@ -64,7 +65,9 @@ export async function saveUnderlay(principal: Principal, projectId: string, inpu
       if (previous && (previous.projectId !== projectId || previous.requestHash !== hash)) throw new DomainError('IDEMPOTENCY_CONFLICT', '此操作标识已用于不同的文件或请求。', 409);
       if (previous?.result) return { result: previous.result as UnderlayView, resourceId: '', key: '' };
       if (await currentVersion(tx, projectId) !== value.expectedVersion) throw conflict();
-      const resourceId = previous?.resourceId || randomUUID(), key = `projects/${projectId}/resources/${resourceId}.png`;
+      const resourceId = previous?.resourceId || randomUUID();
+      const key = previous ? (await tx.select({ objectKey: resources.objectKey }).from(resources).where(eq(resources.id, resourceId)))[0].objectKey
+        : await resourceKey(tx, projectId, resourceId, 'png');
       if (!previous) {
         await tx.insert(resources).values({ id: resourceId, projectId, objectKey: key, mediaType: 'image/png', state: 'pending' });
         await tx.insert(underlayOperations).values({ actorId: owner, id: value.operationId, projectId, resourceId, requestHash: hash });

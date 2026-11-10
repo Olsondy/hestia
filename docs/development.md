@@ -28,6 +28,8 @@
 | `pnpm invite <email> [hours]` | 创建指定邮箱邀请，默认 24 小时、最长 720 小时；仅显示链接，不自动发邮件 |
 | `pnpm workspace:domain <slug> add\|remove <host>` | 为企业登记或移除入口域名（共享部署，ADR-0017）；不带动作时列出已登记域名。已登记域名按请求域名确定企业，未登记的域名回退到 `HESTIA_HOME_ENTRY` |
 | `pnpm usage:report --month YYYY-MM [--workspace <slug>]` | 按工作空间汇总当月（北京时间）设计任务、模型调用 token、出图与图纸转换用量，用于和企业结算；供应商未报告 token 的调用单独计数，不记为 0 |
+| `pnpm workspace:export <slug> <空目录>` / `pnpm workspace:delete <slug> --confirm <slug>` | 导出或删除一家企业的全部数据与文件（M04）；成员的平台账号只导出不删除，会话、密码等不导出 |
+| `pnpm files:migrate-keys` | 把 M04 之前写在 `projects/…` 下的私有文件移到所属企业目录，可重复运行；须在文件所在的服务器上执行 |
 | `pnpm test:db` | 使用真实本地数据库验证持久化与隔离 |
 
 先安装依赖，再运行 `pnpm db:up`（已有数据库可跳过）与 `pnpm bootstrap`，最后 `pnpm dev:all`。单独的 `pnpm setup:local`、`pnpm db:migrate`、`pnpm worker:setup`、`pnpm render:setup`、`pnpm worker:import:setup`、`pnpm setup:dxf` 仍可分别使用。Docker 服务须可用；本地 Compose 只用于联调，不代表部署厂商或生产拓扑已确定。环境文件、数据库内容和私有文件不提交。数据库仅绑定 `127.0.0.1:54329`；邀请由管理员通过现有渠道交给指定收件人，不把生成链接视为邮件服务已接通。

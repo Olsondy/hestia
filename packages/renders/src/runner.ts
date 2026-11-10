@@ -10,6 +10,7 @@ import type { RenderRow } from './service';
 import { renderArtifact, schemeShot } from './image';
 import { hash, bytesHash, renderVersions } from './versions';
 import { RENDER_LEASE_SECONDS } from './queue';
+import { resourceKey } from '../../files/src/keys';
 
 // Capture the code/assets this module was loaded alongside. A long-lived Worker must not
 // label an old in-memory renderer with newer source files' fingerprints after a hot edit.
@@ -41,7 +42,7 @@ export async function claimRender(id: string): Promise<RenderClaim | null> {
       await tx.update(projectRenders).set({ status: 'failed', leaseUntil: null, error: { code: 'RETRY_LIMIT', message: '生成失败并达到重试上限，可重新发起。' },
         updatedAt: sql`now()` }).where(eq(projectRenders.id, id)); return null;
     }
-    const generation = row.generation + 1, resourceId = randomUUID(), key = `projects/${row.projectId}/resources/${resourceId}.png`;
+    const generation = row.generation + 1, resourceId = randomUUID(), key = await resourceKey(tx, row.projectId, resourceId, 'png');
     await tx.insert(resources).values({ id: resourceId, projectId: row.projectId, objectKey: key, mediaType: 'image/png', state: 'pending' });
     await tx.insert(renderAttempts).values({ renderId: id, generation, resourceId });
     await tx.update(projectRenders).set({ status: 'running', generation, attempts: sql`${projectRenders.attempts}+1`,

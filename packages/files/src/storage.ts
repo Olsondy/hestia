@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { privateKeyPattern } from './keys';
 
 /** Production object storage can implement the same interface; no vendor is configured here. */
 export interface PrivateFileStore { put(key: string, bytes: Uint8Array): Promise<void>; read(key: string): Promise<Buffer>; remove(key: string): Promise<void>; }
 // `.src` holds an uploaded drawing in its original bytes; its media type is recorded on the resource row.
-const keyPattern = /^projects\/[0-9a-f-]{36}\/resources\/[0-9a-f-]{36}\.(png|src)$/;
 export class LocalPrivateFileStore implements PrivateFileStore {
   readonly root: string;
   constructor(root: string) {
@@ -14,7 +14,7 @@ export class LocalPrivateFileStore implements PrivateFileStore {
     if (this.root.split(path.sep).includes('public')) throw new Error('Private storage must not be inside a public directory');
   }
   private file(key: string) {
-    if (!keyPattern.test(key)) throw new Error('Invalid private storage key');
+    if (!privateKeyPattern.test(key)) throw new Error('Invalid private storage key');
     const result = path.resolve(this.root, ...key.split('/'));
     if (!result.startsWith(this.root + path.sep)) throw new Error('Private storage boundary violation');
     return result;

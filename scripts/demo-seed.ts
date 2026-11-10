@@ -70,7 +70,9 @@ async function reset() {
       await tx.delete(projects).where(inArray(projects.id, ids));
       await tx.delete(workspaceCustomers).where(eq(workspaceCustomers.workspaceId, workspace));
     });
-    for (const id of ids) await rm(path.join(storage, 'projects', id), { recursive: true, force: true });
+    // Files from before M04 sit under projects/, newer ones under workspaces/{id}/projects/.
+    for (const id of ids) for (const dir of [path.join(storage, 'projects', id), path.join(storage, 'workspaces', workspace, 'projects', id)])
+      await rm(dir, { recursive: true, force: true });
   }
   // Demo customers start signed out with fresh verification-code limits.
   await db.delete(hestiaAuthSession).where(inArray(hestiaAuthSession.userId,

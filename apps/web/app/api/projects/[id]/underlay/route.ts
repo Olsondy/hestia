@@ -9,14 +9,14 @@ export async function GET(request: Request, context: Context) {
 }
 export async function POST(request: Request, context: Context) {
   return endpoint(async () => {
-    sameOrigin(request); const identity = await principal(request), id = (await context.params).id;
+    await sameOrigin(request); const identity = await principal(request), id = (await context.params).id;
     const upload = await readUnderlayUpload(request);
     return { underlay: await saveUnderlay(identity,id,upload.input,upload.bytes,upload.mediaType) };
   }, 201);
 }
 export async function PATCH(request: Request, context: Context) {
   return endpoint(async () => {
-    sameOrigin(request);
+    await sameOrigin(request);
     return { underlay: await updateUnderlay(await principal(request),(await context.params).id,await body(request)) };
   });
 }

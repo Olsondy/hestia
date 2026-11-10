@@ -1,14 +1,15 @@
 import { redirect } from 'next/navigation';
 import { ClientApp } from '../../../../components/client/client-app';
-import { siteEntry } from '../../../../lib/site-entry';
+import { headers } from 'next/headers';
+import { pageEnterprise } from '../../../../lib/host';
 
 export const dynamic = 'force-dynamic';
 
-// Customer H5 at /c/… for the deployment's one enterprise (ADR-0016, HESTIA_HOME_ENTRY). Earlier links carried the
+// Customer H5 at /c/… for the request's enterprise: its registered domain (ADR-0017), else HESTIA_HOME_ENTRY (ADR-0016). Earlier links carried the
 // enterprise in the path (/c/demo-home/…); they redirect to the same page without it.
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ path?: string[] }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const [{ path = [] }, query] = await Promise.all([params, searchParams]);
-  const { enterprise } = siteEntry();
+  const { enterprise } = await pageEnterprise(await headers());
   if (enterprise && decodeURIComponent(path[0] ?? '') === enterprise) redirect(withQuery(`/c${path.length > 1 ? `/${path.slice(1).join('/')}` : ''}`, query));
   return <ClientApp entry={enterprise ?? ''} />;
 }

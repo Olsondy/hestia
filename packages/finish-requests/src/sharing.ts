@@ -174,11 +174,19 @@ export async function decideApplication(principal: Principal, workspaceId: strin
   return lead(principal, workspaceId, requestId);
 }
 
+/** On a registered entry domain (ADR-0017) a share code of another enterprise reads as unavailable. */
+async function inScope(tx: Database, workspaceId: string, scope: string | null) {
+  if (!scope) return;
+  const [row] = await tx.select({ slug: workspaces.slug }).from(workspaces).where(eq(workspaces.id, workspaceId));
+  if (row?.slug !== scope) throw unavailable();
+}
+
 /** Public preview: published schemes only; no customer, phone or other request data. */
-export async function sharePreview(code: string, viewerId: string | null = null, source = shareSource(null)): Promise<SharePreviewView> {
+export async function sharePreview(code: string, viewerId: string | null = null, source = shareSource(null), scope: string | null = null): Promise<SharePreviewView> {
   const shareId = await shareIdOf(code, source), canonical = normalizeShareCode(code)!;
   return transaction(async (client, tx) => {
     const { share, row } = await liveShare(client, tx, shareId, { viewerId });
+    await inScope(tx, row.workspace_id, scope);
     const application = viewerId ? ((await tx.select({ status: bindingApplications.status }).from(bindingApplications)
       .where(and(eq(bindingApplications.requestId, row.id), eq(bindingApplications.applicantId, viewerId), inArray(bindingApplications.status, ['pending', 'rejected'])))
       .orderBy(desc(bindingApplications.createdAt)).limit(1))[0]?.status as 'pending' | 'rejected' | undefined) ?? null : null;
@@ -189,14 +197,19 @@ export async function sharePreview(code: string, viewerId: string | null = null,
       viewer: viewerId ? { boundToMe: row.customer_id === viewerId, application } : null };
   });
 }
-export async function shareScene(code: string, schemeId: string, source = shareSource(null), viewerId: string | null = null) {
+export async function shareScene(code: string, schemeId: string, source = shareSource(null), viewerId: string | null = null, scope: string | null = null) {
   const shareId = await shareIdOf(code, source);
-  return transaction(async (client, tx) => renderScene(client, (await liveShare(client, tx, shareId, { viewerId })).row, schemeId));
+  return transaction(async (client, tx) => {
+    const { row } = await liveShare(client, tx, shareId, { viewerId });
+    await inScope(tx, row.workspace_id, scope);
+    return renderScene(client, row, schemeId);
+  });
 }
-export async function shareImage(code: string, schemeId: string, source = shareSource(null), viewerId: string | null = null) {
+export async function shareImage(code: string, schemeId: string, source = shareSource(null), viewerId: string | null = null, scope: string | null = null) {
   const shareId = await shareIdOf(code, source);
   const { row, renderId } = await transaction(async (client, tx) => {
     const { row } = await liveShare(client, tx, shareId, { viewerId });
+    await inScope(tx, row.workspace_id, scope);
     const [scheme] = await tx.select({ renderId: finishSchemes.renderId }).from(finishSchemes)
       .where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id)));
     if (!scheme?.renderId) throw new DomainError('NOT_FOUND', '方案不存在。', 404);

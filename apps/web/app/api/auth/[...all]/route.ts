@@ -7,7 +7,7 @@ export const GET = handlers.GET;
 /** The current email/password API accepts JSON only; bound bytes before framework parsing. */
 export async function POST(request: Request) {
   try {
-    sameOrigin(request);
+    await sameOrigin(request);
     const input = await body(request);
     const headers = new Headers(request.headers);
     headers.delete('content-length'); headers.delete('transfer-encoding');

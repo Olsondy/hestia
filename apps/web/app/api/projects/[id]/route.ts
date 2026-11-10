@@ -6,5 +6,5 @@ export async function GET(request: Request, context: Context) {
   return endpoint(async () => ({ project: await getProject(await principal(request), (await context.params).id) }));
 }
 export async function PATCH(request: Request, context: Context) {
-  return endpoint(async () => { sameOrigin(request); return { project: await renameProject(await principal(request), (await context.params).id, await body(request)) }; });
+  return endpoint(async () => { await sameOrigin(request); return { project: await renameProject(await principal(request), (await context.params).id, await body(request)) }; });
 }

@@ -7,6 +7,7 @@ import { auth, authOrigin } from '../../identity/src/auth';
 import { acceptInvitation, createInvitation } from '../../identity/src/service';
 import { mockSmsSender, setSmsSender } from '../../identity/src/sms';
 import { createWorkspace } from '../../workspaces/src/service';
+import { addWorkspaceDomain } from '../../workspaces/src/domains';
 import { shareSource } from './sharing';
 import { addStones } from '../../finishes/src/catalog';
 import { demoStones } from '../../finishes/src/demo-stones';
@@ -71,7 +72,7 @@ before(async () => {
 after(async () => {
   try {
     const users = (await pool.query('SELECT id FROM hestia_auth_user WHERE phone_number=ANY($1) OR email=$2', [phones, adminEmail])).rows.map(row => row.id);
-    const workspaces = (await pool.query('SELECT id FROM workspaces WHERE slug=$1 OR personal_user_id=ANY($2)', [slug, users])).rows.map(row => row.id);
+    const workspaces = (await pool.query('SELECT id FROM workspaces WHERE slug=ANY($1) OR personal_user_id=ANY($2)', [[slug, `${slug}-b`], users])).rows.map(row => row.id);
     await pool.query('DELETE FROM finish_requests WHERE workspace_id=ANY($1::uuid[])', [workspaces]);
     for (const table of ['project_renders', 'resources', 'project_revisions', 'operations'])
       await pool.query(`DELETE FROM ${table} WHERE project_id IN (SELECT id FROM projects WHERE workspace_id=ANY($1::uuid[]))`, [workspaces]);
@@ -194,4 +195,17 @@ test('wrong share codes are limited per source; known codes do not count', async
     assert.equal(limited.status, 429); assert.equal(limited.body.error.code, 'SHARE_CODE_RATE_LIMITED');
     assert.equal((await call(previewRoute.GET, { code: created.code }, undefined, undefined, sources[2])).status, 200, 'other sources are not affected');
   } finally { delete process.env.HESTIA_SHARE_CODE_MAX_FAILURES; }
+});
+
+test('on a registered entry domain a share code of another enterprise reads as unavailable (ADR-0017)', async () => {
+  const request = await memberRequest(), created = await share(request.id), other = `${slug}-b`;
+  await createWorkspace({ kind: 'enterprise', slug: other, name: '另一家企业', adminEmail });
+  await addWorkspaceDomain(slug, `${slug}.example.test`); await addWorkspaceDomain(other, `${other}.example.test`);
+  const at = (host: string) => previewRoute.GET(new Request(`http://${host}/api/share/x`, { headers: { Host: host, 'X-Real-IP': sources[1] } }),
+    { params: Promise.resolve({ code: created.code }) } as never);
+  assert.equal((await at(`${slug}.example.test`)).status, 200);
+  const elsewhere = await at(`${other}.example.test`);
+  assert.equal(elsewhere.status, 404); assert.equal((await elsewhere.json()).error.code, 'SHARE_UNAVAILABLE');
+  // An unregistered host is not scoped, as on a single-enterprise deployment.
+  assert.equal((await at('unregistered.example.test')).status, 200);
 });

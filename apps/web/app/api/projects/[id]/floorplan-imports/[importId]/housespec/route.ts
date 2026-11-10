@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 /** Member HouseSpec import for assisted, failed or pending-review drawings; the result waits for review. */
 export async function POST(request: Request, context: { params: Promise<{ id: string; importId: string }> }) {
   return endpoint(async () => {
-    sameOrigin(request);
+    await sameOrigin(request);
     const identity = await principal(request), { id, importId } = await context.params;
     return { import: await importHouseSpec(identity, id, importId, await readHouseSpecBody(request)) };
   });

@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
-import { isDemoDeployment, siteEntry } from '../../lib/site-entry';
+import { headers } from 'next/headers';
+import { isDemoDeployment } from '../../lib/site-entry';
+import { pageEnterprise } from '../../lib/host';
 import { TilingStage } from '../../components/site/tiling-stage';
 import { ClosingTile } from '../../components/site/closing-tile';
 
@@ -23,8 +25,8 @@ function Door({ href, children, variant = 'primary' }: { href: string | null; ch
     : <span className={`btn btn--${variant} btn--off`} aria-disabled="true">{children}</span>;
 }
 
-export default function SitePage() {
-  const { enterprise, invalid } = siteEntry(), demo = isDemoDeployment();
+export default async function SitePage() {
+  const { enterprise, invalid } = await pageEnterprise(await headers()), demo = isDemoDeployment();
   const client = enterprise ? '/c' : null, workbench = enterprise ? '/w' : null;
   return <div className="site">
     <header className="top">

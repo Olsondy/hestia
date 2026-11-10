@@ -2,7 +2,7 @@ import { reserveResource } from '../../../../../../../packages/projects/src/serv
 import { principal, endpoint, body, sameOrigin } from '../../../../../lib/server';
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   return endpoint(async () => {
-    sameOrigin(request);
+    await sameOrigin(request);
     return { resource: await reserveResource(await principal(request), (await context.params).id, await body(request)) };
   }, 201);
 }

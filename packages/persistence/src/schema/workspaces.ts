@@ -82,3 +82,18 @@ export const projectAccess = pgView("project_access", {	projectId: uuid("project
 	via: text(),
 	role: text(),
 }).existing();
+
+/** Entry domains of a workspace on the shared deployment (ADR-0017): a request's host decides its enterprise. */
+export const workspaceDomains = pgTable("workspace_domains", {
+	host: text().primaryKey().notNull(),
+	workspaceId: uuid("workspace_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+	index("workspace_domains_workspace").on(table.workspaceId),
+	foreignKey({
+			columns: [table.workspaceId],
+			foreignColumns: [workspaces.id],
+			name: "workspace_domains_workspace_id_fkey"
+		}).onDelete("cascade"),
+	check("workspace_domains_host_check", sql`host ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'::text`),
+]);

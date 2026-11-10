@@ -1,16 +1,16 @@
 import { ZodError } from 'zod';
 import { DomainError } from '../../../packages/contracts/src/project';
 import { auth } from '../../../packages/identity/src/auth';
+import { trustedOriginFor } from '../../../packages/identity/src/origins';
 
 export async function principal(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) throw new DomainError('UNAUTHENTICATED', '请先登录。', 401);
   return { userId: session.user.id };
 }
-export function sameOrigin(request: Request) {
-  const origin = request.headers.get('origin');
-  const expected = new URL(process.env.BETTER_AUTH_URL!).origin;
-  if (!origin || origin !== expected) throw new DomainError('ORIGIN_REJECTED', '请求来源不匹配，请从应用页面重新操作。', 403);
+/** State-changing requests must come from the app's own origin: BETTER_AUTH_URL or this request's registered entry domain. */
+export async function sameOrigin(request: Request) {
+  if (!(await trustedOriginFor(request.headers))) throw new DomainError('ORIGIN_REJECTED', '请求来源不匹配，请从应用页面重新操作。', 403);
 }
 export async function body(request: Request): Promise<unknown> {
   if (!request.headers.get('content-type')?.startsWith('application/json')) throw new DomainError('INVALID_CONTENT_TYPE', '请使用 JSON 请求。', 415);

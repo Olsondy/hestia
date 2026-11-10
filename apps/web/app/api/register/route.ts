@@ -4,7 +4,7 @@ import { body, endpoint, sameOrigin } from '../../../lib/server';
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
-    sameOrigin(request);
+    await sameOrigin(request);
     const input = registrationSchema.parse(await body(request));
     const headers = new Headers(request.headers); headers.delete('content-length'); headers.delete('transfer-encoding');
     const url = new URL('/api/auth/register', request.url);

@@ -6,5 +6,5 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   return endpoint(async () => ({ renders: await listRenders(await principal(request), (await context.params).id) }));
 }
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  return endpoint(async () => { sameOrigin(request); return { render: await createRender(await principal(request), (await context.params).id, await body(request)) }; }, 202);
+  return endpoint(async () => { await sameOrigin(request); return { render: await createRender(await principal(request), (await context.params).id, await body(request)) }; }, 202);
 }

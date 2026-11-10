@@ -11,10 +11,11 @@ import { register, registrationSchema } from './registration';
 import { sendPhoneCode, verifyPhoneCode } from './phone';
 import { otpConfig } from './phone-config';
 import { smsSender } from './sms';
+import { assertHostEntry, authOrigin, trustedOriginFor } from './origins';
 
 if (!process.env.BETTER_AUTH_SECRET || process.env.BETTER_AUTH_SECRET.length < 32) throw new Error('BETTER_AUTH_SECRET must contain at least 32 characters.');
 if (!process.env.BETTER_AUTH_URL) throw new Error('BETTER_AUTH_URL is required.');
-export const authOrigin = new URL(process.env.BETTER_AUTH_URL).origin;
+export { authOrigin } from './origins';
 // Fail at startup, not on the first request: refuses SMS_PROVIDER=mock in production and invalid OTP limits.
 smsSender(); otpConfig();
 
@@ -31,7 +32,8 @@ const anyBody = z.record(z.string(), z.unknown());
 
 export const auth = betterAuth({
   appName: 'Hestia', baseURL: process.env.BETTER_AUTH_URL, secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: [authOrigin],
+  // Registered entry domains are trusted only for requests sent to that same host (ADR-0017).
+  trustedOrigins: async request => [authOrigin, request ? await trustedOriginFor(request.headers) : null],
   database: drizzleAdapter(drizzle(pool, { schema }), { provider: 'pg', schema, transaction: true }),
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 8, maxPasswordLength: 128,
     requireEmailVerification: false },
@@ -42,9 +44,9 @@ export const auth = betterAuth({
     hestiaRegistration: createAuthEndpoint('/register', { method: 'POST', body: registrationSchema },
       async context => context.json(await guarded(() => register(context.body)), { status: 201 })),
     hestiaPhoneSendCode: createAuthEndpoint('/phone/send-code', { method: 'POST', body: anyBody },
-      async context => context.json(await guarded(() => sendPhoneCode(context.body, context.headers ?? new Headers())))),
+      async context => context.json(await guarded(async () => { await assertHostEntry(context.body, context.headers); return sendPhoneCode(context.body, context.headers ?? new Headers()); }))),
     hestiaPhoneSignIn: createAuthEndpoint('/phone/sign-in', { method: 'POST', body: anyBody }, async context => {
-      const result = await guarded(() => verifyPhoneCode(context.body));
+      const result = await guarded(async () => { await assertHostEntry(context.body, context.headers); return verifyPhoneCode(context.body); });
       const session = await context.context.internalAdapter.createSession(result.userId);
       const user = await context.context.internalAdapter.findUserById(result.userId);
       if (!session || !user) throw new APIError(500, { error: { code: 'INTERNAL_ERROR', message: '暂时无法完成请求，请稍后重试。' } }, {}, 500);

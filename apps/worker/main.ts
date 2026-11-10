@@ -1,4 +1,5 @@
 import { PgBoss } from 'pg-boss';
+import { fairWorkOptions } from '../../packages/tasks/src/fairness';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pool } from '../../packages/persistence/src/client';
 import { QUEUE_SCHEMA, TASK_QUEUE, validatedQueueSchema } from '../../packages/tasks/src/queue';
@@ -10,7 +11,7 @@ const boss = new PgBoss({ connectionString: process.env.DATABASE_URL, schema, mi
   schedule: false, superviseIntervalSeconds: 10, instanceName: 'hestia-task-worker' });
 boss.on('error', error => console.error('worker_queue_error', { type: error.name }));
 await boss.start();
-await boss.work<{ taskId: string; intentVersion?: number }>(TASK_QUEUE, { batchSize: 1, pollingIntervalSeconds: 1 }, async jobs => {
+await boss.work<{ taskId: string; intentVersion?: number }>(TASK_QUEUE, { batchSize: 1, pollingIntervalSeconds: 1, ...fairWorkOptions('TASK') }, async jobs => {
   // Legacy dispatches belong to the first input; a delayed job cannot claim a newer intent.
   for (const job of jobs) await runTask(job.data.taskId, { intentVersion: job.data.intentVersion ?? 1, betweenSteps: () => delay(750) });
 });

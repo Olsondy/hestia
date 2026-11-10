@@ -1,7 +1,8 @@
 import { PgBoss, getConstructionPlans } from 'pg-boss';
 import type { PoolClient } from 'pg';
 import { pool } from '../../persistence/src/client';
-import { queueInstalled, validatedQueueSchema } from '../../tasks/src/queue';
+import { createProducer, producerSchema, queueInstalled, validatedQueueSchema } from '../../tasks/src/queue';
+import { fairJobOptions, projectWorkspace } from '../../tasks/src/fairness';
 export const RENDER_QUEUE = 'hestia-static-render';
 export const RENDER_SCHEMA = 'hestia_renders';
 /**
@@ -9,10 +10,7 @@ export const RENDER_SCHEMA = 'hestia_renders';
  * queue expiry leave headroom for a busy host; a lapsed lease would otherwise retry a render that is still working.
  */
 export const RENDER_LEASE_SECONDS = 360, RENDER_EXPIRE_SECONDS = 420;
-export function createRenderQueue(schema = RENDER_SCHEMA) {
-  return new PgBoss({ schema: validatedQueueSchema(schema), db: { executeSql: (sql, values) => pool.query(sql, values) },
-    supervise: false, schedule: false, registerInstance: false, migrate: false });
-}
+export const createRenderQueue = (schema = RENDER_SCHEMA) => createProducer(schema);
 export const renderQueue = createRenderQueue();
 export async function initializeRenderQueue(schema = RENDER_SCHEMA) {
   validatedQueueSchema(schema);
@@ -25,6 +23,9 @@ export async function initializeRenderQueue(schema = RENDER_SCHEMA) {
   return queue;
 }
 export async function enqueueRender(client: PoolClient, id: string, queue = renderQueue) {
-  if (!await queue.send(RENDER_QUEUE, { renderId: id }, { id, db: { executeSql: (sql, values) => client.query(sql, values) } }))
+  const { rows: [render] } = await client.query<{ project_id: string }>('SELECT project_id FROM project_renders WHERE id = $1', [id]);
+  if (!render) throw new Error('Render job has no render');
+  const fair = await fairJobOptions(client, producerSchema(queue, RENDER_SCHEMA), RENDER_QUEUE, await projectWorkspace(client, render.project_id));
+  if (!await queue.send(RENDER_QUEUE, { renderId: id }, { id, ...fair, db: { executeSql: (sql, values) => client.query(sql, values) } }))
     throw new Error('Render was not enqueued');
 }

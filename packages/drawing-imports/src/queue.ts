@@ -1,15 +1,13 @@
 import { PgBoss, getConstructionPlans } from 'pg-boss';
 import type { PoolClient } from 'pg';
 import { pool } from '../../persistence/src/client';
-import { queueInstalled, validatedQueueSchema } from '../../tasks/src/queue';
+import { createProducer, producerSchema, queueInstalled, validatedQueueSchema } from '../../tasks/src/queue';
+import { fairJobOptions, projectWorkspace } from '../../tasks/src/fairness';
 
 export const IMPORT_QUEUE = 'hestia-floorplan-import';
 export const IMPORT_SCHEMA = 'hestia_imports';
 /** Producer on the shared pool: no start(), polling or timers. */
-export function createImportQueue(schema = IMPORT_SCHEMA) {
-  return new PgBoss({ schema: validatedQueueSchema(schema), db: { executeSql: (sql, values) => pool.query(sql, values) },
-    supervise: false, schedule: false, registerInstance: false, migrate: false });
-}
+export const createImportQueue = (schema = IMPORT_SCHEMA) => createProducer(schema);
 export const importQueue = createImportQueue();
 /** Explicit finite setup. `expireInSeconds` must exceed the converter timeout; tests shorten it to observe restarts. */
 export async function initializeImportQueue(schema = IMPORT_SCHEMA, options: { expireInSeconds?: number } = {}) {
@@ -21,6 +19,9 @@ export async function initializeImportQueue(schema = IMPORT_SCHEMA, options: { e
   return queue;
 }
 export async function enqueueImport(client: PoolClient, id: string, queue = importQueue) {
-  if (!await queue.send(IMPORT_QUEUE, { importId: id }, { id, db: { executeSql: (sql, values) => client.query(sql, values) } }))
+  const { rows: [item] } = await client.query<{ project_id: string }>('SELECT project_id FROM floorplan_imports WHERE id = $1', [id]);
+  if (!item) throw new Error('Import job has no import');
+  const fair = await fairJobOptions(client, producerSchema(queue, IMPORT_SCHEMA), IMPORT_QUEUE, await projectWorkspace(client, item.project_id));
+  if (!await queue.send(IMPORT_QUEUE, { importId: id }, { id, ...fair, db: { executeSql: (sql, values) => client.query(sql, values) } }))
     throw new Error('Import was not enqueued');
 }

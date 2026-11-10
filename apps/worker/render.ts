@@ -1,4 +1,5 @@
 import { PgBoss } from 'pg-boss';
+import { fairWorkOptions } from '../../packages/tasks/src/fairness';
 import { pool } from '../../packages/persistence/src/client';
 import { RENDER_QUEUE, RENDER_SCHEMA } from '../../packages/renders/src/queue';
 import { validatedQueueSchema } from '../../packages/tasks/src/queue';
@@ -12,7 +13,7 @@ const boss = new PgBoss({ connectionString: process.env.DATABASE_URL, schema, mi
   superviseIntervalSeconds: 10, instanceName: 'hestia-render-worker' });
 boss.on('error', error => console.error('render_queue_error', { type: error.name }));
 await boss.start();
-await boss.work<{ renderId: string }>(RENDER_QUEUE, { batchSize: 1, pollingIntervalSeconds: 1 }, async jobs => {
+await boss.work<{ renderId: string }>(RENDER_QUEUE, { batchSize: 1, pollingIntervalSeconds: 1, ...fairWorkOptions('RENDER') }, async jobs => {
   for (const job of jobs) await logged('出图', job.data.renderId, () => runRender(job.data.renderId),
     async () => (await db.select({ status: projectRenders.status, error: projectRenders.error }).from(projectRenders).where(eq(projectRenders.id, job.data.renderId)))[0]);
 });

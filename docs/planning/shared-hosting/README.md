@@ -10,7 +10,7 @@
 | M03：后台队列按企业限流与用量报告 | [M03.md](M03.md) | 无 | [#61](https://github.com/Olsondy/hestia/issues/61) |
 | M04：私有文件按企业分目录，企业数据导出与删除 | [M04.md](M04.md) | M02 | [#62](https://github.com/Olsondy/hestia/issues/62) |
 | M05：小程序登录：原生壳换票据进入 H5 | [M05.md](M05.md) | M01, M02 | [#63](https://github.com/Olsondy/hestia/issues/63) |
-| M06：跨企业隔离测试矩阵与两企业联合验收 | [M06.md](M06.md) | M01–M05 | [#64](https://github.com/Olsondy/hestia/issues/64) |
+| M06：跨企业隔离测试矩阵与两企业联合验收 | [M06.md](M06.md) | M01–M04（2026-11-10 去掉对 M05 的依赖：小程序暂缓，先保证 H5） | [#64](https://github.com/Olsondy/hestia/issues/64) |
 
 ## 顺序
 

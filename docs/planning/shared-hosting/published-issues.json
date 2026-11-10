@@ -8,6 +8,6 @@
     { "key": "M03", "number": 61, "blockedBy": [] },
     { "key": "M04", "number": 62, "blockedBy": [60] },
     { "key": "M05", "number": 63, "blockedBy": [59, 60] },
-    { "key": "M06", "number": 64, "blockedBy": [59, 60, 61, 62, 63] }
+    { "key": "M06", "number": 64, "blockedBy": [59, 60, 61, 62] }
   ]
 }

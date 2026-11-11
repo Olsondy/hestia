@@ -40,7 +40,7 @@
 
 ## 环境变量（见 `.env.example`）
 
-- `SMS_PROVIDER`：`mock` 不外发，验证码写服务端日志（`sms_mock_sent`）并在响应里返回；未设置时手机号登录不可用；其他值启动失败（尚无真实服务商适配器，接口为 `packages/identity/src/sms.ts` 的 `SmsSender` / `setSmsSender`）。`NODE_ENV=production` 且为 `mock` 时，`packages/identity/src/auth.ts` 模块初始化抛错，`apps/web/instrumentation.ts` 的 `register()` 记录 `startup_configuration_rejected` 后以退出码 1 结束。`pnpm setup:local` 新生成的 `.env` 默认写入 `SMS_PROVIDER=mock`。
+- `SMS_PROVIDER`：`mock` 不外发，验证码写服务端日志（`sms_mock_sent`）并在响应里返回；未设置时手机号登录不可用；`tencent` 走腾讯云短信（见下文「腾讯云短信」）；其他值启动失败（接口为 `packages/identity/src/sms.ts` 的 `SmsSender` / `setSmsSender`）。`NODE_ENV=production` 且为 `mock` 时，`packages/identity/src/auth.ts` 模块初始化抛错，`apps/web/instrumentation.ts` 的 `register()` 记录 `startup_configuration_rejected` 后以退出码 1 结束。`pnpm setup:local` 新生成的 `.env` 默认写入 `SMS_PROVIDER=mock`。
 - `HESTIA_OTP_TTL_SECONDS`=300、`HESTIA_OTP_MAX_ATTEMPTS`=5、`HESTIA_OTP_RESEND_SECONDS`=60、`HESTIA_OTP_RATE_WINDOW_SECONDS`=3600、`HESTIA_OTP_MAX_PER_PHONE`=5、`HESTIA_OTP_MAX_PER_SOURCE`=20（默认值与 H5 原型一致；非法值启动失败）。
 - `HESTIA_OTP_SOURCE_HEADER`：可信代理写入的客户端 IP 头（如 `x-real-ip`）。未设置时所有请求共用一个来源桶，不信任客户端自带的转发头。
 
@@ -64,3 +64,13 @@
 - 客户关系目前不授予任何项目访问；客户对项目的访问由 D06/D08 通过新的 `via` 实现。
 - 客户调用 `GET /api/workspaces` 或个人 `/api/projects` 时，会像其他账号一样惰性开通个人工作空间（账号全平台唯一，ADR-0007 允许同一人既是客户又有个人工作空间）；手机号账号没有注册积分。
 - 未设置 `HESTIA_OTP_SOURCE_HEADER` 时来源限频是全局共享桶，多人同时演示可能较早触发 `scope=source`；没有多实例全局限流以外的额外保证。过期发送记录暂不清理。
+
+## 腾讯云短信（2026-11-11 补充）
+
+用户确定短信服务商为腾讯云。`SMS_PROVIDER=tencent` 时由 `packages/identity/src/sms-tencent.ts` 直接调用 SendSms（API 2021-01-11，TC3-HMAC-SHA256 签名，不引入 SDK）。
+
+- 配置：`TENCENT_SMS_SECRET_ID` / `SECRET_KEY`（建议只授权短信的 CAM 子账号）、`SDK_APP_ID`、`SIGN_NAME`（已审核的签名）、`TEMPLATE_ID`（已审核的验证码模板）；`TEMPLATE_PARAMS` 按模板 `{1},{2}…` 的顺序写 `code` 或 `code,minutes`（默认 `code`）；`REGION` 默认 `ap-guangzhou`，`TIMEOUT_MS` 默认 10000。缺项、格式不对在启动时拒绝，不等到第一次发送。
+- 不回显验证码（`revealsCode=false`），生产环境可用。发送失败返回 `SMS_SEND_FAILED`，日志 `sms_send_failed` 带腾讯错误码（`providerCode`，如 `LimitExceeded.PhoneNumberDailyLimit`），不含验证码。
+- 签名按我方主体申请，A、B 两家企业共用一个签名和模板；按企业分别使用签名留待有需要时再做。
+- 验证（`pnpm test:core` 中的 `sms-tencent.test.ts`）：规范请求与待签字符串与腾讯云「签名方法 v3」文档示例逐字一致（文档隐去了示例密钥，最终签名无法对照）；请求体、模板参数、接口错误与号码被拒、HTTP 错误、网络失败用替身 `fetch` 检查；启动配置校验。
+- 未验证：真实腾讯云账号发送。拿到签名与模板后，在 `.env` 填上配置，用自己的手机号在 H5 登录页收一次验证码即可确认。

@@ -79,7 +79,9 @@ export async function sendPhoneCode(input: unknown, headers: Headers): Promise<S
   // The send is recorded (and counts toward limits) even if delivery then fails.
   try { await sender.send({ phoneNumber, code, ttlSeconds: config.ttlSeconds }); }
   catch (error) {
-    console.error('sms_send_failed', { provider: sender.provider, type: error instanceof Error ? error.name : 'unknown' });
+    const providerCode = (error as { providerCode?: unknown })?.providerCode;
+    console.error('sms_send_failed', { provider: sender.provider, type: error instanceof Error ? error.name : 'unknown',
+      ...(typeof providerCode === 'string' ? { providerCode } : {}) });
     throw new DomainError('SMS_SEND_FAILED', '短信发送失败，请稍后重试。', 502);
   }
   return { sent: true, expiresInSeconds: config.ttlSeconds, resendAfterSeconds: config.resendSeconds, maxAttempts: config.maxAttempts,

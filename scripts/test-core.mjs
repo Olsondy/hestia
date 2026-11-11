@@ -14,5 +14,6 @@ const result = spawnSync(process.execPath, ['--import', 'tsx', '--test',
   'packages/tasks/src/budget.unit.test.ts',
   'packages/conversation/src/layout-decision.test.ts',
   'packages/conversation/src/profile.test.ts',
+  'packages/identity/src/sms-tencent.test.ts',
 ], { stdio: 'inherit' });
 process.exit(result.status ?? 1);

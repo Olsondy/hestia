@@ -15,7 +15,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
 import { db, pool, transaction } from '../packages/persistence/src/client';
-import { hashPassword } from 'better-auth/crypto';
+import { hashPassword, verifyPassword } from 'better-auth/crypto';
 import { finishRequests, floorplanImports, hestiaAuthAccount, hestiaAuthSession, hestiaAuthUser, operations, phoneOtpChallenges, projectRenders, projectRevisions,
   projects, requestShares, resources, workspaceCustomers, workspaces } from '../packages/persistence/src/schema';
 import { acceptInvitation, createInvitation } from '../packages/identity/src/service';
@@ -97,10 +97,13 @@ async function member(e: Enterprise) {
     const invitation = await createInvitation(e.member.email);
     await acceptInvitation(invitation.token, e.member.name, password);
     id = (await userId())!;
-  } else if (!saved.password) {
-    // Accounts from earlier seeds had a random, unshown password: set the one printed below.
-    await db.update(hestiaAuthAccount).set({ password: await hashPassword(password), updatedAt: new Date() })
-      .where(and(eq(hestiaAuthAccount.userId, id), eq(hestiaAuthAccount.providerId, 'credential')));
+  } else {
+    // Earlier seeds left a random, unshown password, and a password saved here may belong to another database
+    // (same checkout, different DATABASE_URL): whenever the stored one is not the saved one, set the saved one.
+    const credential = and(eq(hestiaAuthAccount.userId, id), eq(hestiaAuthAccount.providerId, 'credential'));
+    const stored = (await db.select({ hash: hestiaAuthAccount.password }).from(hestiaAuthAccount).where(credential))[0]?.hash;
+    if (!saved.password || !stored || !(await verifyPassword({ hash: stored, password })))
+      await db.update(hestiaAuthAccount).set({ password: await hashPassword(password), updatedAt: new Date() }).where(credential);
   }
   await mkdir(path.dirname(memberFile(e)), { recursive: true });
   await writeFile(memberFile(e), JSON.stringify({ email: e.member.email, password }, null, 2), { mode: 0o600 });

@@ -155,9 +155,18 @@ export function Note({ kind, title, children }: { kind: 'danger' | 'hint' | 'ok'
 function LoginView() {
   const queries = useQueryClient();
   const [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  // On an enterprise's own domain only its members' sign-ins count (ADR-0017): a member of another enterprise signs in
+  // correctly but stays signed out here, so say so instead of silently showing the form again.
+  const [elsewhere, setElsewhere] = useState(false);
   const login = useMutation({
-    mutationFn: () => post('/api/auth/sign-in/email', { email: email.trim(), password }),
-    onSuccess: () => queries.invalidateQueries({ queryKey: ['session'] }),
+    mutationFn: async () => {
+      await post('/api/auth/sign-in/email', { email: email.trim(), password });
+      const user = await sessionUser();
+      if (!user) await signOut().catch(() => {});
+      return user;
+    },
+    onMutate: () => setElsewhere(false),
+    onSuccess: user => { if (user) queries.setQueryData(['session'], user); else setElsewhere(true); },
   });
   const submit = (event: FormEvent) => { event.preventDefault(); if (!login.isPending) login.mutate(); };
   const error = login.error instanceof ClientError ? login.error : null;
@@ -171,6 +180,7 @@ function LoginView() {
         : error.status === 0 ? <Note kind="danger" title="连接中断">请检查网络后重试。</Note>
           : error.status >= 500 ? <Note kind="danger" title="暂时无法登录">请稍后重试。</Note>
             : <Note kind="danger" title="登录失败">邮箱或密码不正确，请检查后重试。</Note>)}
+      {elsewhere && <Note kind="danger" title="不是本企业的成员">这个账号不能登录本企业的工作台。请使用本企业邀请你时的邮箱，或从你所在企业的工作台地址登录。</Note>}
       <button className="btn btn--primary" type="submit" disabled={login.isPending}>{login.isPending ? '正在登录…' : '登录'}</button>
       <p className="muted small" style={{ marginTop: 14 }}>客户请从企业的 H5 入口用手机号登录。</p>
     </form>

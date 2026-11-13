@@ -1,0 +1,46 @@
+{
+  "repository": "Olsondy/hestia",
+  "verifiedOn": "2026-11-14",
+  "specification": 65,
+  "tickets": [
+    {
+      "key": "AM-P",
+      "number": 66,
+      "blockedBy": [],
+      "state": "closed"
+    },
+    {
+      "key": "AM01",
+      "number": 67,
+      "blockedBy": []
+    },
+    {
+      "key": "AM02",
+      "number": 68,
+      "blockedBy": [
+        67
+      ]
+    },
+    {
+      "key": "AM03",
+      "number": 69,
+      "blockedBy": [
+        68
+      ]
+    },
+    {
+      "key": "AM04",
+      "number": 70,
+      "blockedBy": [
+        68
+      ]
+    },
+    {
+      "key": "AM05",
+      "number": 71,
+      "blockedBy": [
+        69
+      ]
+    }
+  ]
+}

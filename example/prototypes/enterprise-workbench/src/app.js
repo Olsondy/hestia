@@ -4,17 +4,17 @@ import {icon} from '../../client-h5/src/icons.js';
 import {stones, stoneById, layoutName, specLabel, villa, facets, facetById, kindName, makeSchemes, checkFinish, maskPhone, softStyles, softById} from '../../client-h5/src/data.js';
 import {swatchURL} from '../../client-h5/src/stone.js';
 import {renderImage, mountViewer} from '../../client-h5/src/render3d.js';
-import {member, followName, followOrder, statusInfo, seedLeads, lastEvent, needsAction} from './data.js';
+import {member, followName, followOrder, statusInfo, seedLeads, lastEvent, needsAction, seedAI, aiUsage, supportAgent, seedVisits} from './data.js';
 
-const KEY = 'hestia.enterprise-workbench.v2';
-const XP = {search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M21 21l-5-5', spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 17l.7 1.8 1.8.7-1.8.7L19 22l-.7-1.8-1.8-.7 1.8-.7z',
+const KEY = 'hestia.enterprise-workbench.v5';
+const XP = {gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z', search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M21 21l-5-5', spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 17l.7 1.8 1.8.7-1.8.7L19 22l-.7-1.8-1.8-.7 1.8-.7z',
   panel: 'M3 4h18v16H3zM9 4v16', sun: 'M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0', moon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z'};
 const ic = (n, s = 18) => XP[n] ? `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${XP[n]}"/></svg>` : icon(n, s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const narrow = () => matchMedia('(max-width: 1180px)').matches;
 const freshDraft = () => ({name: '', note: '', floor: 'f1', facets: ['f1-living', 'f1-dining', 'f1-wall', 's12'], stones: ['yashi', 'shaanna']});
-const fresh = () => ({session: true, theme: 'system', leads: seedLeads(), seq: 8, ui: {}, draft: freshDraft(), login: {email: member.email, error: null}});
+const fresh = () => ({session: true, theme: 'system', role: 'admin', leads: seedLeads(), seq: 8, ui: {}, draft: freshDraft(), login: {email: member.email, error: null}, ai: seedAI(), modelMenu: false, visits: seedVisits()});
 let state;
 try { state = JSON.parse(localStorage.getItem(KEY) || 'null') || fresh(); } catch { state = fresh(); }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* 隐私模式仅内存 */ } };
@@ -56,6 +56,7 @@ const Btn = (label, {kind = 'primary', act, k, v, href, sm, grow, lead, disabled
   const cls = `btn btn--${kind}${sm ? ' btn--sm' : ''}${grow ? ' btn--grow' : ''}`, inner = `${lead ? ic(lead, sm ? 14 : 16) : ''}${label}`;
   return href && !disabled ? `<a class="${cls}" href="#${href}">${inner}</a>` : `<button class="${cls}"${act ? ` data-act="${act}"` : ''}${k ? ` data-k="${k}"` : ''}${v != null ? ` data-v="${esc(v)}"` : ''}${disabled ? ' disabled' : ''} ${attrs}>${inner}</button>`;
 };
+const Switch = (on, act, v, label, disabled = false) => `<button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(label)}" data-act="${act}" data-v="${esc(v)}"${disabled ? ' disabled' : ''}><i></i></button>`;
 const ActionBar = (hint, actions) => `<div class="action-bar"><span class="hint">${hint}</span>${actions}</div>`;
 const Steps = (labels, at) => `<ol class="steps-row">${labels.map((t, i) => `<li data-s="${i < at ? 'done' : i === at ? 'now' : 'todo'}"><i>${i < at ? icon('check', 12) : ''}</i>${t}</li>`).join('')}</ol>`;
 const isDark = () => document.documentElement.dataset.theme === 'dark' || (state.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -65,8 +66,9 @@ function TopBar(nav) {
     ${nav === false ? '' : `<nav class="topnav" aria-label="工作台">${[['today', '/', '今日', counts], ['leads', '/leads', '线索'], ['new', '/new', '预置方案'], ['stones', '/stones', '石材与软装']].map(([k, href, t, n]) => `<a href="#${href}"${nav === k ? ' aria-current="page"' : ''}>${t}${n ? `<span class="count">${n}</span>` : ''}</a>`).join('')}</nav>`}
     <div class="topbar__end">${nav === false ? '' : `<label class="search">${ic('search', 15)}<input id="gsearch" placeholder="搜索客户或项目"></label>`}
       <button class="icon-btn" data-act="theme" aria-label="${dark ? '切换到浅色' : '切换到深色'}">${ic(dark ? 'sun' : 'moon', 17)}</button>
-      ${state.session && nav !== false ? `<span class="member"><span class="member__name">${member.name}</span><span class="avatar" title="${member.name}">顾</span></span><button class="icon-btn" data-act="logout" aria-label="退出登录">${icon('logout', 16)}</button>` : ''}
-      <button class="proto-btn" data-act="review">审阅</button></div></header>`;
+      ${state.session && nav !== false && (state.role === 'admin' || readonly()) ? `<a class="icon-btn${nav === 'settings' ? ' icon-btn--on' : ''}" href="#/settings/models" aria-label="企业设置"${nav === 'settings' ? ' aria-current="page"' : ''} title="企业设置">${ic('gear', 17)}</a>` : ''}
+      ${state.session && nav !== false ? `${readonly() ? `<span class="member"><span class="member__name">${supportAgent.name} · ${supportAgent.org}</span><span class="tag tag--act">只读</span></span>` : `<span class="member"><span class="member__name">${member.name}</span><span class="avatar" title="${member.name}">顾</span></span>`}<button class="icon-btn" data-act="logout" aria-label="退出登录">${icon('logout', 16)}</button>` : ''}
+      <button class="proto-btn" data-act="review">审阅</button></div></header>${state.session && nav !== false && readonly() ? `<div class="support-bar" role="status">${icon('info', 15)}<span><b>平台支持 · 只读</b>你正以超级管理员身份查看本企业的工作台，不能修改方案、发消息或改设置。本次进入已记入企业的访问记录。</span></div>` : ''}`;
 }
 const Shell = (content, nav) => `${TopBar(nav)}<main id="page">${content}</main>`;
 
@@ -209,24 +211,50 @@ function agentPlan(text) {
     steps: ['读取 9 处饰面与企业目录（石材 6 款、软装风格 3 套）', lux ? '硬装：客厅、餐厅地面 鱼肚白 750×1500 直铺，黑金花波打线' : '硬装：客厅、餐厅地面 雅士白 800×800 斜铺，黑金花波打线；背景墙 啡网纹工字铺',
       lux ? '软装：轻奢（弧形丝绒沙发、大理石金属茶几、浅色长毛地毯）' : '软装：客厅新中式（圈椅、长条茶几、屏风），二层主卧实木架子床', '排版与家具碰撞校验：通过，1 条窄条提示', '出图：客厅、起居厅、茶室']};
 }
+// 模型（ADR-0018）：成员只在企业已启用的模型里选；额度用完、模型不可用、企业未开通时如实说明，不模拟结果、不自动换模型
+const yuan = cents => `¥${(cents / 100).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+const usable = () => state.ai.models.filter(m => m.enabled && m.platform === 'ok');
+const quotaLeft = () => state.ai.quota == null ? Infinity : state.ai.quota - state.ai.used - state.ai.reserved;
+const readonly = () => state.role === 'support';
+const pickedModel = A => state.ai.models.find(m => m.id === (A.model || state.ai.defaultModel)) || usable()[0];
+function agentBlock(A) {
+  if (!usable().length) return 'none';
+  if (quotaLeft() <= 0) return 'quota';
+  const m = pickedModel(A); return !m || !m.enabled || m.platform !== 'ok' ? 'model' : null;
+}
+function ModelBar(A, block) {
+  if (block === 'none') return '';
+  const m = pickedModel(A), bad = block === 'model';
+  const menu = state.modelMenu ? `<div class="model-menu" role="listbox" aria-label="选择模型">${usable().map(x => `<button role="option" aria-selected="${x.id === m?.id}" data-act="model-set" data-v="${x.id}"><span><b>${esc(x.name)}${x.id === state.ai.defaultModel ? '<em>默认</em>' : ''}</b><small><span class="mono">${esc(x.modelId)}</span> · ${esc(x.description)}</small></span>${x.id === m?.id ? icon('check', 14) : ''}</button>`).join('')}
+    <p>列出本企业已启用的全部模型。切换后从下一步起生效，已完成的步骤不重做。</p></div>` : '';
+  return `<div class="model-bar">${menu}<button type="button" class="model-pick${bad ? ' model-pick--bad' : ''}" data-act="model-menu" aria-haspopup="listbox" aria-expanded="${state.modelMenu}"><span class="muted">模型</span><b>${esc(m?.name || '请选择')}</b>${bad ? '<em>不可用</em>' : ''}${icon('down', 14)}</button>
+    <span class="model-bar__left${block === 'quota' ? ' danger' : ''}">${block === 'quota' ? '本月额度已用完' : state.ai.quota == null ? '本月额度不限' : `本月剩余 <span class="num">${yuan(quotaLeft())}</span>`}</span></div>`;
+}
 function AgentPanel(l, s) {
-  const A = l.agent ||= {status: 'idle', messages: [], candidate: null}, st = A.status;
+  const A = l.agent ||= {status: 'idle', messages: [], candidate: null}, st = A.status, block = agentBlock(A);
   const base = s && !s.candidate ? `方案 ${s.id} · ${esc(s.title)}` : s?.candidate ? '当前候选' : '空白户型';
   const msgs = A.messages.map(m => m.role === 'user' ? `<div class="msg msg--me">${esc(m.text)}</div>`
-    : `<div class="msg msg--ai">${m.steps ? `<ol class="steps">${m.steps.map((t, i) => `<li class="${i < (m.done ?? m.steps.length) ? 'done' : i === m.done ? 'now' : ''}">${esc(t)}</li>`).join('')}</ol>` : ''}${m.text ? `<p>${esc(m.text)}</p>` : ''}${m.view && candidateOf(l) ? Btn('在画面中查看', {kind: 'secondary', sm: true, act: 'scheme', v: 'D'}) : ''}${m.fallback ? Btn('打开预先出好的演示方案', {kind: 'secondary', sm: true, act: 'agent-fallback', v: l.id}) : ''}</div>`).join('');
+    : m.role === 'sys' ? `<p class="msg msg--sys">${esc(m.text)}</p>`
+    : `<div class="msg msg--ai">${m.steps ? `<ol class="steps">${m.steps.map((t, i) => `<li class="${i < (m.done ?? m.steps.length) ? 'done' : i === m.done ? 'now' : ''}">${esc(t)}</li>`).join('')}</ol>` : ''}${m.text ? `<p>${esc(m.text)}</p>` : ''}${m.model ? `<small class="msg__meta">由「${esc(m.model)}」生成</small>` : ''}${m.view && candidateOf(l) ? Btn('在画面中查看', {kind: 'secondary', sm: true, act: 'scheme', v: 'D'}) : ''}${m.fallback ? Btn('打开预先出好的演示方案', {kind: 'secondary', sm: true, act: 'agent-fallback', v: l.id}) : ''}</div>`).join('');
+  const blocked = block === 'none' ? Note('hint', '未开通', `本企业还没有可用的模型，Agent 暂时不能出方案，不会模拟结果。${state.role === 'admin' ? '可在<a class="text-link" href="#/settings/models">企业设置</a>里启用模型；没有可启用的模型时请联系我方开通。' : '请联系企业管理员。'}`) + `<div>${Btn('打开预先出好的演示方案', {kind: 'secondary', sm: true, act: 'agent-fallback', v: l.id})}</div>`
+    : block === 'quota' ? Note('hint', '本月额度已用完', `新的请求不会发出；已有候选与方案不受影响。${state.role === 'admin' ? '需要增加额度请联系我方。' : '请联系企业管理员。'}`) : '';
+  const off = st === 'running' || block === 'none' || block === 'quota';
   return `<aside class="float float--right" aria-label="Agent 助手">
     <header class="float__head row"><div><b class="float__title">${ic('spark', 16)} Agent 助手</b><p class="muted">以「${base}」为起点 · 结果先作为候选</p></div><button class="icon-btn" data-act="agent" aria-label="收起 Agent 助手">${icon('close', 16)}</button></header>
-    <div class="float__body chat" id="agent-log">${msgs || '<p class="agent-intro">说出客户的要求，Agent 在企业石材库与软装目录内出整体方案（硬装 + 软装）。候选会出现在画面和方案列表里，客户看不到，由你决定是否采用。</p>'}
-      ${st !== 'running' && !candidateOf(l) ? `<div class="agent-prompts">${prompts.map(t => `<button class="chip" data-act="agent-say" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}</div>
-    <form class="composer" data-form="agent"><textarea name="text" rows="2" maxlength="300" placeholder="${candidateOf(l) ? '继续调整候选，例如：主卧换成轻奢' : '描述客户的要求，例如：二层主卧换成轻奢风'}"${st === 'running' ? ' disabled' : ''}></textarea><button class="btn btn--primary btn--icon" type="submit" aria-label="发送"${st === 'running' ? ' disabled' : ''}>${icon('send', 16)}</button></form></aside>`;
+    <div class="float__body chat" id="agent-log">${msgs || (block === 'none' ? '' : '<p class="agent-intro">说出客户的要求，Agent 在企业石材库与软装目录内出整体方案（硬装 + 软装）。候选会出现在画面和方案列表里，客户看不到，由你决定是否采用。</p>')}
+      ${blocked}${!off && !candidateOf(l) && !A.messages.length ? `<div class="agent-prompts">${prompts.map(t => `<button class="chip" data-act="agent-say" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}</div>
+    <div class="agent-foot">${ModelBar(A, block)}<form class="composer" data-form="agent"><textarea name="text" rows="2" maxlength="300" placeholder="${candidateOf(l) ? '继续调整候选，例如：主卧换成轻奢' : '描述客户的要求，例如：二层主卧换成轻奢风'}"${off ? ' disabled' : ''}></textarea><button class="btn btn--primary btn--icon" type="submit" aria-label="发送"${off ? ' disabled' : ''}>${icon('send', 16)}</button></form></div></aside>`;
 }
 function agentRun(l, text) {
   const A = l.agent ||= {status: 'idle', messages: [], candidate: null};
+  const block = agentBlock(A);
+  if (block === 'none' || block === 'quota') return;
   A.messages.push({role: 'user', text});
-  if (A.forceNoModel) { A.status = 'nomodel'; A.messages.push({role: 'ai', text: '没有可用的模型（未配置或网络不可用），这次请求没有执行，不会模拟结果。', fallback: true}); return; }
+  if (block === 'model') { A.messages.push({role: 'ai', text: `「${pickedModel(A).name}」已不可用（平台已停用），这一步没有执行，已有候选不受影响。请在下方改选模型后重试，不会自动换用其他模型。`}); return; }
+  if (A.forceNoModel) { A.status = 'nomodel'; A.messages.push({role: 'ai', text: `「${pickedModel(A).name}」的服务暂时没有响应，这次请求没有执行，不会模拟结果。可以稍后重试或改选其他模型。`, fallback: true}); return; }
   const plan = agentPlan(text);
   if (plan.rejected) { A.messages.push({role: 'ai', text: plan.rejected}); return; }
-  const m = {role: 'ai', steps: plan.steps, done: 0}; A.messages.push(m); A.status = 'running';
+  const m = {role: 'ai', steps: plan.steps, done: 0, model: pickedModel(A).name}; A.messages.push(m); A.status = 'running'; state.ai.used += 2860;
   const tick = () => { m.done++; if (m.done < plan.steps.length) { save(); render(); setTimeout(tick, 700); return; }
     const base = makeSchemes(l.facets.length ? l.facets : ['f1-living', 'f1-dining', 'f1-wall', 's12'], plan.stones)[plan.theme];
     A.candidate = {...base, id: 'D', title: plan.title, soft: plan.soft};
@@ -304,6 +332,46 @@ function StonesScreen() {
       <dl>${Object.entries(st.rooms).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div></article>`).join('')}</div></div>`, 'stones');
 }
 
+// 企业设置（ADR-0018）：只有企业管理员可见；模型由平台分配，企业只能启用、停用、设默认；额度与并发由平台设置
+const SettingsNav = cur => `<div class="segmented segmented--fit" role="tablist" aria-label="设置">${[['models', '模型'], ['usage', '用量'], ['access', '访问记录']].map(([k, t]) => `<button role="tab" aria-selected="${cur === k}" aria-pressed="${cur === k}" data-act="nav" data-v="/settings/${k}">${t}</button>`).join('')}</div>`;
+function SettingsShell(cur, body) {
+  if (state.role !== 'admin' && !readonly()) return Shell(`<div class="page"><div class="empty"><b>只有企业管理员可以查看设置</b>需要启用模型或查看用量，请联系企业管理员。</div></div>`, 'settings');
+  return Shell(`<div class="page"><header class="page__head"><div><h1 class="page__title">企业设置</h1><p class="page__sub">${readonly() ? '平台支持只读查看，不能修改。' : '只有企业管理员能看到这里。'}</p></div></header>
+    <div class="list-tools">${SettingsNav(cur)}</div>${body}</div>`, 'settings');
+}
+function QuotaPanel() {
+  const ai = state.ai, free = ai.quota == null, left = quotaLeft(), pct = ai.quota ? Math.min(100, Math.round((ai.used + ai.reserved) / ai.quota * 100)) : 0;
+  return `<section class="panel"><div class="panel__head"><h2 class="panel__title">本月额度</h2><span class="small muted num">${free ? '不限' : yuan(ai.quota)}</span></div><div class="panel__body">
+    <dl class="ledger"><div><dt>已用</dt><dd class="num">${yuan(ai.used)}</dd></div><div><dt>预占中</dt><dd class="num">${yuan(ai.reserved)}</dd></div><div><dt>剩余</dt><dd class="num${left <= 0 ? ' danger' : ''}">${free ? '不限' : yuan(Math.max(0, left))}</dd></div></dl>
+    ${free ? '<p class="small muted">本企业的额度不设上限，只统计用量，不会因额度停止。</p>' : `<span class="meter${left <= 0 ? ' meter--full' : ''}" role="img" aria-label="已用 ${pct}%"><i style="width:${pct}%"></i></span>`}
+    <p class="small muted" style="margin-top:12px">同时运行的 Agent 任务最多 <span class="num">${ai.concurrency}</span> 个，超过时排队。额度、并发与可用模型由我方设置，需要调整请联系我方。额度用完后新的请求不会发出，已有方案不受影响。</p></div></section>`;
+}
+function SettingsModelsScreen() {
+  const ai = state.ai;
+  const rows = ai.models.map(m => { const off = m.platform !== 'ok', isDefault = m.id === ai.defaultModel;
+    return `<li class="model-row${off ? ' model-row--off' : ''}"><div class="model-row__main"><b>${esc(m.name)}</b>${isDefault ? Tag('默认') : ''}${off ? Tag('平台已停用', true) : ''}<small><span class="mono">${esc(m.modelId)}</span> · ${esc(m.description)}</small></div>
+      <div class="model-row__actions">${m.enabled && !isDefault && !off && !readonly() ? Btn('设为默认', {kind: 'secondary', sm: true, act: 'ai-default', v: m.id}) : ''}${Switch(m.enabled && !off, 'ai-toggle', m.id, `启用「${m.name}」`, off || readonly())}</div></li>`; }).join('');
+  return SettingsShell('models', `<div class="settings-grid"><section class="panel"><div class="panel__head"><h2 class="panel__title">可用模型</h2><span class="small muted">${usable().length} 个已启用</span></div><div class="panel__body">
+    ${ai.models.length ? `<ul class="model-list">${rows}</ul>` : '<div class="empty"><b>还没有开通模型</b>请联系我方开通，开通后会出现在这里。</div>'}
+    <p class="small muted" style="margin-top:12px">成员在 Agent 助手里只能选择已启用的模型，默认选中「默认」模型。停用某个模型后，正在用它的任务会在当前一步结束后停止，已有成果保留。</p></div></section>
+    ${QuotaPanel()}</div>`);
+}
+function SettingsUsageScreen(q) {
+  const month = q.m || '2026-11', by = q.by || 'member', rows = aiUsage[month]?.[by] || [];
+  const tk = n => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${(n / 1e3).toFixed(1)}K`, total = rows.reduce((a, r) => [a[0] + r[1], a[1] + r[2], a[2] + r[3], a[3] + r[4]], [0, 0, 0, 0]);
+  const line = (name, c, i, o, cost, cls = '') => `<div class="table__row table__row--static ${cls}"><span class="cell-main"><b>${esc(name)}</b></span><span class="num">${c.toLocaleString('zh-CN')}</span><span class="num">${tk(i)}</span><span class="num">${tk(o)}</span><span class="num strong">${yuan(cost)}</span></div>`;
+  const seg = (opts, v, k, label) => `<div class="segmented segmented--fit" role="radiogroup" aria-label="${label}">${opts.map(([x, t]) => `<button role="radio" aria-checked="${x === v}" data-act="ai-usage" data-k="${k}" data-v="${x}">${t}</button>`).join('')}</div>`;
+  return SettingsShell('usage', `<div class="list-tools">${seg([['2026-11', '2026 年 11 月'], ['2026-10', '10 月']], month, 'm', '月份')}${seg([['member', '按成员'], ['model', '按模型']], by, 'by', '汇总方式')}<span class="small muted" style="margin-left:auto">合计 <span class="num">${yuan(total[3])}</span></span></div>
+    <div class="table table--ai"><div class="table__head"><span>${by === 'member' ? '成员' : '模型'}</span><span>调用次数</span><span>输入 token</span><span>输出 token</span><span>金额</span></div>
+    ${rows.map(r => line(...r)).join('')}${line('合计', ...total, 'table__total')}</div>
+    <p class="small muted" style="margin-top:12px">金额按每次调用当时的单价折算，用于和我方结算；单价不在这里显示。</p>`);
+}
+function SettingsAccessScreen() {
+  const rows = state.visits.map(v => `<div class="table__row table__row--static"><span class="num small muted">${clock(v.at)}</span><span class="small">${esc(v.who)} · 平台支持</span><span class="small">${v.pages.map(esc).join('、')}</span></div>`).join('');
+  return SettingsShell('access', `<div class="table table--access"><div class="table__head"><span>进入时间</span><span>人员</span><span>查看了</span></div>${rows || '<div class="empty"><b>还没有访问记录</b>我方平台支持进入本企业工作台时会记在这里。</div>'}</div>
+    <p class="small muted" style="margin-top:12px">我方平台支持排查问题时可以只读查看本企业的工作台，不能修改方案、发消息或改设置。每次进入都记在这里，不能删除。</p>`);
+}
+
 // ---------- 弹层 ----------
 const modal = () => document.querySelector('#modal');
 function openModal(html) { const m = modal(); m.innerHTML = `<div class="modal-body" tabindex="-1">${html}</div>`; if (!m.open) m.showModal(); m.querySelector('.modal-body').focus(); }
@@ -356,7 +424,22 @@ const R = {
   'agent-ready': ['Agent 助手', '候选方案在画面中', () => { reset(); const l = leadById('L1'); l.agent = agentDemo(l); state.ui.L1 = {scheme: 'D', agent: true}; go('/lead/L1'); }],
   'agent-3d': ['Agent 助手', '候选 · 3D 查看', () => { reset(); const l = leadById('L1'); l.agent = agentDemo(l); state.ui.L1 = {scheme: 'D', view: '3d', agent: true}; go('/lead/L1'); }],
   'agent-rejected': ['Agent 助手', '超出企业目录被拒', () => { reset(); leadById('L1').agent = {status: 'idle', messages: [{role: 'user', text: prompts[2]}, {role: 'ai', text: agentPlan(prompts[2]).rejected}], candidate: null}; state.ui.L1 = {agent: true}; go('/lead/L1'); }],
-  'agent-nomodel': ['Agent 助手', '未配置模型 / 无网络', () => { reset(); leadById('L1').agent = {status: 'nomodel', forceNoModel: true, messages: [{role: 'user', text: prompts[0]}, {role: 'ai', text: '没有可用的模型（未配置或网络不可用），这次请求没有执行，不会模拟结果。', fallback: true}], candidate: null}; state.ui.L1 = {agent: true}; go('/lead/L1'); }],
+  'agent-nomodel': ['Agent 助手', '模型服务无响应', () => { reset(); leadById('L1').agent = {status: 'nomodel', forceNoModel: true, messages: [{role: 'user', text: prompts[0]}, {role: 'ai', text: '「深度设计」的服务暂时没有响应，这次请求没有执行，不会模拟结果。可以稍后重试或改选其他模型。', fallback: true}], candidate: null}; state.ui.L1 = {agent: true}; go('/lead/L1'); }],
+  'agent-model-menu': ['选择模型', '展开模型列表', () => { reset(); state.ui.L1 = {agent: true}; go('/lead/L1'); setTimeout(() => { state.modelMenu = true; save(); render(); }, 80); }],
+  'agent-switch': ['选择模型', '候选之后切换模型', () => { reset(); const l = leadById('L1'); l.agent = agentDemo(l); l.agent.messages[1].model = '深度设计'; l.agent.model = 'm2'; l.agent.messages.push({role: 'sys', text: '已切换到「快速修改」，从下一步起使用'}); state.ui.L1 = {scheme: 'D', agent: true}; go('/lead/L1'); }],
+  'agent-model-off': ['选择模型', '所选模型被平台停用', () => { reset(); const l = leadById('L1'); state.ai.models[1].platform = 'disabled'; l.agent = {status: 'idle', model: 'm2', candidate: null, messages: [{role: 'user', text: prompts[1]}, {role: 'ai', text: '「快速修改」已不可用（平台已停用），这一步没有执行，已有候选不受影响。请在下方改选模型后重试，不会自动换用其他模型。'}]}; state.ui.L1 = {agent: true}; go('/lead/L1'); }],
+  'agent-quota': ['选择模型', '本月额度已用完', () => { reset(); state.ai.used = state.ai.quota; state.ai.reserved = 0; state.ui.L1 = {agent: true}; go('/lead/L1'); }],
+  'agent-none': ['选择模型', '企业未开通模型', () => { reset(); state.ai.models = []; state.ui.L1 = {agent: true}; go('/lead/L1'); }],
+  'settings-models': ['企业设置', '设置 · 模型（企业管理员）', () => { reset(); go('/settings/models'); }],
+  'settings-off': ['企业设置', '设置 · 有模型被平台停用', () => { reset(); state.ai.models[2].platform = 'disabled'; go('/settings/models'); }],
+  'settings-quota': ['企业设置', '设置 · 额度已用完', () => { reset(); state.ai.used = state.ai.quota; state.ai.reserved = 0; go('/settings/models'); }],
+  'settings-usage': ['企业设置', '设置 · 用量', () => { reset(); go('/settings/usage'); }],
+  'settings-member': ['企业设置', '普通成员（没有设置入口）', () => { reset(); state.role = 'member'; go('/'); }],
+  'settings-unlimited': ['企业设置', '设置 · 额度不限', () => { reset(); state.ai.quota = null; go('/settings/models'); }],
+  'settings-access': ['企业设置', '设置 · 访问记录（企业管理员）', () => { reset(); go('/settings/access'); }],
+  'support': ['平台支持', '超级管理员进入（只读）', () => { reset(); enterSupport(); go('/'); }],
+  'support-lead': ['平台支持', '只读查看方案与 Agent', () => { reset(); enterSupport(); const l = leadById('L1'); l.agent = agentDemo(l); state.ui.L1 = {scheme: 'D', agent: true}; go('/lead/L1'); }],
+  'support-settings': ['平台支持', '只读查看企业设置', () => { reset(); enterSupport(); go('/settings/models'); }],
   'agent-pending': ['Agent 助手', '已采用 · 待审方案 D', () => { reset(); const l = leadById('L1'); l.schemes = [...l.schemes, {...agentDemo(l).candidate, pending: true}]; l.revisions.D = 1; state.ui.L1 = {scheme: 'D'}; go('/lead/L1'); }],
   'agent-new': ['Agent 助手', '预置方案交给 Agent（空白户型）', () => { reset(); actions.create({dataset: {k: 'agent'}}); }],
   'review': ['审核与转换', '审核 · 转换结果', () => { reset(); go('/lead/L3/review'); }],
@@ -379,6 +462,11 @@ function openReview() {
 }
 window.__review = {ids: Object.keys(R), go: id => { closeModal(); R[id][2](); save(); render(); }, theme: t => { state.theme = t; applyTheme(); save(); render(); }};
 
+// 平台支持只读：写操作在服务端一律拒绝，原型在这里拦截并说明
+function enterSupport() { state.role = 'support'; state.visits.unshift({at: Date.now(), who: supportAgent.name, pages: [], live: true}); }
+const WRITES = new Set(['follow', 'agent-say', 'model-set', 'ai-toggle', 'ai-default', 'agent-discard', 'agent-fallback', 'share', 'share-create', 'confirm', 'do', 'generate', 'regen', 'assist', 'assist-generate', 'create']);
+const denyReadonly = () => toast('平台支持只读，不能修改');
+
 // ---------- 交互 ----------
 const current = () => leadById(parse().parts[1]);
 const log = (l, text) => l.history.push({at: Date.now(), text});
@@ -395,6 +483,14 @@ const actions = {
   left: () => { const u = uiOf(current()); u.left = !u.left; if (u.left && narrow()) u.agent = false; },
   agent: () => { const u = uiOf(current()); u.agent = !u.agent; if (u.agent && narrow()) u.left = false; },
   'agent-say': el => { agentRun(current(), el.dataset.v); },
+  'model-menu': () => { state.modelMenu = !state.modelMenu; },
+  'model-set': el => { const l = current(), A = l.agent ||= {status: 'idle', messages: [], candidate: null}, before = pickedModel(A)?.id; A.model = el.dataset.v; state.modelMenu = false;
+    if (before !== A.model && A.messages.length) A.messages.push({role: 'sys', text: `已切换到「${pickedModel(A).name}」，从下一步起使用`}); },
+  'ai-toggle': el => { const ai = state.ai, m = ai.models.find(x => x.id === el.dataset.v);
+    if (m.enabled && m.id === ai.defaultModel) { toast('这是默认模型，先把其他模型设为默认再停用'); return false; }
+    m.enabled = !m.enabled; toast(m.enabled ? `已启用「${m.name}」` : `已停用「${m.name}」`); },
+  'ai-default': el => { const m = state.ai.models.find(x => x.id === el.dataset.v); state.ai.defaultModel = m.id; toast(`「${m.name}」设为默认`); },
+  'ai-usage': el => { const {q} = parse(); go('/settings/usage?' + new URLSearchParams({...q, [el.dataset.k]: el.dataset.v}).toString()); return false; },
   'agent-discard': () => { const l = current(); l.agent.candidate = null; l.agent.status = 'idle'; l.agent.messages.push({role: 'ai', text: '已放弃这个候选。'}); uiOf(l).scheme = l.schemes?.[0]?.id || 'A'; toast('已放弃候选'); },
   'agent-fallback': el => { const l = leadById(el.dataset.v), demo = agentDemo(l); l.agent = {status: 'ready', forceNoModel: true, candidate: {...demo.candidate, title: '雅致新中式（预先生成）'}, messages: [...l.agent.messages.map(m => ({...m, fallback: false})), {role: 'ai', text: '已打开预先出好的演示方案（演示数据，非本次生成），放在画面里。', view: true}]}; Object.assign(uiOf(l), {scheme: 'D', view: 'image'}); },
   share: el => { shareModal(el.dataset.v); return false; },
@@ -468,6 +564,7 @@ function view() {
       return WorkspaceScreen(l); }
     case 'new': return NewScreen();
     case 'stones': return StonesScreen();
+    case 'settings': return parts[1] === 'usage' ? SettingsUsageScreen(q) : parts[1] === 'access' ? SettingsAccessScreen() : SettingsModelsScreen();
     default: return TodayScreen();
   }
 }
@@ -488,16 +585,21 @@ function render() {
   root.querySelector('#dname')?.addEventListener('input', e => { state.draft.name = e.target.value; save(); });
   root.querySelector('#dnote')?.addEventListener('input', e => { state.draft.note = e.target.value; save(); });
   const log = root.querySelector('#agent-log'); if (log) log.scrollTop = log.scrollHeight;
+  const visit = readonly() && state.visits[0]?.live ? state.visits[0] : null, title = root.querySelector('h1')?.textContent?.trim();
+  if (visit && title && !visit.pages.includes(title)) visit.pages.push(title);
   fillRenders(root); mountViewers(root); save();
 }
 document.addEventListener('click', e => {
+  if (state.modelMenu && !e.target.closest('.model-bar')) { state.modelMenu = false; save(); render(); }
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
   const fn = actions[el.dataset.act]; if (!fn) return;
+  if (readonly() && WRITES.has(el.dataset.act)) { e.preventDefault(); denyReadonly(); return; }
   e.preventDefault(); const r = fn(el, e); save(); if (r !== false) render();
 });
 document.addEventListener('submit', e => {
   const form = e.target.closest('[data-form]'); if (!form) return;
   e.preventDefault();
+  if (readonly() && form.dataset.form !== 'login') { denyReadonly(); return; }
   const data = Object.fromEntries(new FormData(form));
   if (form.dataset.form === 'login') {
     if (data.email.trim().toLowerCase() !== member.email || data.password !== member.password) { state.login = {email: data.email, error: data.email.includes('@') && data.password === member.password ? 'denied' : 'wrong'}; save(); render(); return; }
@@ -507,6 +609,9 @@ document.addEventListener('submit', e => {
   if (form.dataset.form === 'note') { const t = (data.note || '').trim(); if (!t) return; current().notes.push({by: member.name, at: Date.now(), text: t}); save(); render(); toast('备注已添加'); }
 });
 document.querySelector('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
-addEventListener('hashchange', () => { closeModal(); render(); });
+addEventListener('hashchange', () => { closeModal(); state.modelMenu = false; render(); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && state.modelMenu) { state.modelMenu = false; save(); render(); document.querySelector('.model-pick')?.focus(); } });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state.theme === 'system') render(); });
+// 原型：从平台管理后台「进入工作台」打开时带 ?as=support
+if (new URLSearchParams(location.search).get('as') === 'support') { reset(); enterSupport(); history.replaceState(null, '', location.pathname + (location.hash || '#/')); }
 applyTheme(); render();

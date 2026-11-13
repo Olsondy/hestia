@@ -79,3 +79,26 @@ export const needsAction = lead => ({
   contact: lead.events.some(e => e.kind === 'contact') && lead.follow === 'new',
   apply: lead.applications.some(a => a.status === 'pending'),
 });
+
+// 模型（AM-P，ADR-0018）：平台管理员分配给本企业的模型；企业管理员在其中启用、设默认。名称为演示，不代表任何供应商。
+// platform：平台侧状态（ok / disabled）。金额以分为单位。
+export const seedAI = () => ({
+  models: [
+    {id: 'm1', modelId: 'design-large', name: '深度设计', description: '整套方案、跨房间取舍时用；速度较慢。', enabled: true, platform: 'ok'},
+    {id: 'm2', modelId: 'edit-fast', name: '快速修改', description: '换石材、改铺法等明确的局部修改；响应快。', enabled: true, platform: 'ok'},
+    {id: 'm3', modelId: 'context-pro', name: '长上下文', description: '资料多、需求反复修改的复杂项目。', enabled: false, platform: 'ok'},
+  ],
+  defaultModel: 'm1', quota: 300000, used: 128450, reserved: 1200, concurrency: 3,
+});
+// 平台支持（ADR-0018 补充）：我方超级管理员只读进入企业工作台排查问题，每次进入记入企业的访问记录
+export const supportAgent = {name: '运维甲', org: '平台支持'};
+export const seedVisits = () => [
+  {at: Date.now() - 3 * 864e5 - 2 * 36e5, who: '运维甲', pages: ['今日', '示例别墅 · 客户确认', 'Agent 助手']},
+  {at: Date.now() - 12 * 864e5, who: '运维乙', pages: ['企业设置 · 模型', '企业设置 · 用量']},
+];
+export const aiUsage = {
+  '2026-11': {member: [['演示方案顾问', 1102, 11_204_300, 1_002_100, 78210], ['设计师乙', 640, 6_830_200, 702_400, 44960], ['设计师丙', 152, 1_300_000, 151_100, 5280]],
+    model: [['深度设计', 412, 9_812_400, 1_204_300, 47812], ['快速修改', 1386, 6_402_100, 410_800, 5944], ['长上下文', 96, 3_120_000, 240_500, 74694]]},
+  '2026-10': {member: [['演示方案顾问', 1210, 13_904_000, 1_640_000, 70212], ['设计师乙', 533, 8_610_500, 1_030_300, 44855]],
+    model: [['旧版设计模型', 803, 18_204_000, 2_390_100, 111058], ['快速修改', 940, 4_310_500, 280_200, 4009]]},
+};

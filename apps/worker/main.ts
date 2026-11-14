@@ -2,7 +2,8 @@ import { PgBoss } from 'pg-boss';
 import { fairWorkOptions } from '../../packages/tasks/src/fairness';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pool } from '../../packages/persistence/src/client';
-import { QUEUE_SCHEMA, TASK_QUEUE, validatedQueueSchema } from '../../packages/tasks/src/queue';
+import { MODEL_CHECK_QUEUE, QUEUE_SCHEMA, TASK_QUEUE, validatedQueueSchema } from '../../packages/tasks/src/queue';
+import { runCheck } from '../../packages/model-registry/src/check';
 import { runTask } from '../../packages/tasks/src/runner';
 
 // Explicit service entry. Importing domain/API modules never starts this process.
@@ -14,6 +15,9 @@ await boss.start();
 await boss.work<{ taskId: string; intentVersion?: number }>(TASK_QUEUE, { batchSize: 1, pollingIntervalSeconds: 1, ...fairWorkOptions('TASK') }, async jobs => {
   // Legacy dispatches belong to the first input; a delayed job cannot claim a newer intent.
   for (const job of jobs) await runTask(job.data.taskId, { intentVersion: job.data.intentVersion ?? 1, betweenSteps: () => delay(750) });
+});
+await boss.work<{ checkId: string }>(MODEL_CHECK_QUEUE, { batchSize: 1, pollingIntervalSeconds: 2 }, async jobs => {
+  for (const job of jobs) await runCheck(job.data.checkId);
 });
 console.log('Hestia task Worker ready. Conversation tasks use the configured platform model.');
 async function shutdown() { await boss.stop({ graceful: true, timeout: 20000 }); await pool.end(); }

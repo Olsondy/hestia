@@ -4,6 +4,8 @@ import { pool } from '../../persistence/src/client';
 import { fairJobOptions, projectWorkspace } from './fairness';
 
 export const TASK_QUEUE = 'hestia-deterministic-task';
+/** Model access checks (ADR-0018), run by the task Worker. */
+export const MODEL_CHECK_QUEUE = 'hestia-model-check';
 export const QUEUE_SCHEMA = 'hestia_jobs';
 export function validatedQueueSchema(schema: string) {
   if (!/^[a-z][a-z0-9_]{0,49}$/.test(schema)) throw new Error('Invalid queue schema');
@@ -34,6 +36,8 @@ export async function initializeQueue(schema = QUEUE_SCHEMA) {
   const producer = createQueueClient(schema);
   await producer.createQueue(TASK_QUEUE, { policy: 'standard', retryLimit: 10, retryDelay: 2, retryBackoff: true,
     retryDelayMax: 30, expireInSeconds: 30, retentionSeconds: 86400, deleteAfterSeconds: 604800 });
+  // A check makes several real calls, each bounded by the service timeout; a retry resumes nothing, it only runs a still-running check.
+  await producer.createQueue(MODEL_CHECK_QUEUE, { policy: 'standard', retryLimit: 2, retryDelay: 10, expireInSeconds: 3600, retentionSeconds: 86400, deleteAfterSeconds: 604800 });
   return producer;
 }
 export async function enqueueTask(client: PoolClient, taskId: string, producer = queue, dispatchId = taskId, intentVersion = 1) {

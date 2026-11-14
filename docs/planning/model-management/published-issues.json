@@ -41,6 +41,13 @@
       "blockedBy": [
         69
       ]
+    },
+    {
+      "key": "AM06",
+      "number": 72,
+      "blockedBy": [
+        67
+      ]
     }
   ]
 }

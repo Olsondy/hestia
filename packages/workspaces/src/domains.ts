@@ -27,6 +27,19 @@ export function requestHost(headers: Headers): string | null {
   return normalizeHost(raw);
 }
 
+/** Host of the platform console (HESTIA_ADMIN_HOST, ADR-0018); null when this deployment has none. */
+export const adminHost = () => normalizeHost(process.env.HESTIA_ADMIN_HOST);
+
+// Names under our main domain kept for ourselves (ADR-0017 supplement). The main domain is the admin host's parent.
+const reservedLabels = new Set(['admin', 'www', 'api', 'static', 'mail']);
+/** True when no enterprise may register this host: the admin host, our main domain, or a reserved name right under it. */
+export function isReservedHost(host: string): boolean {
+  const admin = adminHost();
+  if (!admin) return false;
+  const main = admin.slice(admin.indexOf('.') + 1), dot = host.indexOf('.');
+  return host === admin || host === main || (host.slice(dot + 1) === main && reservedLabels.has(host.slice(0, dot)));
+}
+
 /** Slug of the enterprise that registered this host, or null. */
 export async function enterpriseForHost(host: string | null): Promise<string | null> {
   if (!host) return null;
@@ -50,6 +63,7 @@ async function workspaceIdOf(slug: string): Promise<string> {
 /** Trusted admin command. Idempotent for the same workspace; a host already registered elsewhere is refused. */
 export async function addWorkspaceDomain(slug: string, raw: string): Promise<{ host: string; added: boolean }> {
   const host = parseHost(raw), workspaceId = await workspaceIdOf(slug);
+  if (isReservedHost(host)) throw new DomainError('RESERVED_HOST', `域名「${host}」是保留域名，不能登记给企业。`, 400);
   return transaction(async (_client, tx) => {
     const inserted = await tx.insert(workspaceDomains).values({ host, workspaceId }).onConflictDoNothing().returning({ host: workspaceDomains.host });
     if (inserted.length) return { host, added: true };

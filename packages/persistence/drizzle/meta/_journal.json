@@ -57,6 +57,13 @@
       "when": 1794292949340,
       "tag": "0007_backfill_customer_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794639638296,
+      "tag": "0008_platform_admins",
+      "breakpoints": true
     }
   ]
 }

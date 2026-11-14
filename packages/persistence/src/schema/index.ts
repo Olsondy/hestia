@@ -8,3 +8,4 @@ export * from './workspaces';
 export * from './finishes';
 export * from './floorplan-imports';
 export * from './finish-requests';
+export * from './platform-admin';

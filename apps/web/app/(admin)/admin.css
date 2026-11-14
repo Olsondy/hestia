@@ -1,0 +1,7 @@
+/* Platform console additions on top of the workbench styles (admin-console prototype). */
+.admin-auth{min-height:calc(100dvh - var(--top));display:grid;place-items:center;background:var(--c-canvas);padding:32px 16px}
+.admin-auth .panel{width:400px;max-width:100%;padding:28px}
+.admin-auth h1{font:var(--t-page)}
+.table--audit .table__head,.table--audit .table__row{grid-template-columns:140px 160px 90px minmax(0,1fr) minmax(0,1fr);cursor:default}
+.table--audit .table__row:hover{background:none}
+.table--audit{margin-top:24px}

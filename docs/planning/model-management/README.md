@@ -10,12 +10,13 @@
 | AM02：模型登记、加密密钥与接入检查 | [AM02.md](AM02.md) | AM01（界面部分：AM-P） | [#68](https://github.com/Olsondy/hestia/issues/68) |
 | AM03：企业模型分配、月度额度与并发上限 | [AM03.md](AM03.md) | AM02（界面部分：AM-P） | [#69](https://github.com/Olsondy/hestia/issues/69) |
 | AM04：调用级用量记录与统计页面 | [AM04.md](AM04.md) | AM02（界面部分：AM-P） | [#70](https://github.com/Olsondy/hestia/issues/70) |
+| AM06：超级管理员只读进入企业工作台 | [AM06.md](AM06.md) | AM01（界面部分：AM-P） | [#72](https://github.com/Olsondy/hestia/issues/72) |
 | AM05：Agent 交互处选择模型，运行时改读模型登记 | [AM05.md](AM05.md) | AM03（界面部分：AM-P） | [#71](https://github.com/Olsondy/hestia/issues/71) |
 
 ## 顺序
 
 - AM-P 原型先行，用户审阅定稿后各工单的界面部分才开始；数据表、接口、权限、加密、协议适配、额度与计量不等原型，用接口测试验收。
-- AM01 → AM02 → AM03 / AM04（可并行）→ AM05。
+- AM01 → AM02 → AM03 / AM04（可并行）→ AM05；AM06（2026-11-14 从 AM01 拆出，#72）只等 AM01。
 - 企业 Agent（K03 #54、W07 #56）在 AM05 之后接入：任务绑定所选模型，调用经额度预占与用量记录。
 - 接入检查与 AM05 的真实调用需要管理员录入一个真实模型；未录入前这些用例记为未验证，不用模拟结果代替。
 

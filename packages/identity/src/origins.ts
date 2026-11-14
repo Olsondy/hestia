@@ -1,8 +1,8 @@
 import { DomainError } from '../../contracts/src/project';
-import { enterpriseForHost, normalizeHost, requestHost } from '../../workspaces/src/domains';
+import { adminHost, enterpriseForHost, normalizeHost, requestHost } from '../../workspaces/src/domains';
 
 // Browser origins allowed to call state-changing APIs: the configured BETTER_AUTH_URL, and on the shared deployment
-// (ADR-0017) a registered entry domain when it is also the host the request was sent to.
+// (ADR-0017) a registered entry domain, or the platform console host (ADR-0018), when it is also the host the request was sent to.
 export const authOrigin = new URL(process.env.BETTER_AUTH_URL!).origin;
 const authProtocol = new URL(authOrigin).protocol;
 
@@ -14,7 +14,7 @@ export async function trustedOriginFor(headers: Headers): Promise<string | null>
   try { url = new URL(origin); } catch { return null; }
   const host = normalizeHost(url.host);
   if (url.protocol !== authProtocol || !host || host !== requestHost(headers)) return null;
-  return (await enterpriseForHost(host)) ? url.origin : null;
+  return host === adminHost() || (await enterpriseForHost(host)) ? url.origin : null;
 }
 
 /** Phone sign-in names its customer entry in the body; on a registered domain it must be the domain's enterprise. */

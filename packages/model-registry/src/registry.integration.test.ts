@@ -12,6 +12,9 @@ import * as keyRoute from '../../../apps/web/app/api/admin/services/[id]/key/rou
 import * as enableRoute from '../../../apps/web/app/api/admin/services/[id]/models/route';
 import * as modelRoute from '../../../apps/web/app/api/admin/models/[id]/route';
 import * as stateRoute from '../../../apps/web/app/api/admin/models/[id]/state/route';
+import * as pingRoute from '../../../apps/web/app/api/admin/services/[id]/ping/route';
+import * as catalogRoute from '../../../apps/web/app/api/admin/services/[id]/catalog/route';
+import { createServer, type Server } from 'node:http';
 
 // AM02 slice 1 (ADR-0018): register model services with sealed keys, enable model IDs, price versions, invalidation.
 // HTTP route handlers + real PostgreSQL. No model is called here.
@@ -135,4 +138,37 @@ test('disable and enable again; every change is audited and no key appears in th
   assert.deepEqual(rows.find(row => row.action === 'update_service' && row.detail.recheck)?.detail.recheck, ['design-large']);
   const all = JSON.stringify(rows);
   assert.ok(!all.includes(plainKey) && !all.includes(nextKey));
+});
+
+test('fetching the model list marks new IDs and flags enabled IDs that disappeared; connectivity is recorded', async () => {
+  let ids = ['design-large', 'edit-fast'];
+  const fake: Server = createServer((req, res) => {
+    const ok = req.headers.authorization === `Bearer ${plainKey}`;
+    res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(ok ? { data: ids.map(id => ({ id })) } : { error: 'bad key' }));
+  });
+  await new Promise<void>(resolve => fake.listen(0, '127.0.0.1', resolve));
+  try {
+    const base = `http://127.0.0.1:${(fake.address() as { port: number }).port}/v1`;
+    const created = await call(servicesRoute.POST, {}, { json: { name: `${serviceName}-列表`, protocol: 'chat', baseUrl: base, apiKey: plainKey, timeoutSeconds: 10, concurrency: 2 } });
+    const id = created.body.service.id;
+    const first = await call(catalogRoute.POST, { id }, { json: {} });
+    assert.deepEqual([first.body.service.catalog.ids, first.body.service.catalog.added], [['design-large', 'edit-fast'], []]);
+    const enabled = await call(enableRoute.POST, { id }, { json: { modelId: 'edit-fast' } });
+    ids = ['design-large', 'design-large-2511'];
+    const second = await call(catalogRoute.POST, { id }, { json: {} });
+    assert.deepEqual(second.body.service.catalog.added, ['design-large-2511']);
+    const model = await call(modelRoute.GET, { id: enabled.body.model.id });
+    assert.deepEqual([model.body.model.missingFromCatalog, model.body.model.state], [true, 'draft'], 'flagged, not disabled');
+
+    const ping = await call(pingRoute.POST, { id }, { json: {} });
+    assert.equal(ping.body.service.ping.ok, true);
+    await call(keyRoute.POST, { id }, { json: { apiKey: nextKey } });
+    const failed = await call(pingRoute.POST, { id }, { json: {} });
+    assert.deepEqual([failed.body.service.ping.ok, failed.body.service.ping.code], [false, 'HTTP 401']);
+    assert.equal((await call(catalogRoute.POST, { id }, { json: {} })).body.error.code, 'MODEL_LIST_FAILED');
+    assert.equal((await call(pingRoute.POST, { id }, { json: {}, cookie: cookies.other })).status, 403);
+    const fetched = (await audit()).filter(row => row.action === 'fetch_models' && row.target === `${serviceName}-列表`).map(row => row.detail);
+    assert.deepEqual(fetched, [{ count: 2, added: 0 }, { count: 2, added: 1 }]);
+  } finally { await new Promise<void>(resolve => fake.close(() => resolve())); }
 });

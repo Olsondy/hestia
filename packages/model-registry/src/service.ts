@@ -9,6 +9,7 @@ import {
 import { recordAudit } from '../../platform-admin/src/service';
 import type { PlatformAdmin } from '../../platform-admin/src/guard';
 import { keyTail, openSecret, sealSecret } from './secret';
+import { fetchModelIds, pingService } from './adapters';
 
 // Model registry (ADR-0018): platform admins register model services and enable model IDs on them. Every change is
 // audited; the key is sealed at rest, shown as its last four characters and never returned, logged or audited.
@@ -192,4 +193,32 @@ export async function setModelDisabled(actor: Actor, id: string, disabled: boole
 export async function serviceCredentials(id: string) {
   const row = await serviceRow(id);
   return { protocol: row.protocol, baseUrl: row.baseUrl, apiKey: openSecret(row.keyCiphertext), compat: row.compat as Compat, timeoutSeconds: row.timeoutSeconds };
+}
+
+/** Connectivity test from the services list. Recorded on the service; not audited, not counted, admission unchanged. */
+export async function testService(id: string, fetchImpl?: typeof fetch) {
+  const credentials = await serviceCredentials(id);
+  const [probe] = await db.select({ modelId: models.modelId }).from(models).where(and(eq(models.serviceId, id), sql`${models.state} <> 'disabled'`)).orderBy(asc(models.createdAt)).limit(1);
+  const result = await pingService(credentials, probe?.modelId ?? null, fetchImpl);
+  const [row] = await db.update(modelServices).set({ ping: { at: new Date().toISOString(), ...result } }).where(eq(modelServices.id, id)).returning();
+  return serviceView(row);
+}
+
+/** Fetch the service's model list; new IDs are marked, enabled IDs that disappeared are flagged on the model, never disabled. */
+export async function refreshCatalog(actor: Actor, id: string, fetchImpl?: typeof fetch) {
+  const current = await serviceRow(id), previous = current.catalog as { ids?: string[]; unsupported?: boolean } | null;
+  let result: Awaited<ReturnType<typeof fetchModelIds>>;
+  try { result = await fetchModelIds(await serviceCredentials(id), fetchImpl); }
+  catch (error) {
+    const status = (error as { statusCode?: number }).statusCode;
+    throw new DomainError('MODEL_LIST_FAILED', status ? '鉴权失败：密钥无效或没有权限。' : '获取模型列表失败：连接不上接口地址或没有响应。', 502);
+  }
+  const before = previous && !previous.unsupported ? previous.ids ?? [] : null;
+  const catalog = 'unsupported' in result ? { at: new Date().toISOString(), ids: [], added: [], unsupported: true, code: result.code }
+    : { at: new Date().toISOString(), ids: result.ids, added: before ? result.ids.filter(x => !before.includes(x)) : [] };
+  return transaction(async (_client, tx) => {
+    const [row] = await tx.update(modelServices).set({ catalog }).where(eq(modelServices.id, id)).returning();
+    await audit(actor, 'fetch_models', current.name, 'unsupported' in result ? { unsupported: true, code: result.code } : { count: result.ids.length, added: catalog.added.length }, tx);
+    return serviceView(row);
+  });
 }

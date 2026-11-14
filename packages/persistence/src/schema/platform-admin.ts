@@ -17,7 +17,8 @@ export const platformAdmins = pgTable("platform_admins", {
 // recorded as "replaced". `actor` keeps the e-mail so the record survives the account being deleted.
 export const platformAudit = pgTable("platform_audit", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
-	at: timestamp({ withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+	// clock_timestamp, not now(): several entries written in one transaction keep the order they happened in.
+	at: timestamp({ withTimezone: true, mode: 'date' }).default(sql`clock_timestamp()`).notNull(),
 	actorUserId: text("actor_user_id").references(() => hestiaAuthUser.id, { onDelete: 'set null' }),
 	actor: text().notNull(),
 	action: text().notNull(),

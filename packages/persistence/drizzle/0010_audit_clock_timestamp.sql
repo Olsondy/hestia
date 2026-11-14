@@ -1,0 +1,1 @@
+ALTER TABLE "platform_audit" ALTER COLUMN "at" SET DEFAULT clock_timestamp();

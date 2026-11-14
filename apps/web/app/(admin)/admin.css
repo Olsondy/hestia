@@ -1,7 +1,107 @@
-/* Platform console additions on top of the workbench styles (admin-console prototype). */
+/* Platform console additions on top of the workbench styles, carried over from the admin-console prototype (AM-P). */
+@keyframes pulse{50%{opacity:.35}}
+.field__hint{display:block;margin-top:6px;font:var(--t-small);color:var(--c-ink-2)}
+.input-group{display:flex;align-items:center;border-radius:var(--r-sm);background:var(--c-surface);box-shadow:inset 0 0 0 1px var(--c-line-strong);transition:box-shadow var(--d-fast)}
+.input-group:focus-within{box-shadow:inset 0 0 0 1.5px var(--c-ink)}
+.input-group .input{box-shadow:none;background:none;min-width:0;font-variant-numeric:tabular-nums}
+.input-group em{flex-shrink:0;padding:0 12px 0 4px;font:var(--t-small);font-style:normal;color:var(--c-ink-2);white-space:nowrap}
+.input-group--sm{width:160px}.input-group--sm .input{height:32px}
+.switch{position:relative;flex-shrink:0;width:40px;height:24px;border-radius:var(--r-pill);background:var(--c-surface-3);transition:background var(--d-fast)}
+.switch i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--c-surface);box-shadow:0 1px 2px #00000033;transition:transform var(--d-fast) var(--ease)}
+.switch[aria-checked=true]{background:var(--c-primary)}
+.switch[aria-checked=true] i{transform:translateX(16px);background:var(--c-on-primary)}
+.meter{display:block;height:4px;border-radius:2px;background:var(--c-surface-3);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:2px;background:var(--c-ink-2)}
+.meter--full i{background:var(--c-accent)}
+.ledger{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0 10px}
+.ledger dt{font:var(--t-small);color:var(--c-ink-2)}
+.ledger dd{margin:2px 0 0;font:var(--t-head)}
+.ledger dd.danger{color:var(--c-danger)}
+.plain-list li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:6px 0;font-size:13px}
+.plain-list a{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--c-line-strong)}
+.plain-list a:hover{text-decoration-color:currentColor}
+.brand .muted{font-size:13px}
+
+/* 列表：每张表自己的列宽 */
+/* 模型服务卡片：服务头（连通） + 已启用的模型 ID */
+.svc-list{display:grid;gap:16px;margin-top:24px}
+.svc__head{display:grid;grid-template-columns:minmax(0,1fr) 270px auto;align-items:center;gap:20px;padding:18px 18px 14px}
+.svc__id{min-width:0}
+.svc__id a{color:inherit;text-decoration:none}.svc__id a:hover{text-decoration:underline;text-underline-offset:3px}
+.svc__id small{display:block;margin-top:4px;font:var(--t-small);color:var(--c-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.svc .table{padding:0 6px 8px}
+.svc .table__head{border-top:1px solid var(--c-line);margin:0 12px;padding-left:0;padding-right:0}
+.svc__empty{margin:0 18px;padding:12px 0 16px;border-top:1px solid var(--c-line)}
+.table--svc-models .table__head,.table--svc-models .table__row{grid-template-columns:minmax(0,1.6fr) 110px 170px 100px 110px 20px}
+/* 模型 ID 列表 */
+.id-list{margin-top:10px}
+.id-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:9px 0;border-top:1px solid var(--c-line)}
+.id-row__id{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.id-row__model{display:inline-flex;align-items:center;gap:8px;color:inherit;text-decoration:none;font:var(--t-small);border-radius:var(--r-sm);padding:2px 4px}
+.id-row__model:hover{background:var(--c-surface-2)}
+.id-add{display:flex;gap:8px;margin-top:14px}.id-add .input{flex:1;width:auto}
+.input--ro{display:flex;align-items:center;background:var(--c-surface-2);color:var(--c-ink-2)}
+.steps{margin:0;padding-left:18px;display:grid;gap:8px;color:var(--c-ink-2)}
+/* 连通：结果 + 测试按钮 */
+.ping-cell{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ping-cell__res{display:grid;gap:2px;min-width:0}
+.ping-cell__res small{font-size:11px}
+.ping{display:inline-flex;align-items:center;gap:6px;font:var(--t-small);white-space:nowrap}
+.ping i{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.ping--ok{color:var(--c-ink)}.ping--ok i{background:var(--c-ink-2)}
+.ping--fail{color:var(--c-danger);font-weight:500}
+.ping--now{color:var(--c-ink-2)}.ping--now i{animation:pulse 1s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.ping--now i{animation:none}}
+.table--audit .table__head,.table--audit .table__row{grid-template-columns:140px 80px 90px 140px minmax(0,1fr)}
+.list-tools .segmented+.segmented{margin-left:auto}
+
+/* 详情：主列表单 + 侧栏 */
+.split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start;margin-top:24px}
+.split__main,.split__side{display:grid;gap:16px}
+.split__side{position:sticky;top:calc(var(--top) + 16px)}
+.panel__head .btn{margin-left:auto}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}
+.form-grid--3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.span-2{grid-column:span 2}
+.row-gap{display:flex;gap:8px;align-items:center}
+.row-gap .input{flex:1}
+.keyline{display:flex;align-items:center;justify-content:space-between;gap:12px;height:40px;padding:0 4px 0 12px;border-radius:var(--r-sm);background:var(--c-surface-2)}
+
+/* 兼容设置：一行一项，说明在左、控件在右 */
+.settings{display:grid;gap:2px}
+.setting{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:10px 0}
+.setting+.setting{border-top:1px solid var(--c-line)}
+.setting b{display:block;font-weight:500}
+.setting small{display:block;margin-top:2px;font:var(--t-small);color:var(--c-ink-2);max-width:52ch}
+
+/* 接入检查结果 */
+.checklist{display:grid;gap:2px;margin-top:10px}
+.checklist li{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:8px;padding:5px 0;font-size:13px}
+.checklist i{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;box-shadow:inset 0 0 0 1.5px var(--c-line-strong);color:var(--c-ink-2);font-style:normal}
+.checklist small{font:var(--t-small);color:var(--c-ink-2)}
+.checklist li[data-r=ok] i{background:var(--c-ink);color:var(--c-bg);box-shadow:none}
+.checklist li[data-r=fail] i{color:var(--c-danger);box-shadow:inset 0 0 0 1.5px currentColor}
+.checklist li[data-r=fail] small{color:var(--c-danger)}
+.checklist li[data-r=now] i{box-shadow:inset 0 0 0 1.5px var(--c-ink);animation:pulse 1.2s ease-in-out infinite}
+.checklist li[data-r=now]{font-weight:500}
+.checklist li[data-r=todo]{color:var(--c-ink-2)}
+.price-hist{margin-top:16px}
+.price-hist ul{margin-top:6px}
+.price-hist li{display:flex;gap:16px;padding:3px 0;font-size:13px}
+
+/* 企业分配 */
+
+@media (max-width:1180px){
+  .split{grid-template-columns:minmax(0,1fr) 300px}
+  .form-grid--3{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .svc__head{grid-template-columns:minmax(0,1fr) 250px auto}
+  .table--svc-models .table__head,.table--svc-models .table__row{grid-template-columns:minmax(0,1.6fr) 100px 150px 90px 20px}
+  .table--svc-models .table__head>span:nth-child(5),.table--svc-models .table__row>span:nth-child(5){display:none}
+}
 .admin-auth{min-height:calc(100dvh - var(--top));display:grid;place-items:center;background:var(--c-canvas);padding:32px 16px}
 .admin-auth .panel{width:400px;max-width:100%;padding:28px}
 .admin-auth h1{font:var(--t-page)}
-.table--audit .table__head,.table--audit .table__row{grid-template-columns:140px 160px 90px minmax(0,1fr) minmax(0,1fr);cursor:default}
+.table--audit .table__row{cursor:default}
 .table--audit .table__row:hover{background:none}
-.table--audit{margin-top:24px}
+.checklist li[data-r=unsupported] i{color:var(--c-ink-2)}
+.table--audit .table__head,.table--audit .table__row{grid-template-columns:140px 200px 110px minmax(0,1fr) minmax(0,1.2fr)}

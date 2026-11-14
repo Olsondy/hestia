@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ClientError, get, post, signOut } from '../client/client-api';
+import { ModelView, ServicesView, ServiceView } from './admin-models';
 
 type Admin = { name: string; email: string; level: 'platform' | 'super' };
 type AuditEntry = { at: string; actor: string; action: string; target: string; detail: Record<string, unknown> };
@@ -11,16 +12,26 @@ type State = { kind: 'loading' } | { kind: 'signed-out' } | { kind: 'denied' } |
 
 const sections = [['models', '模型服务'], ['workspaces', '企业'], ['usage', '用量'], ['audit', '审计记录']] as const;
 const levelName = { platform: '平台管理员', super: '超级管理员' } as const;
-const actionName: Record<string, string> = { grant: '授予权限', revoke: '撤销权限' };
+const actionName: Record<string, string> = { grant: '授予权限', revoke: '撤销权限', register_service: '登记模型服务', update_service: '修改模型服务', replace_key: '更换密钥',
+  fetch_models: '获取模型列表', enable_model_id: '启用模型 ID', update_model: '修改模型', change_price: '调整单价', disable_model: '停用模型', reenable_model: '重新启用',
+  start_check: '运行接入检查', finish_check: '接入检查结束' };
 const stamp = (iso: string) => { const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 const describe = (entry: AuditEntry) => {
   const { level, previous } = entry.detail as { level?: keyof typeof levelName; previous?: keyof typeof levelName | null };
   if (entry.action === 'grant') return previous ? `${levelName[previous]} → ${levelName[level!]}` : levelName[level!] ?? '';
   if (entry.action === 'revoke') return previous ? `原为${levelName[previous]}` : '';
+  const d = entry.detail as Record<string, unknown>;
+  if (entry.action === 'replace_key') return '密钥已更换';
+  if (entry.action === 'change_price') return `输入 ${(Number(d.input) / 100).toFixed(2)} / 输出 ${(Number(d.output) / 100).toFixed(2)} 元每百万 token`;
+  if (entry.action === 'fetch_models') return d.unsupported ? `不提供模型列表（${d.code}）` : `${d.count} 个模型 ID，新增 ${d.added}`;
+  if (entry.action === 'enable_model_id') return `${d.modelId}${d.manual ? '（手动添加）' : ''}`;
+  if (entry.action === 'finish_check') return d.passed ? '通过' : '未通过';
+  if (entry.action === 'update_service' || entry.action === 'update_model') return `修改：${Object.keys((d.changed as object) ?? {}).join('、')}${d.recheck ? '，需重新检查' : ''}`;
   return '';
 };
 
-export function AdminApp({ section }: { section: string }) {
+export function AdminApp({ path }: { path: string[] }) {
+  const section = path[0] === 'services' ? 'models' : path[0] ?? 'models';
   const [state, setState] = useState<State>({ kind: 'loading' });
   const load = useCallback(() => get<{ admin: Admin }>('/api/admin/session')
     .then(r => setState({ kind: 'ready', admin: r.admin }))
@@ -41,7 +52,9 @@ export function AdminApp({ section }: { section: string }) {
       <div className="topbar__end"><span className="member"><span className="member__name">{state.admin.name} · {levelName[state.admin.level]}</span></span>
         <button className="btn btn--secondary btn--sm" onClick={leave}>退出登录</button></div>
     </header>
-    <main id="page">{current === 'audit' ? <AuditView/> : <Pending title={sections.find(([key]) => key === current)![1]}/>}</main>
+    <main id="page">{current === 'audit' ? <AuditView/>
+      : current === 'models' ? (path[0] === 'services' && path[1] ? <ServiceView id={path[1]}/> : path[0] === 'models' && path[1] ? <ModelView id={path[1]}/> : <ServicesView/>)
+        : <Pending title={sections.find(([key]) => key === current)![1]}/>}</main>
   </>;
 }
 

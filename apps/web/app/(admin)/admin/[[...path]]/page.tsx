@@ -9,5 +9,5 @@ export const dynamic = 'force-dynamic';
 export default async function AdminPage({ params }: { params: Promise<{ path?: string[] }> }) {
   if (!isAdminRequest(await headers())) notFound();
   const { path = [] } = await params;
-  return <AdminApp section={path[0] ?? 'models'}/>;
+  return <AdminApp path={path.map(decodeURIComponent)}/>;
 }

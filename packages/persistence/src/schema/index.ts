@@ -10,3 +10,4 @@ export * from './floorplan-imports';
 export * from './finish-requests';
 export * from './platform-admin';
 export * from './models';
+export * from './model-grants';

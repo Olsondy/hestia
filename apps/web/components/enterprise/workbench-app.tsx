@@ -12,6 +12,7 @@ import { Icon, type IconName } from '../client/client-icons';
 import { LeadDetailView, LeadsView } from './workbench-leads';
 import { AssistView } from './workbench-assist';
 import { NewView } from './workbench-new';
+import { SettingsView } from './workbench-settings';
 
 // ---------- 上下文 ----------
 type Ctx = { slug: string; base: string; user: SessionUser; workspace: WorkspaceView; go: (path: string, replace?: boolean) => void };
@@ -69,6 +70,7 @@ function Router({ slug }: { slug: string }) {
     : parts[0] === 'leads' ? (parts[1] ? (parts[2] === 'assist' ? <AssistView id={parts[1]}/> : <LeadDetailView id={parts[1]}/>) : <LeadsView query={search}/>)
       : parts[0] === 'new' ? <NewView/>
         : parts[0] === 'stones' ? <Pending nav="stones" title="石材与软装"/>
+          : parts[0] === 'settings' ? <SettingsView tab={parts[1] ?? 'models'}/>
           : <Shell nav={null}><div className="page"><div className="empty"><b>找不到这个页面</b>请从页头进入需要的页面。</div></div></Shell>;
   return <WorkbenchContext.Provider value={ctx}>{page}</WorkbenchContext.Provider>;
 }
@@ -106,7 +108,7 @@ function ThemeButton() {
 }
 
 // ---------- 外壳 ----------
-export type Nav = 'today' | 'leads' | 'new' | 'stones';
+export type Nav = 'today' | 'leads' | 'new' | 'stones' | 'settings';
 const navItems: [Nav, string, string][] = [['today', '', '今日'], ['leads', '/leads', '线索'], ['new', '/new', '预置方案'], ['stones', '/stones', '石材与软装']];
 function Brand({ name, href }: { name: string; href?: string }) {
   const inner = <><span className="brand-mark brand-mark--initial" aria-hidden="true">{name.slice(0, 1)}</span><b>{name}</b></>;
@@ -122,6 +124,7 @@ export function Shell({ nav, children }: { nav: Nav | null; children: React.Reac
       <nav className="topnav" aria-label="工作台">{navItems.map(([key, href, label]) =>
         <Link key={key} href={`${base}${href}`} aria-current={nav === key ? 'page' : undefined}>{label}{key === 'today' && count > 0 && <span className="count" aria-label={`${count} 件需要处理`}>{count}</span>}</Link>)}</nav>
       <div className="topbar__end"><TopSearch/><ThemeButton/>
+        {workspace.role === 'admin' && <Link className={`icon-btn${nav === 'settings' ? ' icon-btn--on' : ''}`} href={`${base}/settings/models`} aria-label="企业设置" title="企业设置" aria-current={nav === 'settings' ? 'page' : undefined}><Icon name="gear" size={17} strokeWidth={1.6}/></Link>}
         <span className="member"><span className="member__name">{name}</span><span className="avatar" title={name} aria-hidden="true">{name.slice(0, 1)}</span></span>
         <button className="icon-btn" onClick={logout} aria-label="退出登录"><Icon name="logout" size={16} strokeWidth={1.6}/></button></div>
     </header>

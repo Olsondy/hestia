@@ -95,7 +95,7 @@ before(async () => {
   const userB = (await pool.query('SELECT id FROM hestia_auth_user WHERE email=$1', [emails[1]])).rows[0].id;
   real = { entry: slugB, slug: slugB, workspaceId: idB, requestId: lead.id, schemeId: lead.schemes[0].id, code: share.code, shareId: share.share.id,
     userId: userB, id: lead.projectId ?? (await pool.query('SELECT project_id FROM finish_requests WHERE id=$1', [lead.id])).rows[0].project_id,
-    applicationId: randomUUID(), candidateId: randomUUID(), operationId: randomUUID(), taskId: randomUUID(), importId: randomUUID(), renderId: lead.schemes[0].render.id, resourceId: randomUUID() };
+    applicationId: randomUUID(), candidateId: randomUUID(), operationId: randomUUID(), taskId: randomUUID(), importId: randomUUID(), renderId: lead.schemes[0].render.id, resourceId: randomUUID(), modelId: randomUUID() };
   missing = Object.fromEntries(Object.entries(real).map(([k]) => [k, k === 'entry' || k === 'slug' ? `m06-missing-${run}` : k === 'code' ? 'ABCD-EFGH' : randomUUID()]));
   actors = [{ name: "A's member", cookie: memberA }, { name: "A's customer", cookie: await signInCustomer(hostA, slugA) }, { name: 'anonymous', cookie: '' }];
 });

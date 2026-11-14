@@ -1,25 +1,4 @@
 /* Platform console additions on top of the workbench styles, carried over from the admin-console prototype (AM-P). */
-@keyframes pulse{50%{opacity:.35}}
-.field__hint{display:block;margin-top:6px;font:var(--t-small);color:var(--c-ink-2)}
-.input-group{display:flex;align-items:center;border-radius:var(--r-sm);background:var(--c-surface);box-shadow:inset 0 0 0 1px var(--c-line-strong);transition:box-shadow var(--d-fast)}
-.input-group:focus-within{box-shadow:inset 0 0 0 1.5px var(--c-ink)}
-.input-group .input{box-shadow:none;background:none;min-width:0;font-variant-numeric:tabular-nums}
-.input-group em{flex-shrink:0;padding:0 12px 0 4px;font:var(--t-small);font-style:normal;color:var(--c-ink-2);white-space:nowrap}
-.input-group--sm{width:160px}.input-group--sm .input{height:32px}
-.switch{position:relative;flex-shrink:0;width:40px;height:24px;border-radius:var(--r-pill);background:var(--c-surface-3);transition:background var(--d-fast)}
-.switch i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--c-surface);box-shadow:0 1px 2px #00000033;transition:transform var(--d-fast) var(--ease)}
-.switch[aria-checked=true]{background:var(--c-primary)}
-.switch[aria-checked=true] i{transform:translateX(16px);background:var(--c-on-primary)}
-.meter{display:block;height:4px;border-radius:2px;background:var(--c-surface-3);overflow:hidden}
-.meter i{display:block;height:100%;border-radius:2px;background:var(--c-ink-2)}
-.meter--full i{background:var(--c-accent)}
-.ledger{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0 10px}
-.ledger dt{font:var(--t-small);color:var(--c-ink-2)}
-.ledger dd{margin:2px 0 0;font:var(--t-head)}
-.ledger dd.danger{color:var(--c-danger)}
-.plain-list li{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:6px 0;font-size:13px}
-.plain-list a{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--c-line-strong)}
-.plain-list a:hover{text-decoration-color:currentColor}
 .brand .muted{font-size:13px}
 
 /* 列表：每张表自己的列宽 */
@@ -105,3 +84,12 @@
 .table--audit .table__row:hover{background:none}
 .checklist li[data-r=unsupported] i{color:var(--c-ink-2)}
 .table--audit .table__head,.table--audit .table__row{grid-template-columns:140px 200px 110px minmax(0,1fr) minmax(0,1.2fr)}
+.grant-list .grant-group{display:flex;justify-content:flex-start;gap:8px;margin-top:10px;padding-top:6px;font:var(--t-small);font-weight:600;color:var(--c-ink-2)}
+.grant-list .grant-group:first-child{margin-top:0}
+.table--ws .table__head,.table--ws .table__row{grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) 200px 80px 130px 20px}
+.table--ws,.table--usage,.table--audit{margin-top:24px}
+.usage-cell{display:grid;gap:6px}
+.grant-list li{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.grant-list .facet{flex:1;width:auto;margin:0}
+.grant-list .facet:disabled{opacity:.5;cursor:not-allowed}
+.grant-list li>small{flex-shrink:0;font:var(--t-small)}

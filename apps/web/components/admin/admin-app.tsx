@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ClientError, get, post, signOut } from '../client/client-api';
 import { ModelView, ServicesView, ServiceView } from './admin-models';
+import { WorkspacesView, WorkspaceView } from './admin-workspaces';
 
 type Admin = { name: string; email: string; level: 'platform' | 'super' };
 type AuditEntry = { at: string; actor: string; action: string; target: string; detail: Record<string, unknown> };
@@ -14,7 +15,7 @@ const sections = [['models', '模型服务'], ['workspaces', '企业'], ['usage'
 const levelName = { platform: '平台管理员', super: '超级管理员' } as const;
 const actionName: Record<string, string> = { grant: '授予权限', revoke: '撤销权限', register_service: '登记模型服务', update_service: '修改模型服务', replace_key: '更换密钥',
   fetch_models: '获取模型列表', enable_model_id: '启用模型 ID', update_model: '修改模型', change_price: '调整单价', disable_model: '停用模型', reenable_model: '重新启用',
-  start_check: '运行接入检查', finish_check: '接入检查结束' };
+  start_check: '运行接入检查', finish_check: '接入检查结束', grant_models: '分配模型', set_quota: '调整额度', set_concurrency: '调整并发' };
 const stamp = (iso: string) => { const d = new Date(iso), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 const describe = (entry: AuditEntry) => {
   const { level, previous } = entry.detail as { level?: keyof typeof levelName; previous?: keyof typeof levelName | null };
@@ -26,6 +27,9 @@ const describe = (entry: AuditEntry) => {
   if (entry.action === 'fetch_models') return d.unsupported ? `不提供模型列表（${d.code}）` : `${d.count} 个模型 ID，新增 ${d.added}`;
   if (entry.action === 'enable_model_id') return `${d.modelId}${d.manual ? '（手动添加）' : ''}`;
   if (entry.action === 'finish_check') return d.passed ? '通过' : '未通过';
+  if (entry.action === 'grant_models') return [(d.added as string[])?.length && `新增：${(d.added as string[]).join('、')}`, (d.removed as string[])?.length && `取消：${(d.removed as string[]).join('、')}`].filter(Boolean).join('；');
+  if (entry.action === 'set_quota') return `月度额度 ${d.from === '不限' ? '不限' : `¥${d.from}`} → ${d.to === '不限' ? '不限' : `¥${d.to}`}`;
+  if (entry.action === 'set_concurrency') return `同时运行的 Agent 任务 ${d.from} → ${d.to}`;
   if (entry.action === 'update_service' || entry.action === 'update_model') return `修改：${Object.keys((d.changed as object) ?? {}).join('、')}${d.recheck ? '，需重新检查' : ''}`;
   return '';
 };
@@ -54,6 +58,7 @@ export function AdminApp({ path }: { path: string[] }) {
     </header>
     <main id="page">{current === 'audit' ? <AuditView/>
       : current === 'models' ? (path[0] === 'services' && path[1] ? <ServiceView id={path[1]}/> : path[0] === 'models' && path[1] ? <ModelView id={path[1]}/> : <ServicesView/>)
+        : current === 'workspaces' ? (path[1] ? <WorkspaceView slug={path[1]}/> : <WorkspacesView/>)
         : <Pending title={sections.find(([key]) => key === current)![1]}/>}</main>
   </>;
 }

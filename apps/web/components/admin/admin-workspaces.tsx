@@ -8,7 +8,7 @@ import { ClientError } from '../client/client-api';
 import { send, useLoad, yuan } from './admin-api';
 
 type Grant = { id: string; modelId: string; name: string; state: ModelData['state']; enabled: boolean; isDefault: boolean; serviceName: string };
-type Enterprise = { id: string; slug: string; name: string; domains: string[]; quota: number | null; concurrency: number; used: number; reserved: number; grants: Grant[] };
+type Enterprise = { id: string; ref: string; slug: string | null; kind: 'enterprise' | 'personal'; owner: string | null; name: string; domains: string[]; quota: number | null; concurrency: number; used: number; reserved: number; grants: Grant[] };
 const message = (error: unknown) => error instanceof ClientError && error.message ? error.message : '请求未完成，请稍后重试。';
 const Tag = ({ text, act }: { text: string; act?: boolean }) => <span className={`tag${act ? ' tag--act' : ''}`}>{text}</span>;
 const Meter = ({ used, quota }: { used: number; quota: number }) => { const pct = quota ? Math.min(100, Math.round(used / quota * 100)) : 0;
@@ -20,11 +20,11 @@ export function WorkspacesView() {
   if (error) return <div className="page"><div className="empty"><b>暂时无法读取企业</b>{message(error)}</div></div>;
   if (!data) return <p className="page-loading">正在读取…</p>;
   return <div className="page">
-    <div className="page__head"><div><h1 className="page__title">企业</h1><p className="page__sub">为每家企业指定可用模型、月度额度与同时运行的 Agent 任务数。月份按北京时间自然月计算。</p></div></div>
-    {!data.enterprises.length ? <div className="empty"><b>还没有企业</b>企业由服务器命令创建（pnpm workspace）。</div>
-      : <div className="table table--ws"><div className="table__head"><span>企业</span><span>可用模型</span><span>本月用量 / 额度</span><span>并发上限</span><span>状态</span><span/></div>
-        {data.enterprises.map(e => <Link className="table__row" key={e.id} href={`/admin/workspaces/${e.slug}`}>
-          <span className="cell-main"><b>{e.name}</b><small className="mono">{e.domains[0] ?? e.slug}</small></span>
+    <div className="page__head"><div><h1 className="page__title">工作空间</h1><p className="page__sub">为每家企业和每个个人空间指定可用模型、月度额度与同时运行的 Agent 任务数。月份按北京时间自然月计算。</p></div></div>
+    {!data.enterprises.length ? <div className="empty"><b>还没有工作空间</b>企业由服务器命令创建（pnpm workspace），个人空间在用户注册后出现。</div>
+      : <div className="table table--ws"><div className="table__head"><span>工作空间</span><span>可用模型</span><span>本月用量 / 额度</span><span>并发上限</span><span>状态</span><span/></div>
+        {data.enterprises.map(e => <Link className="table__row" key={e.id} href={`/admin/workspaces/${encodeURIComponent(e.ref)}`}>
+          <span className="cell-main"><b>{e.name}{e.kind === 'personal' && <> <Tag text="个人"/></>}</b><small className="mono">{e.kind === 'personal' ? e.owner : e.domains[0] ?? e.slug}</small></span>
           <span className="small">{e.grants.length ? e.grants.map(g => g.name).join('、') : <span className="muted">—</span>}</span>
           <span className="usage-cell">{e.quota === null ? <span className="num small">¥{yuan(e.used)} / 不限</span> : e.quota === 0 ? <span className="small muted">未设额度</span>
             : <><span className="num small">¥{yuan(e.used)} / ¥{yuan(e.quota)}</span><Meter used={e.used + e.reserved} quota={e.quota}/></>}</span>
@@ -56,13 +56,13 @@ function GrantForm({ enterprise, registry, saved }: { enterprise: Enterprise; re
   const toggle = (id: string) => setDraft(d => ({ ...d, grants: d.grants.includes(id) ? d.grants.filter(x => x !== id) : [...d.grants, id] }));
   const save = async () => {
     setBusy(true); setFailure(null);
-    try { saved((await send<{ enterprise: Enterprise }>('PATCH', `/api/admin/workspaces/${encodeURIComponent(enterprise.slug)}`,
+    try { saved((await send<{ enterprise: Enterprise }>('PATCH', `/api/admin/workspaces/${encodeURIComponent(enterprise.ref)}`,
       { grants: draft.grants, quota: quotaFen, concurrency: Number(draft.concurrency) })).enterprise); }
     catch (error) { setFailure(message(error)); } finally { setBusy(false); }
   };
   const left = quotaFen === null ? null : quotaFen - enterprise.used - enterprise.reserved;
-  return <div className="page"><Link className="back" href="/admin/workspaces">‹ 企业</Link>
-    <div className="page__head" style={{ marginTop: 12 }}><div><h1 className="page__title">{enterprise.name}</h1><p className="page__sub mono">{enterprise.domains.join('、') || enterprise.slug}</p></div></div>
+  return <div className="page"><Link className="back" href="/admin/workspaces">‹ 工作空间</Link>
+    <div className="page__head" style={{ marginTop: 12 }}><div><h1 className="page__title">{enterprise.name}</h1><p className="page__sub mono">{enterprise.kind === 'personal' ? `个人空间 · ${enterprise.owner ?? ''}` : enterprise.domains.join('、') || enterprise.slug}</p></div></div>
     <div className="split">
       <div className="split__main"><section className="panel"><div className="panel__head"><h2 className="panel__title">可用模型</h2><span className="small muted">只能分配已准入、已定价的模型</span></div>
         <div className="panel__body"><ul className="grant-list">{registry.services.map(service => {
@@ -76,7 +76,7 @@ function GrantForm({ enterprise, registry, saved }: { enterprise: Enterprise; re
               <small className="muted">{!ok ? `${model.state === 'admitted' ? '未定价' : stateName[model.state]}${on ? '，已分配的保留' : '，不能分配'}` : grant ? (grant.enabled ? (grant.isDefault ? '企业已启用 · 默认' : '企业已启用') : '企业未启用') : on ? '保存后企业管理员可启用' : ''}</small></li>;
           })];
         })}</ul>
-        {!draft.grants.length && <p className="note note--hint"><span><b>未开通</b>不分配任何模型时，这家企业的 Agent 入口显示“未开通”，不会模拟结果。</span></p>}
+        {!draft.grants.length && <p className="note note--hint"><span><b>未开通</b>不分配任何模型时，这个工作空间的 Agent 入口显示“未开通”，不会模拟结果。</span></p>}
         <p className="small muted" style={{ marginTop: 12 }}>企业管理员只能在这些模型里启用、停用和设默认，看不到密钥、地址与单价。</p></div></section></div>
       <aside className="split__side"><section className="panel"><div className="panel__head"><h2 className="panel__title">额度与并发</h2></div><div className="panel__body">
         <div className="field"><span>月度额度</span>

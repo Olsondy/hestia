@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, transaction } from '../../persistence/src/client';
-import { modelCalls, modelPrices, models, modelServices, workspaceDomains, workspaceModels, workspaceModelSettings, workspaces } from '../../persistence/src/schema';
+import { hestiaAuthUser, modelCalls, modelPrices, models, modelServices, workspaceDomains, workspaceModels, workspaceModelSettings, workspaces } from '../../persistence/src/schema';
 import { DomainError } from '../../contracts/src/project';
 import { workspaceSlugSchema } from '../../contracts/src/workspaces';
 import { getWorkspace } from '../../workspaces/src/service';
@@ -25,12 +25,14 @@ const DEFAULT_CONCURRENCY = 2;
 const grantable = (state: string, priced: boolean) => state === 'admitted' && priced;
 const notFound = () => new DomainError('NOT_FOUND', '企业不存在。', 404);
 
-async function workspaceBySlug(slug: string) {
-  const parsed = workspaceSlugSchema.safeParse(slug);
-  const [row] = parsed.success ? await db.select({ id: workspaces.id, slug: workspaces.slug, name: workspaces.name }).from(workspaces)
-    .where(and(eq(workspaces.slug, parsed.data), sql`${workspaces.personalUserId} IS NULL`)) : [];
-  if (!row?.slug) throw notFound();
-  return { id: row.id, slug: row.slug, name: row.name };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** An enterprise by its slug, or any workspace (personal ones included, ADR-0018 supplement) by its id. */
+async function workspaceByRef(ref: string) {
+  const parsed = workspaceSlugSchema.safeParse(ref);
+  const where = uuidPattern.test(ref) ? eq(workspaces.id, ref) : parsed.success ? and(eq(workspaces.slug, parsed.data), sql`${workspaces.personalUserId} IS NULL`) : null;
+  const [row] = where ? await db.select({ id: workspaces.id, name: workspaces.name }).from(workspaces).where(where) : [];
+  if (!row) throw notFound();
+  return row;
 }
 
 async function monthTotals(workspaceIds: string[], tx: Tx | typeof db = db) {
@@ -52,18 +54,24 @@ async function grantsOf(workspaceIds: string[]) {
 
 // ---------- 平台管理员 ----------
 export async function listEnterprises() {
+  // Enterprises first, then personal workspaces (named after their account): both get models the same way.
   const rows = await db.select({ id: workspaces.id, slug: workspaces.slug, name: workspaces.name, quota: workspaceModelSettings.monthlyQuota,
-    concurrency: workspaceModelSettings.concurrency, configured: sql<boolean>`${workspaceModelSettings.workspaceId} IS NOT NULL` })
+    concurrency: workspaceModelSettings.concurrency, configured: sql<boolean>`${workspaceModelSettings.workspaceId} IS NOT NULL`,
+    personal: sql<boolean>`${workspaces.personalUserId} IS NOT NULL`, owner: hestiaAuthUser.email, ownerName: hestiaAuthUser.name })
     .from(workspaces).leftJoin(workspaceModelSettings, eq(workspaceModelSettings.workspaceId, workspaces.id))
-    .where(sql`${workspaces.personalUserId} IS NULL AND ${workspaces.slug} IS NOT NULL`).orderBy(asc(workspaces.createdAt));
+    .leftJoin(hestiaAuthUser, eq(hestiaAuthUser.id, workspaces.personalUserId))
+    .where(sql`${workspaces.personalUserId} IS NOT NULL OR ${workspaces.slug} IS NOT NULL`)
+    .orderBy(sql`${workspaces.personalUserId} IS NOT NULL`, asc(workspaces.createdAt));
   const ids = rows.map(row => row.id), [totals, grants, domains] = await Promise.all([monthTotals(ids), grantsOf(ids),
     ids.length ? db.select().from(workspaceDomains).where(inArray(workspaceDomains.workspaceId, ids)).orderBy(asc(workspaceDomains.host)) : []]);
-  return rows.map(row => ({ id: row.id, slug: row.slug!, name: row.name, domains: domains.filter(d => d.workspaceId === row.id).map(d => d.host),
+  return rows.map(row => ({ id: row.id, ref: row.slug ?? row.id, slug: row.slug, kind: row.personal ? 'personal' as const : 'enterprise' as const,
+    name: row.personal ? `${row.ownerName || row.owner || '个人'} 的个人空间` : row.name, owner: row.personal ? row.owner : null,
+    domains: domains.filter(d => d.workspaceId === row.id).map(d => d.host),
     quota: row.configured ? row.quota : 0, concurrency: row.concurrency ?? DEFAULT_CONCURRENCY, ...(totals.get(row.id) ?? { used: 0, reserved: 0 }),
     grants: grants.filter(g => g.workspaceId === row.id).map(({ workspaceId: _, ...grant }) => grant) }));
 }
-export async function getEnterprise(slug: string) {
-  const { id } = await workspaceBySlug(slug);
+export async function getEnterprise(ref: string) {
+  const { id } = await workspaceByRef(ref);
   return (await listEnterprises()).find(row => row.id === id)!;
 }
 
@@ -74,8 +82,8 @@ export const updateEnterpriseSchema = z.object({
 }).partial().strict();
 
 /** Only admitted, priced models can be newly granted; a model that was granted earlier may stay while it is rechecked. */
-export async function updateEnterprise(actor: Actor, slug: string, input: unknown) {
-  const data = updateEnterpriseSchema.parse(input), workspace = await workspaceBySlug(slug);
+export async function updateEnterprise(actor: Actor, ref: string, input: unknown) {
+  const data = updateEnterpriseSchema.parse(input), workspace = await workspaceByRef(ref);
   await transaction(async (_client, tx) => {
     const [current] = await tx.select().from(workspaceModelSettings).where(eq(workspaceModelSettings.workspaceId, workspace.id)).for('update');
     const before = { quota: current ? current.monthlyQuota : 0, concurrency: current?.concurrency ?? DEFAULT_CONCURRENCY };
@@ -105,7 +113,7 @@ export async function updateEnterprise(actor: Actor, slug: string, input: unknow
         detail: { added: names(added), removed: names(removed) } }, tx);
     }
   });
-  return getEnterprise(slug);
+  return getEnterprise(ref);
 }
 
 // ---------- 企业 ----------

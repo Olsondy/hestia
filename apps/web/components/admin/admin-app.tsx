@@ -12,7 +12,7 @@ type Admin = { name: string; email: string; level: 'platform' | 'super' };
 type AuditEntry = { at: string; actor: string; action: string; target: string; detail: Record<string, unknown> };
 type State = { kind: 'loading' } | { kind: 'signed-out' } | { kind: 'denied' } | { kind: 'error' } | { kind: 'ready'; admin: Admin };
 
-const sections = [['models', '模型服务'], ['workspaces', '企业'], ['usage', '用量'], ['audit', '审计记录']] as const;
+const sections = [['models', '模型服务'], ['workspaces', '工作空间'], ['usage', '用量'], ['audit', '审计记录']] as const;
 const levelName = { platform: '平台管理员', super: '超级管理员' } as const;
 const actionName: Record<string, string> = { grant: '授予权限', revoke: '撤销权限', register_service: '登记模型服务', update_service: '修改模型服务', replace_key: '更换密钥',
   fetch_models: '获取模型列表', enable_model_id: '启用模型 ID', update_model: '修改模型', change_price: '调整单价', disable_model: '停用模型', reenable_model: '重新启用',

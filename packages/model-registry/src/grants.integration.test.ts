@@ -53,9 +53,10 @@ before(async () => {
 after(async () => {
   for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   try {
-    await pool.query('DELETE FROM workspaces WHERE slug=ANY($1)', [[slugA, slugB]]);
-    await pool.query('DELETE FROM models WHERE service_id=$1', [serviceId]); await pool.query('DELETE FROM model_services WHERE id=$1', [serviceId]);
     const users = (await pool.query('SELECT id FROM hestia_auth_user WHERE email=ANY($1)', [Object.values(emails)])).rows.map(row => row.id);
+    // Workspaces first: their calls reference the models, which are kept while any call refers to them.
+    await pool.query('DELETE FROM workspaces WHERE slug=ANY($1) OR personal_user_id=ANY($2)', [[slugA, slugB], users]);
+    await pool.query('DELETE FROM models WHERE service_id=$1', [serviceId]); await pool.query('DELETE FROM model_services WHERE id=$1', [serviceId]);
     await pool.query('DELETE FROM platform_audit WHERE actor=ANY($1) OR target=ANY($1) OR target LIKE $2', [[...Object.values(emails), actor.email], `%${run}%`]);
     await pool.query('DELETE FROM workspaces WHERE personal_user_id=ANY($1)', [users]);
     await pool.query('DELETE FROM hestia_invitation WHERE email=ANY($1)', [Object.values(emails)]);
@@ -137,4 +138,17 @@ test('parallel reservations never exceed the quota; the concurrency caps queue n
 
   await updateEnterprise(actor, slugB, { quota: 0 });
   await assert.rejects(reserveCall({ workspaceId: idB, modelId: m1, inputTokens: 10 }), { code: 'QUOTA_EXCEEDED', message: '本企业还没有设置本月额度。' });
+});
+
+test('a personal workspace gets models the same way, addressed by its id', async () => {
+  const personal = (await pool.query('SELECT w.id FROM workspaces w JOIN hestia_auth_user u ON u.id = w.personal_user_id WHERE u.email=$1', [emails.memberA])).rows[0].id;
+  const granted = await call(adminWorkspace.PATCH, admin, cookies.ops, { slug: personal }, { grants: [m1], quota: null, concurrency: 1 });
+  assert.equal(granted.status, 200);
+  assert.deepEqual([granted.body.enterprise.kind, granted.body.enterprise.owner, granted.body.enterprise.ref], ['personal', emails.memberA, personal]);
+  const listed = (await call(adminWorkspaces.GET, admin, cookies.ops, {})).body.enterprises.find((e: { id: string }) => e.id === personal);
+  assert.equal(listed.grants.length, 1);
+  await pool.query('UPDATE workspace_models SET enabled=true WHERE workspace_id=$1', [personal]);
+  const reservation = await reserveCall({ workspaceId: personal, modelId: m1, inputTokens: 10 });
+  await settleCall(reservation.callId, { inputTokens: 10, outputTokens: 10, outcome: 'ok' });
+  assert.equal((await call(adminWorkspace.GET, admin, cookies.ops, { slug: randomUUID() })).status, 404);
 });

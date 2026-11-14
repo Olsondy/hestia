@@ -79,10 +79,21 @@ function ModelsSettings() {
               onClick={() => change.mutate({ id: model.id, body: { enabled: !model.enabled } })}><i/></button>
           </div></li>;
       })}</ul> : <div className="empty"><b>还没有开通模型</b>请联系我方开通，开通后会出现在这里。</div>}
+      <ConsoleLink/>
       <p className="small muted" style={{ marginTop: 12 }}>成员在 Agent 助手里只能选择已启用的模型，默认选中「默认」模型。停用某个模型后，正在用它的任务会在当前一步结束后停止，已有成果保留。</p>
     </div></section>
     <QuotaPanel quota={quota}/>
   </div>;
+}
+
+/** Only for accounts with platform console rights (ADR-0018 supplement): the console is on its own host and asks to sign in there. */
+function ConsoleLink() {
+  const { workspace } = useWorkbench();
+  const session = useQuery({ queryKey: ['session-console'], queryFn: () => request<{ console?: { origin: string } }>('GET', '/api/session'), staleTime: 60_000 });
+  const origin = session.data?.console?.origin;
+  if (!origin) return null;
+  return <p className="small" style={{ marginTop: 12 }}><a className="text-link" href={`${origin}/admin/workspaces/${encodeURIComponent(workspace.slug ?? workspace.id)}`} target="_blank" rel="noopener">在平台后台配置模型 →</a>
+    <span className="muted">（需要在后台单独登录）</span></p>;
 }
 
 function QuotaPanel({ quota }: { quota: Models['quota'] }) {

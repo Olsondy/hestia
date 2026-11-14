@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { resolveWorkspaceModel } from '../../conversation/src/configurations';
 import type { PoolClient } from 'pg';
 import type { PgBoss } from 'pg-boss';
 import { and, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
@@ -20,7 +21,9 @@ export type TaskRow = {
   lease_until: Date | null; lease_valid?: boolean; attempts: number; usage_limit: number; usage_used: number; usage_reserved: number;
   event_seq: number; error: TaskError | null; created_at: Date; updated_at: Date;
   conversation: (ConversationState & { operationId: string; context: unknown; callStarted: boolean; response: unknown;
-    configuration?: Record<string, unknown>; effectiveDecision?: unknown }) | null;
+    configuration?: Record<string, unknown>; effectiveDecision?: unknown;
+    /** ADR-0018: the member's model pick (registry id, applies from the next call) and the open quota reservation of the current call. */
+    selectedModel?: string | null; modelCallId?: string | null }) | null;
 };
 /** Callers (budget, conversation runner) read tasks in the column (snake_case) shape. */
 export const taskRow = (r: typeof designTasks.$inferSelect): TaskRow => ({ id: r.id, actor_id: r.actorId, project_id: r.projectId,
@@ -55,7 +58,7 @@ export async function createTask(principal: Principal, projectId: string, input:
   const taskId = await transaction(async (client, tx) => {
     // Match the commands advisory-lock namespace: one client operation cannot identify two effects.
     await advisoryXactLock(tx, `${userId}:${request.operationId}`);
-    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot, workspaceId: projects.workspaceId }).from(projects)
       .where(and(eq(projects.id, id), canAccessProject(projects.id, userId))).for('update');
     if (!project) throw notFound();
     const [previous] = await tx.select({ id: designTasks.id, requestHash: designTasks.requestHash }).from(designTasks)
@@ -77,7 +80,9 @@ export async function createTask(principal: Principal, projectId: string, input:
         throw new DomainError('INVALID_SELECTION', '所选对象不属于当前项目。', 400);
       conversation = { input: { message: request.message, selectedObjectId: request.selectedObjectId ?? null, referenceFrame: request.referenceFrame },
         phase: 'accepted', outcome: null, modelUsage: { inputTokens: null, outputTokens: null }, operationId: randomUUID(),
-        context: state, callStarted: false, response: null, brief: initialBrief(request.message), execution: initialExecution() };
+        context: state, callStarted: false, response: null, brief: initialBrief(request.message), execution: initialExecution(),
+        // ADR-0018: only an enabled, admitted model of this workspace can be picked; none picked means the workspace default.
+        selectedModel: request.modelId ? await resolveWorkspaceModel(project.workspaceId, request.modelId) : null };
     }
     await tx.insert(designTasks).values({ id: taskId, actorId: userId, projectId: id, requestId: request.operationId, requestHash: hash,
       protocol: request.protocol, status: 'queued', steps, expectedRevision: project.revision, conversation, usageLimit: 8 });
@@ -98,7 +103,7 @@ export async function appendConversationInput(principal: Principal, projectId: s
       .where(and(eq(designTasks.id, task), eq(designTasks.projectId, id), canAccessProject(designTasks.projectId, userId))).for('update');
     if (!locked) throw notFound();
     const row = taskRow(locked);
-    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects)
+    const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot, workspaceId: projects.workspaceId }).from(projects)
       .where(and(eq(projects.id, id), canAccessProject(projects.id, userId))).for('update');
     if (!project) throw notFound();
     const [previous] = await tx.select({ requestHash: operations.requestHash, result: operations.result }).from(operations)
@@ -125,6 +130,8 @@ export async function appendConversationInput(principal: Principal, projectId: s
     let message: string, questionId: string | null = null, requirementId: string | null = null;
     if (request.kind === 'message') {
       message = request.message;
+      // Switching models applies from the next call; finished steps are not redone (ADR-0018).
+      if (request.modelId) conversation.selectedModel = await resolveWorkspaceModel(project.workspaceId, request.modelId);
       if (request.questionId) {
         const question = brief.questions.find(item => item.id === request.questionId);
         if (!question || question.status !== 'open') throw new DomainError('QUESTION_NOT_OPEN', '问题不存在或已经回答，请以新补充记录修正。', 409);

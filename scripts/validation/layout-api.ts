@@ -4,7 +4,7 @@ import { mkdir, open, writeFile } from 'node:fs/promises';
 import { createInvitation } from '../../packages/identity/src/service';
 import { pool, transaction } from '../../packages/persistence/src/client';
 import { syntheticPlanningInput } from '../../packages/layout-planner/src/fixtures';
-import { productionConfigurations } from '../../packages/conversation/src/configurations';
+import { validationConfiguration } from '../../packages/conversation/src/configurations';
 import { runTask } from '../../packages/tasks/src/runner';
 import { fixtureModel, toolChunks } from '../../packages/model-validation/src/protocol-fixture';
 import type { TaskView } from '../../packages/contracts/src/tasks';
@@ -46,7 +46,7 @@ try {
   assert.equal((await json(await request(path, 'POST', payload), 202)).task.id, task.id);
   const stream = await request(`${path}/${task.id}/events?after=0`); assert.equal(stream.status, 200); await stream.body?.cancel();
   if (live) {
-    const config = productionConfigurations()[0];
+    const config = await validationConfiguration();
     await runTask(task.id, { conversation: { configurations: [{ ...config, createModel: onDispatch => config.createModel(() => {
       if (networkDispatches >= 1) throw new Error('SYNTHETIC_LIVE_CALL_LIMIT');
       networkDispatches++; onDispatch();

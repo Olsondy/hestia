@@ -13,7 +13,34 @@ import { exactLocalCommand } from './intent';
 import { applyBriefProposal } from './brief';
 import { randomUUID } from 'node:crypto';
 import { execution, hasRetainedWork, reserveAttempt, settleAttempt } from '../../tasks/src/budget';
-import { admittedConfigurations, productionConfigurations, type ModelConfiguration } from './configurations';
+import { admittedConfigurations, registryConfiguration, type ModelConfiguration } from './configurations';
+import { reserveCall, settleCall } from '../../model-registry/src/grants';
+import { setTimeout as delay } from 'node:timers/promises';
+
+// Quota (ADR-0018): every registry call reserves before it is sent and settles after. A busy enterprise or service
+// queues here for a bounded time; settlement is idempotent, so replays and recovery settle the same reservation once.
+async function workspaceConfiguration(row: TaskRow) {
+  const [project] = await db.select({ workspaceId: projects.workspaceId }).from(projects).where(eq(projects.id, row.project_id));
+  return registryConfiguration(project.workspaceId, row.conversation!.selectedModel ?? null);
+}
+async function reserveQueued(input: Parameters<typeof reserveCall>[0]) {
+  for (let waited = 0; ; waited += 2000) {
+    try { return await reserveCall(input); }
+    catch (error) {
+      const busy = error instanceof DomainError && (error.code === 'ENTERPRISE_BUSY' || error.code === 'SERVICE_BUSY');
+      if (!busy) throw error;
+      if (waited >= 120_000) throw new DomainError('MODEL_QUEUE_TIMEOUT', '排队时间过长，本轮没有调用模型；已有成果保留，请稍后再试。', 429);
+      await delay(2000);
+    }
+  }
+}
+async function settlePending(row: TaskRow, outcome: string) {
+  const callId = row.conversation!.modelCallId;
+  if (!callId) return;
+  const response = row.conversation!.response as ModelResponse | null;
+  await settleCall(callId, { inputTokens: response?.usage.inputTokens ?? null, outputTokens: response?.usage.outputTokens ?? null,
+    outcome, elapsedMs: response?.elapsedMs !== undefined ? Math.round(response.elapsedMs) : undefined });
+}
 import { planRoomCandidateInTransaction } from '../../layout-planner/src/service';
 import { prepareLayoutProposal } from './layout-decision';
 import { selectModelProfile } from './profile';
@@ -163,6 +190,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
     let row = await readTask(taskId);
     let response = row.conversation!.response as ModelResponse | null;
     // Saved complete results are reusable even if the current provider configuration is gone.
+    if (response) await settlePending(row, response.failure ? 'failed' : 'ok');
     if (response && !response.failure) {
       if (options.beforeCommit) await options.beforeCommit();
       await commitResponse(claim, response); return;
@@ -177,15 +205,16 @@ export async function runConversationTask(taskId: string, options: ConversationR
       if (attempts.length >= 3) throw new DomainError('MODEL_RETRY_LIMIT', '平台模型仍不可用，已停止有限重试；已有成果保留。');
     }
     if (!response && row.conversation!.callStarted) {
+      await settlePending(row, 'unknown');
       await fail(claim, 'MODEL_OUTCOME_UNKNOWN', '先前模型调用的完整结果未保存，用量待核对；为避免重复调用，本轮已停止。'); return;
     }
     const profile = selectModelProfile(row.conversation!.input, spatialStateSchema.parse(row.conversation!.context));
     const registry = admittedConfigurations(options.configurations ?? (options.model ? [{ id: 'test-primary', modelId: 'injected-test-model',
       profiles: ['edit_fast', 'design_quality'], admission: { accepted: true, evidence: 'controlled SDK protocol fixture', kind: 'protocol-fixture' },
-      createModel: () => options.model! }] : productionConfigurations()), profile);
+      createModel: () => options.model! }] : [await workspaceConfiguration(row)]), profile);
     const configuration = registry[attempts.length >= 2 ? 1 : 0];
     if (!configuration) throw new DomainError(attempts.length ? 'MODEL_NO_ADMITTED_FALLBACK' : 'MODEL_NOT_ADMITTED',
-      attempts.length ? '平台模型暂不可用，且没有通过验收的备用配置；已有成果保留。' : '没有匹配此任务的已验收平台配置，已有成果保留。');
+      attempts.length ? '所选模型暂不可用，不会自动换用其他模型；请改选模型后再试，已有成果保留。' : '没有匹配此任务的已验收平台配置，已有成果保留。');
     if (response) {
       // Durable retry preparation: a restart sees the same rejected attempt and next config.
       await transaction(async (client, tx) => {
@@ -204,6 +233,10 @@ export async function runConversationTask(taskId: string, options: ConversationR
       try { model = configuration.createModel(() => { networkDispatches++; }); } catch {
         await fail(claim, 'MODEL_NOT_CONFIGURED', '平台模型配置不可用；空间未修改。'); return;
       }
+      const contextBytes = Buffer.byteLength(JSON.stringify({ input: row.conversation!.input, context: row.conversation!.context, brief: row.conversation!.brief }), 'utf8');
+      // Bytes over-count tokens, so the input estimate never under-reserves.
+      const reservation = configuration.quota ? await reserveQueued({ ...configuration.quota, inputTokens: contextBytes + 8000, userId: row.actor_id, taskId }) : null;
+      try {
       row = await transaction(async (client, tx) => {
         const current = await fenced(client, claim);
         const [project] = await tx.select({ revision: projects.revision }).from(projects)
@@ -212,7 +245,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
         reserveAttempt(current, { configurationId: configuration.id, profile,
           reason: attempts.length === 0 ? 'initial' : attempts.length === 1 ? 'retry' : 'fallback',
           contextBytes: Buffer.byteLength(JSON.stringify({ input: current.conversation!.input, context: current.conversation!.context, brief: current.conversation!.brief }), 'utf8') });
-        current.conversation!.callStarted = true; current.conversation!.phase = 'calling_model';
+        current.conversation!.callStarted = true; current.conversation!.phase = 'calling_model'; current.conversation!.modelCallId = reservation?.callId ?? null;
         current.conversation!.configuration = { model: configuration.modelId, configurationId: configuration.id, profile,
           instructionsVersion: INSTRUCTIONS_VERSION, toolContractVersion: 'resolve-turn-4-layout', policyVersion: 'bounded-execution-1',
           timeoutMs: MODEL_TIMEOUT_MS, maxOutputTokens: 1600, maxRetries: 0 };
@@ -221,8 +254,13 @@ export async function runConversationTask(taskId: string, options: ConversationR
         await appendEvent(client, taskId, 'status', { status: 'running', phase: 'calling_model', generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 });
         return current;
       });
+      } catch (error) {
+        // Nothing was sent: release the reservation at zero.
+        if (reservation) await settleCall(reservation.callId, { inputTokens: 0, outputTokens: 0, outcome: 'not_sent' });
+        throw error;
+      }
       const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(MODEL_TIMEOUT_MS)]);
-      response = await resolveConversation({ model, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
+      response = await resolveConversation({ model, providerOptions: configuration.providerOptions, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
         onText: text => transaction(async client => { const current = await fenced(client, claim); await appendEvent(client, taskId, 'text', { text, source: 'model', provisional: true, generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 }); }) });
       response.networkDispatches = networkDispatches;
       await transaction(async (client, tx) => {
@@ -238,6 +276,8 @@ export async function runConversationTask(taskId: string, options: ConversationR
         await appendEvent(client, taskId, 'usage', { ...response!.usage, unit: 'token', elapsedMs: response!.elapsedMs });
         await appendEvent(client, taskId, 'status', { status: 'running', phase: 'validating' });
       });
+      if (reservation) await settleCall(reservation.callId, { inputTokens: response.usage.inputTokens, outputTokens: response.usage.outputTokens,
+        outcome: response.failure ? 'failed' : 'ok', elapsedMs: Math.round(response.elapsedMs) });
       // Test hook simulates a process disappearing only after the durable response commit.
       if (options.afterResponsePersisted) { await options.afterResponsePersisted(); }
     }

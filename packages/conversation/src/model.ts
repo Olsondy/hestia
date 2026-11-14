@@ -1,5 +1,4 @@
 import { streamText, tool, parsePartialJson, type LanguageModel } from 'ai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
 import type { SpatialState } from '../../contracts/src/project';
 import type { ConversationState } from '../../contracts/src/tasks';
@@ -70,17 +69,9 @@ function duplicateJsonKeys(raw: string) {
   return false;
 }
 
-/** Called only by the finite Worker runner, never by request acceptance. */
-export function configuredModel(onDispatch?: () => void) {
-  const baseURL = process.env.HESTIA_MODEL_BASE_URL, apiKey = process.env.HESTIA_MODEL_API_KEY, modelId = process.env.HESTIA_MODEL_ID;
-  if (!baseURL || !apiKey || !modelId) throw new Error('MODEL_NOT_CONFIGURED');
-  const endpoint = new URL(baseURL);
-  if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password) throw new Error('MODEL_ENDPOINT_INVALID');
-  return createOpenAICompatible({ name: 'hestia-platform', baseURL: endpoint.href, apiKey, includeUsage: true,
-    fetch: async (url, init) => { onDispatch?.(); return fetch(url, init); } })(modelId);
-}
 export async function resolveConversation(options: { model: LanguageModel; input: ConversationState['input']; state: SpatialState;
-  brief?: ConversationState['brief']; signal: AbortSignal; onText: (text: string) => Promise<void> }): Promise<ModelResponse> {
+  brief?: ConversationState['brief']; signal: AbortSignal; onText: (text: string) => Promise<void>;
+  providerOptions?: Parameters<typeof streamText>[0]['providerOptions'] }): Promise<ModelResponse> {
   const started = performance.now(); let text = '', streamedReply = '', firstReplyMs: number | null = null, finishReason: string | null = null, failure: string | null = null;
   let usage: ModelResponse['usage'] = { inputTokens: null, outputTokens: null };
   let providerStatus: number | null = null;
@@ -103,7 +94,7 @@ export async function resolveConversation(options: { model: LanguageModel; input
       currentLayout: options.state.currentLayout, fixedFacts: options.state.fixedFacts, synthetic: options.state.synthetic,
       conversationBrief: options.brief,
     }) }], tools: { resolve_turn: tool({ description: 'Propose the answer, clarification or exact selected-object change. Does not execute.', inputSchema: toolInputSchema }) },
-      maxOutputTokens: 1600, maxRetries: 0, abortSignal: options.signal, onError: event => { recordStatus(event.error); } });
+      maxOutputTokens: 1600, maxRetries: 0, abortSignal: options.signal, providerOptions: options.providerOptions, onError: event => { recordStatus(event.error); } });
     for await (const part of result.fullStream) {
       // Only the normative reply is displayed; optional natural prose is retained for audit.
       if (part.type === 'text-delta') text += part.text;

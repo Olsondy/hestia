@@ -15,6 +15,8 @@ export const createConversationTaskSchema = z.object({
   operationId: idSchema, expectedRevision: z.number().int().positive(),
   protocol: z.literal('conversation-v1'), message: z.string().trim().min(1).max(4000),
   selectedObjectId: z.string().min(1).max(120).optional(), referenceFrame: z.literal('plan'),
+  /** The member's pick among the workspace's enabled models (ADR-0018); omitted means the workspace default. */
+  modelId: z.string().uuid().optional(),
 }).strict();
 export const createTaskSchema = z.discriminatedUnion('protocol', [createDeterministicTaskSchema, createConversationTaskSchema]);
 export type TaskStep = z.infer<typeof taskStepSchema>;
@@ -26,7 +28,7 @@ export type ConversationOutcome = { kind: 'answer' | 'clarification' | 'applied'
 export const conversationInputSchema = z.discriminatedUnion('kind', [
   z.object({ operationId: idSchema, expectedIntentVersion: z.number().int().positive(), expectedRevision: z.number().int().positive(),
     kind: z.literal('message'), message: z.string().trim().min(1).max(4000), questionId: idSchema.optional(),
-    selectedObjectId: z.string().min(1).max(120).optional() }).strict(),
+    selectedObjectId: z.string().min(1).max(120).optional(), modelId: z.string().uuid().optional() }).strict(),
   z.object({ operationId: idSchema, expectedIntentVersion: z.number().int().positive(), expectedRevision: z.number().int().positive(),
     kind: z.literal('confirm_requirement'), requirementId: idSchema, requirementRevision: z.number().int().positive() }).strict(),
 ]);

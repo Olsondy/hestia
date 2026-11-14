@@ -193,7 +193,9 @@ export async function reserveCall(input: { workspaceId: string; modelId: string;
       if (totals.used + totals.reserved + reservedFen > settings.monthlyQuota)
         throw new DomainError('QUOTA_EXCEEDED', settings.monthlyQuota === 0 ? '本企业还没有设置本月额度。' : '本月额度已用完，已有成果不受影响。', 402);
     }
-    const [call] = await tx.insert(modelCalls).values({ workspaceId: input.workspaceId, userId: input.userId ?? null, taskId: input.taskId ?? null,
+    // The member when the account exists (it may be gone, or a synthetic actor in tests); usage still counts without one.
+    const [call] = await tx.insert(modelCalls).values({ workspaceId: input.workspaceId,
+      userId: input.userId ? sql`(SELECT ${hestiaAuthUser.id} FROM ${hestiaAuthUser} WHERE ${hestiaAuthUser.id} = ${input.userId})` : null, taskId: input.taskId ?? null,
       modelId: input.modelId, priceId: price.id, month: monthSql, reservedFen }).returning({ id: modelCalls.id });
     return { callId: call.id, reservedFen, maxOutput: grant.maxOutput };
   });

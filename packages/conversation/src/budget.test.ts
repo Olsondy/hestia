@@ -9,7 +9,7 @@ import { createTask, getTask, appendConversationInput, cancelTask } from '../../
 import { initializeQueue } from '../../tasks/src/queue';
 import { claimTask, runTask } from '../../tasks/src/runner';
 import { fixtureModel, toolChunks } from '../../model-validation/src/protocol-fixture';
-import { productionConfigurations, admittedConfigurations, type ModelConfiguration } from './configurations';
+import { admittedConfigurations, type ModelConfiguration } from './configurations';
 import { syntheticPlanningInput } from '../../layout-planner/src/fixtures';
 import { listCandidates } from '../../candidates/src/service';
 
@@ -127,11 +127,9 @@ test('legacy unknown call and exhausted claims retain an unresolved token reserv
   assert.deepEqual((await getTask(owner, p.id, task.id)).conversation!.execution, budget);
 });
 
-test('production admission binds endpoint, model and installed adapter without exposing endpoint or accepting arbitrary alternatives', () => {
-  const before = process.env.HESTIA_MODEL_BASE_URL;
-  assert.equal(productionConfigurations().length, 1);
-  try { process.env.HESTIA_MODEL_BASE_URL = 'https://different.invalid/v1'; assert.throws(productionConfigurations, { code: 'MODEL_NOT_ADMITTED' }); }
-  finally { process.env.HESTIA_MODEL_BASE_URL = before; }
+// The environment-configured production model and its fingerprint admission were replaced by the model registry
+// (ADR-0018, AM05); registry selection, quota and admission are covered by registry-run.integration.test.ts.
+test('only admitted configurations for the task profile are used', () => {
   const item = config('quality-only', good()); item.profiles = ['design_quality'];
   assert.equal(admittedConfigurations([item], 'edit_fast').length, 0);
   assert.equal(admittedConfigurations([item], 'design_quality').length, 1);

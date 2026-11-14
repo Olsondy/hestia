@@ -495,3 +495,20 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .table--usage .table__row>span:not(:first-child),.table--usage .table__head>span:not(:first-child),.table--ai .table__row>span:not(:first-child),.table--ai .table__head>span:not(:first-child){text-align:right}
 .table--ai{margin-top:16px}
 .btn.is-disabled{opacity:.5;pointer-events:none}
+/* Agent 选择模型 (AM05); the bar sits in a positioned panel. */
+.model-bar{position:relative}
+.model-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px 0}
+.model-pick{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;margin-left:-10px;border-radius:var(--r-pill);font-size:13px;transition:background var(--d-fast)}
+.model-pick:hover,.model-pick[aria-expanded=true]{background:var(--c-surface-2)}
+.model-pick b{font-weight:500}
+.model-pick svg{color:var(--c-ink-2)}
+.model-pick em{font-style:normal;font:var(--t-small);color:var(--c-danger)}
+.model-bar__left{font:var(--t-small);color:var(--c-ink-2);white-space:nowrap}
+.model-bar__left.danger{color:var(--c-danger)}
+.model-menu{position:absolute;z-index:6;left:12px;right:12px;bottom:calc(100% - 4px);padding:6px;border-radius:var(--r-md);background:var(--c-surface);box-shadow:var(--e-modal);animation:float-in var(--d-fast) var(--ease)}
+.model-menu button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:8px 10px;border-radius:var(--r-sm);text-align:left;transition:background var(--d-fast)}
+.model-menu button:hover,.model-menu button[aria-selected=true]{background:var(--c-surface-2)}
+.model-menu b{display:flex;align-items:center;gap:6px;font-weight:500;font-size:13px}
+.model-menu b em{font-style:normal;font:var(--t-small);color:var(--c-ink-2)}
+.model-menu small{display:block;margin-top:2px;font:var(--t-small);color:var(--c-ink-2)}
+.model-menu p{padding:8px 10px 4px;font:var(--t-small);color:var(--c-ink-2);border-top:1px solid var(--c-line);margin-top:4px}

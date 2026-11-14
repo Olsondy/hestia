@@ -11,6 +11,7 @@ import { grantPlatformAdmin, listAudit, listPlatformAdmins, revokePlatformAdmin 
 import { adminHost, isAdminRequest } from './host';
 import * as sessionRoute from '../../../apps/web/app/api/admin/session/route';
 import * as auditRoute from '../../../apps/web/app/api/admin/audit/route';
+import * as appSessionRoute from '../../../apps/web/app/api/session/route';
 import { NextRequest } from 'next/server';
 import { proxy } from '../../../apps/web/proxy';
 
@@ -121,4 +122,13 @@ test('the proxy hides /admin off the admin host and keeps the admin host to the 
     assert.equal(response.status, 307, path); assert.equal(new URL(response.headers.get('location')!).pathname, '/admin', path);
   }
   assert.equal(at(enterpriseHost, '/w').headers.get('x-middleware-next'), '1');
+});
+
+test('the workbench session tells an account with console rights where the console is, and nobody else', async () => {
+  await grantPlatformAdmin(emails.ops, 'platform');
+  const at = (cookie: string) => appSessionRoute.GET(new Request(`http://${parent}/api/session`, { headers: { Host: parent, Cookie: cookie } })).then(r => r.json());
+  assert.deepEqual((await at(cookies.ops)).console, { level: 'platform', origin: `http://${admin}` });
+  assert.equal((await at(cookies.member)).console, undefined);
+  await revokePlatformAdmin(emails.ops);
+  assert.equal((await at(cookies.ops)).console, undefined);
 });

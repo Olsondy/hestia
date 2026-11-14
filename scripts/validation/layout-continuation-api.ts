@@ -4,7 +4,7 @@ import { mkdir, open, writeFile } from 'node:fs/promises';
 import { createInvitation } from '../../packages/identity/src/service';
 import { pool, transaction } from '../../packages/persistence/src/client';
 import { syntheticPlanningInput } from '../../packages/layout-planner/src/fixtures';
-import { productionConfigurations } from '../../packages/conversation/src/configurations';
+import { validationConfiguration } from '../../packages/conversation/src/configurations';
 import { runTask } from '../../packages/tasks/src/runner';
 import { fixtureModel, toolChunks } from '../../packages/model-validation/src/protocol-fixture';
 import type { TaskView } from '../../packages/contracts/src/tasks';
@@ -46,7 +46,7 @@ try {
   let task: TaskView = (await json(await request(path, 'POST', initialPayload), 202)).task; taskId = task.id;
   const taskPath = `${path}/${task.id}`;
   const stream = await request(`${taskPath}/events?after=0`); assert.equal(stream.status, 200); await stream.body?.cancel();
-  const configurations = live ? productionConfigurations() : [];
+  const configurations = live ? [await validationConfiguration()] : [];
   async function runRound(current: TaskView) {
     roundDispatches = 0;
     if (live) {

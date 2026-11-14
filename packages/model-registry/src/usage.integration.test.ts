@@ -108,9 +108,12 @@ test('the CSV export has the same numbers as the page', async () => {
   assert.equal(csv.status, 200); assert.match(csv.type ?? '', /^text\/csv/);
   const lines = csv.text.replace(/^﻿/, '').trim().split('\r\n');
   assert.equal(lines[0], '模型,调用次数,输入 token,输出 token,未核对次数,金额（元）');
-  assert.equal(lines.length, page.rows.length + 2);
-  assert.equal(lines.at(-1), `合计,${page.total.calls},${page.total.inputTokens},${page.total.outputTokens},${page.total.unverified},${(page.total.costFen / 100).toFixed(2)}`);
+  // The platform report is shared with other test files writing calls at the same time: compare this test's own rows.
+  const line = (r: { name: string; calls: number; inputTokens: number; outputTokens: number; unverified: number; costFen: number }) =>
+    `${r.name},${r.calls},${r.inputTokens},${r.outputTokens},${r.unverified},${(r.costFen / 100).toFixed(2)}`;
+  for (const key of [deep, fast]) assert.ok(lines.includes(line(page.rows.find((r: { key: string }) => r.key === key))), key);
   assert.ok(lines.includes(`深度设计 · deep-${run},3,300000,30000,0,5.60`));
+  assert.match(lines.at(-1)!, /^合计,\d+,\d+,\d+,\d+,\d+\.\d{2}$/);
   assert.equal((await call(adminExport.GET, admin, cookies.adminA, '')).status, 403);
 });
 

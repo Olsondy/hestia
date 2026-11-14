@@ -28,7 +28,7 @@
 | `pnpm invite <email> [hours]` | 创建指定邮箱邀请，默认 24 小时、最长 720 小时；仅显示链接，不自动发邮件 |
 | `pnpm workspace:domain <slug> add\|remove <host>` | 为企业登记或移除入口域名（共享部署，ADR-0017）；不带动作时列出已登记域名。已登记域名按请求域名确定企业，未登记的域名回退到 `HESTIA_HOME_ENTRY` |
 | `pnpm platform:admin grant [--super] <email>\|revoke <email>\|list` | 授予、撤销或列出平台管理员（`--super` 为超级管理员，ADR-0018）；只在服务器上执行，每次授予与撤销写入平台审计记录。后台只在 `HESTIA_ADMIN_HOST` 上提供 |
-| `pnpm usage:report --month YYYY-MM [--workspace <slug>]` | 按工作空间汇总当月（北京时间）设计任务、模型调用 token、出图与图纸转换用量，用于和企业结算；供应商未报告 token 的调用单独计数，不记为 0 |
+| `pnpm usage:report --month YYYY-MM [--workspace <slug>]` | 按工作空间汇总当月（北京时间）设计任务、模型调用 token、出图与图纸转换用量，用于和企业结算；供应商未报告 token 的调用单独计数，不记为 0；`billing` 为按单价折算的模型调用金额（分，分模型明细，ADR-0018） |
 | `pnpm workspace:export <slug> <空目录>` / `pnpm workspace:delete <slug> --confirm <slug>` | 导出或删除一家企业的全部数据与文件（M04）；成员的平台账号只导出不删除，会话、密码等不导出 |
 | `pnpm files:migrate-keys` | 把 M04 之前写在 `projects/…` 下的私有文件移到所属企业目录，可重复运行；须在文件所在的服务器上执行 |
 | `pnpm test:db` | 使用真实本地数据库验证持久化与隔离 |

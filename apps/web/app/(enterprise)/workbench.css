@@ -486,3 +486,12 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .model-row__actions{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .model-row--off .model-row__main b,.model-row--off .model-row__main small{opacity:.55}
 .icon-btn--on{background:var(--c-surface-2);color:var(--c-ink)}
+.table__total{border-top:1px solid var(--c-line);border-radius:0;margin-top:4px}
+.table__total b{font-weight:500}
+.table--usage .table__row,.table--ai .table__row{cursor:default}
+.table--usage .table__row:hover,.table--ai .table__row:hover{background:none}
+.table--usage .table__head,.table--usage .table__row{grid-template-columns:minmax(0,1.5fr) repeat(3,110px) 100px 130px}
+.table--ai .table__head,.table--ai .table__row{grid-template-columns:minmax(0,1.5fr) repeat(3,120px) 140px}
+.table--usage .table__row>span:not(:first-child),.table--usage .table__head>span:not(:first-child),.table--ai .table__row>span:not(:first-child),.table--ai .table__head>span:not(:first-child){text-align:right}
+.table--ai{margin-top:16px}
+.btn.is-disabled{opacity:.5;pointer-events:none}

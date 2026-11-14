@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ClientError, get, post, signOut } from '../client/client-api';
 import { ModelView, ServicesView, ServiceView } from './admin-models';
 import { WorkspacesView, WorkspaceView } from './admin-workspaces';
+import { UsageView } from './admin-usage';
 
 type Admin = { name: string; email: string; level: 'platform' | 'super' };
 type AuditEntry = { at: string; actor: string; action: string; target: string; detail: Record<string, unknown> };
@@ -59,6 +60,7 @@ export function AdminApp({ path }: { path: string[] }) {
     <main id="page">{current === 'audit' ? <AuditView/>
       : current === 'models' ? (path[0] === 'services' && path[1] ? <ServiceView id={path[1]}/> : path[0] === 'models' && path[1] ? <ModelView id={path[1]}/> : <ServicesView/>)
         : current === 'workspaces' ? (path[1] ? <WorkspaceView slug={path[1]}/> : <WorkspacesView/>)
+          : current === 'usage' ? <UsageView/>
         : <Pending title={sections.find(([key]) => key === current)![1]}/>}</main>
   </>;
 }

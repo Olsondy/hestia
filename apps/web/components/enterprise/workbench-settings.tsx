@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClientError } from '../client/client-api';
 import { Shell, useWorkbench } from './workbench-app';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { MonthTools, UsageTable, type UsageReport } from '../admin/admin-usage';
 
 type EnterpriseModel = { id: string; modelId: string; name: string; description: string; enabled: boolean; isDefault: boolean; availability: 'ok' | 'platform_disabled' | 'not_ready' };
 type Models = { role: 'admin' | 'member'; models: EnterpriseModel[]; defaultModel: string | null; quota: { limit: number | null; used: number; reserved: number; exhausted: boolean; concurrency?: number } };
@@ -25,8 +27,28 @@ export function SettingsView({ tab }: { tab: string }) {
   if (workspace.role !== 'admin') return <Shell nav="settings"><div className="page"><div className="empty"><b>只有企业管理员可以查看设置</b>需要启用模型或查看用量，请联系企业管理员。</div></div></Shell>;
   return <Shell nav="settings"><div className="page">
     <header className="page__head"><div><h1 className="page__title">企业设置</h1><p className="page__sub">只有企业管理员能看到这里。</p></div></header>
-    {tab === 'models' ? <ModelsSettings/> : <div className="empty"><b>找不到这个页面</b>请从「模型」进入。</div>}
+    <div className="list-tools"><SettingsNav tab={tab}/></div>
+    {tab === 'models' ? <ModelsSettings/> : tab === 'usage' ? <UsageSettings/> : <div className="empty"><b>找不到这个页面</b>请从「模型」进入。</div>}
   </div></Shell>;
+}
+
+function SettingsNav({ tab }: { tab: string }) {
+  const { base, go } = useWorkbench();
+  return <div className="segmented segmented--fit" role="tablist" aria-label="设置">{[['models', '模型'], ['usage', '用量']].map(([key, label]) =>
+    <button type="button" key={key} role="tab" aria-selected={tab === key} aria-pressed={tab === key} onClick={() => go(`${base}/settings/${key}`)}>{label}</button>)}</div>;
+}
+
+function UsageSettings() {
+  const { workspace, base } = useWorkbench(), router = useRouter(), query = useSearchParams();
+  const month = query.get('month') ?? '', by = query.get('by') ?? 'member', params = new URLSearchParams({ ...(month ? { month } : {}), by }).toString();
+  const usage = useQuery({ queryKey: ['enterprise-usage', workspace.id, params], queryFn: () => request<UsageReport>('GET', `/api/workspaces/${workspace.id}/usage?${params}`) });
+  if (usage.error) return <div className="empty"><b>暂时无法读取用量</b>{(usage.error as Error).message}</div>;
+  if (!usage.data) return <p className="page-loading">正在读取…</p>;
+  return <>
+    <MonthTools report={usage.data} byOptions={[['member', '按成员'], ['model', '按模型']]} onChange={(m, b) => router.push(`${base}/settings/usage?${new URLSearchParams({ month: m, by: b })}`)}/>
+    <UsageTable report={usage.data} label={usage.data.by === 'member' ? '成员' : '模型'} showUnverified={false}/>
+    <p className="small muted" style={{ marginTop: 12 }}>金额按每次调用当时的单价折算，用于和我方结算；单价不在这里显示。服务商没有返回用量的调用按预占额计入。</p>
+  </>;
 }
 
 function ModelsSettings() {

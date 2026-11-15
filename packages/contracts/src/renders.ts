@@ -9,7 +9,8 @@ export const renderSourceSchema = z.discriminatedUnion('kind', [
 export const createRenderSchema = z.object({ operationId: idSchema, source: renderSourceSchema }).strict();
 export type CreateRender = z.infer<typeof createRenderSchema>;
 /** Internal source for a customer tiling scheme (D06); not accepted by the public render endpoint. */
-export type SchemeRenderSource = { kind: 'scheme'; schemeId: string; revision: number };
+/** `scheme-candidate`: an Agent whole-scheme candidate (K03); `schemeId` is the candidate id. Adopting it reuses the render. */
+export type SchemeRenderSource = { kind: 'scheme' | 'scheme-candidate'; schemeId: string; revision: number };
 export type RenderSource = (z.infer<typeof renderSourceSchema> | SchemeRenderSource) & { projectRevision: number; fixedFactsId: string; fixedFactsRevision: number };
 export type RenderView = {
   id: string; projectId: string; status: 'queued' | 'running' | 'retry_wait' | 'completed' | 'failed';

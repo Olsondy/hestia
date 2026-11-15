@@ -35,6 +35,8 @@ export type FinishSchemeView = {
   /** K02: the revision's soft style and the styles the customer may switch to (empty for schemes made before soft styles). */
   softStyle: SoftStyleSummary | null;
   softChoices: SoftStyleSummary[];
+  /** K03: adopted from an Agent candidate and not yet published by a member; never shown to customers. */
+  pendingReview: boolean;
 };
 /** Display data of one finish in a request: name, kind and owning level (for floor tabs). */
 export type RequestFinishView = { id: string; name: string; kind: 'floor' | 'wall' | 'stair'; levelId: string | null; levelName: string | null };

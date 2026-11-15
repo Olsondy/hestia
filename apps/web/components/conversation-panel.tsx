@@ -13,7 +13,7 @@ const readable = (error: unknown) => error instanceof Error ? error.message : '�
 const date = (value: string) => new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 const statusNames: Record<TaskStatus, string> = { queued: '等待回复', running: '正在处理', retry_wait: '等待恢复', waiting_input: '等待你补充', waiting_selection: '候选已保存，等待你决定', completed: '本轮已完成', partial: '部分完成', failed: '本轮未完成', cancelled: '本轮已取消' };
 const sourceNames = { user_explicit: '你明确提出', user_confirmed: '你已确认', assistant_suggestion: '助手建议 · 待确认' };
-const outcomeNames = { answer: '回答已完成', clarification: '需要你补充', applied: '本轮修改已应用', no_change: '本轮未改动空间', candidate: '候选已保存' };
+const outcomeNames = { answer: '回答已完成', clarification: '需要你补充', applied: '本轮修改已应用', no_change: '本轮未改动空间', candidate: '候选已保存', scheme_candidate: '整体方案候选已保存' };
 const stateExplanation: Record<TaskStatus, string> = {
   queued: '这条消息已接收。关闭页面不会取消，回来可继续查看。',
   running: '正在理解你的要求。回复过程不代表家具已经修改。',

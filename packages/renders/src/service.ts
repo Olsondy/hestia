@@ -85,9 +85,9 @@ export async function createRender(principal: Principal, projectId: string, inpu
  * authorised the request; the frozen snapshot is the project state with the scheme's surface design.
  */
 export async function enqueueSchemeRender(client: PoolClient, input: { projectId: string; actorId: string; projectRevision: number;
-  state: SpatialState; scheme: { schemeId: string; revision: number }; label: string }, queue?: PgBoss) {
+  state: SpatialState; scheme: { schemeId: string; revision: number }; label: string; kind?: 'scheme' | 'scheme-candidate' }, queue?: PgBoss) {
   const versions = await renderVersions(), state = input.state;
-  const source: RenderSource = { kind: 'scheme', ...input.scheme, projectRevision: input.projectRevision, fixedFactsId: state.fixedFacts.id, fixedFactsRevision: state.fixedFacts.revision };
+  const source: RenderSource = { kind: input.kind ?? 'scheme', ...input.scheme, projectRevision: input.projectRevision, fixedFactsId: state.fixedFacts.id, fixedFactsRevision: state.fixedFacts.revision };
   const label = `${input.label}　|　${artifactLabel(source, state.scale, state.synthetic).split('　|　')[1]}`, scene = toScene(state, label);
   const snapshotHash = hash({ scene, source, scale: state.scale, synthetic: state.synthetic }), renderId = randomUUID(), requestId = randomUUID();
   await orm(client).insert(projectRenders).values({ id: renderId, actorId: input.actorId, projectId: input.projectId, requestId,

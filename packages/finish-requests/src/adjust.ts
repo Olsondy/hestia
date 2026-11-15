@@ -13,7 +13,7 @@ import { enqueueSchemeRender } from '../../renders/src/service';
 import { softStyleVersion } from '../../soft-styles/src/catalog';
 import { styledState } from '../../soft-styles/src/state';
 import type { SoftStyleReference } from '../../contracts/src/soft-styles';
-import { customerRequest, requestColumns, schemeColumns, view, type RequestDeps, type RequestRow, type SchemeRow } from './service';
+import { customerRequest, customerVisible, requestColumns, schemeColumns, view, type RequestDeps, type RequestRow, type SchemeRow } from './service';
 
 // D07: option-based adjustment of published schemes. Every change is a new scheme revision checked by the layout engine
 // and rendered in the background; undo restores the previous revision (re-using its image); confirmation binds one
@@ -47,7 +47,7 @@ async function mutate<T>(principal: Principal, slug: string, requestId: string, 
 }
 async function lockedScheme(client: PoolClient, row: RequestRow, schemeId: string) {
   const [scheme] = await orm(client).select(schemeColumns).from(finishSchemes)
-    .where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id))).for('update') as SchemeRow[];
+    .where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id), customerVisible)).for('update') as SchemeRow[];
   if (!scheme) throw new DomainError('NOT_FOUND', '方案不存在。', 404);
   return scheme;
 }

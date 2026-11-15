@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { floorplanImports } from './floorplan-imports';
 import { projects } from './projects';
 import { projectRenders } from './renders';
+import { designTasks } from './tasks';
 import { workspaces } from './workspaces';
 
 export const finishRequests = pgTable("finish_requests", {
@@ -71,6 +72,8 @@ export const finishSchemes = pgTable("finish_schemes", {
 	/** Current soft style (K02) and the 2–3 styles the customer may switch between, as `{ styleId, styleVersion }`. */
 	softStyle: jsonb("soft_style"),
 	softChoices: jsonb("soft_choices").default([]).notNull(),
+	/** K03 (ADR-0019): a scheme a member adopted from an Agent candidate waits here until a member publishes it; customers never see it. */
+	pendingReview: boolean("pending_review").default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 }, (table) => [
@@ -85,7 +88,7 @@ export const finishSchemes = pgTable("finish_schemes", {
 			name: "finish_schemes_request_id_fkey"
 		}).onDelete("cascade"),
 	unique("finish_schemes_request_id_ordinal_key").on(table.requestId, table.ordinal),
-	check("finish_schemes_ordinal_check", sql`(ordinal >= 1) AND (ordinal <= 3)`),
+	check("finish_schemes_ordinal_check", sql`(ordinal >= 1) AND (ordinal <= 6)`),
 	check("finish_schemes_revision_check", sql`revision > 0`),
 ]);
 
@@ -261,4 +264,40 @@ export const finishSchemeRevisions = pgTable("finish_scheme_revisions", {
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.schemeId, table.revision], name: "finish_scheme_revisions_pkey"}),
 	check("finish_scheme_revisions_revision_check", sql`revision > 0`),
+]);
+
+/**
+ * K03 (ADR-0019): a whole-scheme candidate proposed by the enterprise Agent and checked by the application. It never
+ * changes the space or the lead's schemes; a member adopts it into a pending scheme. One per conversation turn
+ * (`operation_id`), so replays and recovery never create a second one.
+ */
+export const schemeCandidates = pgTable("scheme_candidates", {
+	id: uuid().primaryKey().notNull(),
+	requestId: uuid("request_id").notNull(),
+	projectId: uuid("project_id").notNull(),
+	taskId: uuid("task_id").notNull(),
+	operationId: uuid("operation_id").notNull(),
+	baseRevision: integer("base_revision").notNull(),
+	name: text().notNull(),
+	summary: text().notNull(),
+	surfaceDesign: jsonb("surface_design").notNull(),
+	report: jsonb().notNull(),
+	softStyle: jsonb("soft_style"),
+	softChoices: jsonb("soft_choices").default([]).notNull(),
+	renderId: uuid("render_id"),
+	status: text().default('draft').notNull(),
+	adoptedSchemeId: uuid("adopted_scheme_id"),
+	adoptedBy: text("adopted_by"),
+	adoptedAt: timestamp("adopted_at", { withTimezone: true, mode: 'date' }),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({ columns: [table.requestId], foreignColumns: [finishRequests.id], name: "scheme_candidates_request_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.projectId], foreignColumns: [projects.id], name: "scheme_candidates_project_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.taskId], foreignColumns: [designTasks.id], name: "scheme_candidates_task_id_fkey" }).onDelete("cascade"),
+	foreignKey({ columns: [table.renderId], foreignColumns: [projectRenders.id], name: "scheme_candidates_render_id_fkey" }).onDelete("set null"),
+	foreignKey({ columns: [table.adoptedSchemeId], foreignColumns: [finishSchemes.id], name: "scheme_candidates_adopted_scheme_id_fkey" }).onDelete("set null"),
+	unique("scheme_candidates_task_operation_key").on(table.taskId, table.operationId),
+	index("scheme_candidates_request_idx").on(table.requestId, table.createdAt),
+	check("scheme_candidates_status_check", sql`status IN ('draft', 'adopted')`),
 ]);

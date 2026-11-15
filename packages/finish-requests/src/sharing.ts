@@ -11,7 +11,7 @@ import { bindingApplications, bindingEvents, finishRequestOperations, finishRequ
 import { actorOf, type Principal } from '../../workspaces/src/access';
 import { keyedHash, normalizePhone, requestSource } from '../../identity/src/phone';
 import { readRenderImage } from '../../renders/src/service';
-import { customer, listLeads, lockedRequest, memberOf, renderScene, view, type RequestRow } from './service';
+import { customer, customerVisible, listLeads, lockedRequest, memberOf, renderScene, view, type RequestRow } from './service';
 
 // D08 + ADR-0012: a share code grants preview only. Binding a request to its one primary customer needs a verified phone
 // that matches a targeted share, being the first to sign in on an open share, or member approval. Every step is recorded.
@@ -211,7 +211,7 @@ export async function shareImage(code: string, schemeId: string, source = shareS
     const { row } = await liveShare(client, tx, shareId, { viewerId });
     await inScope(tx, row.workspace_id, scope);
     const [scheme] = await tx.select({ renderId: finishSchemes.renderId }).from(finishSchemes)
-      .where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id)));
+      .where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id), customerVisible));
     if (!scheme?.renderId) throw new DomainError('NOT_FOUND', '方案不存在。', 404);
     return { row, renderId: scheme.renderId };
   });

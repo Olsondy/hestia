@@ -3,12 +3,13 @@ import { DomainError, spatialStateSchema } from '../../contracts/src/project';
 import type { ConversationOutcome } from '../../contracts/src/tasks';
 import { executeCommandInTransaction } from '../../commands/src/service';
 import { and, eq, sql } from 'drizzle-orm';
-import { db, transaction, type Database } from '../../persistence/src/client';
+import { db, pool, transaction, type Database } from '../../persistence/src/client';
+import { leadContext, proposeSchemeInTransaction } from '../../finish-requests/src/agent';
 import { designTasks, operations, projects, taskEvents } from '../../persistence/src/schema';
 import { canAccessProject } from '../../workspaces/src/access';
 import { appendEvent, taskRow, type TaskRow } from '../../tasks/src/service';
 import { claimTask, fenced, type TaskClaim } from '../../tasks/src/runner';
-import { resolveConversation, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
+import { resolveConversation, promptOf, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
 import { exactLocalCommand } from './intent';
 import { applyBriefProposal } from './brief';
 import { randomUUID } from 'node:crypto';
@@ -110,7 +111,17 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
       await saveConversation(tx, row);
     }
     let outcome: ConversationOutcome;
-    if (decision.kind === 'answer' || decision.kind === 'clarification') {
+    if (decision.kind === 'propose_scheme') {
+      // K03 (ADR-0019): the application checks and stores the candidate; a rejected proposal stores nothing.
+      const result = await proposeSchemeInTransaction(client, { projectId: row.project_id, actorId: row.actor_id, taskId: row.id,
+        operationId: conversation.operationId, baseRevision: row.expected_revision, decision });
+      await fenced(client, claim);
+      outcome = result.status === 'candidate'
+        ? { kind: 'scheme_candidate', message: '整体方案候选已生成并通过校验，正在出图；空间和已有方案都没有改变，采用后才会成为待审方案。',
+          schemeCandidateId: result.candidateId, schemeIssues: result.issues }
+        : { kind: 'no_change', message: result.message, schemeIssues: result.issues };
+    }
+    else if (decision.kind === 'answer' || decision.kind === 'clarification') {
       // Generated prose is never promoted to an authoritative claim that a mutation occurred.
       outcome = { kind: decision.kind, message: decision.kind === 'answer' ? '本轮已回复，空间未修改。' : '本轮需要补充信息，空间未修改。' };
     }
@@ -162,8 +173,10 @@ async function commitResponse(claim: TaskClaim, response: ModelResponse) {
       if (!response.brief) brief.workCompleted = ['已保存本轮答复'];
       if (outcome.kind === 'applied') brief.workCompleted.push('已提交精确局部修改');
       if (outcome.kind === 'candidate') brief.workCompleted.push('已生成并检查单房间候选');
+      if (outcome.kind === 'scheme_candidate') brief.workCompleted.push('已生成并检查整体方案候选');
       if (response.brief && outcome.kind === 'answer') outcome.message = '本轮需求整理已保存，空间未修改；尚未生成或采用设计方案。';
     }
+    // A scheme candidate lives on the lead, not in the task: the turn completes, so other members can keep working on the lead.
     const status = outcome.kind === 'candidate' ? 'waiting_selection' : outcome.planReport?.status === 'not_found' ? 'partial'
       : brief?.questions.some(question => question.status === 'open') ? 'waiting_input' : 'completed';
     conversation.phase = 'finished'; conversation.outcome = outcome;
@@ -233,7 +246,11 @@ export async function runConversationTask(taskId: string, options: ConversationR
       try { model = configuration.createModel(() => { networkDispatches++; }); } catch {
         await fail(claim, 'MODEL_NOT_CONFIGURED', '平台模型配置不可用；空间未修改。'); return;
       }
-      const contextBytes = Buffer.byteLength(JSON.stringify({ input: row.conversation!.input, context: row.conversation!.context, brief: row.conversation!.brief }), 'utf8');
+      const enterprise = await leadContext(pool, row.project_id);
+      // The limit bounds what is actually sent: a lead's turn sends its catalog context instead of the full geometry.
+      const promptBytes = (conversation: NonNullable<TaskRow['conversation']>) => Buffer.byteLength(JSON.stringify(promptOf({ input: conversation.input,
+        state: spatialStateSchema.parse(conversation.context), brief: conversation.brief, enterprise })), 'utf8');
+      const contextBytes = promptBytes(row.conversation!);
       // Bytes over-count tokens, so the input estimate never under-reserves.
       const reservation = configuration.quota ? await reserveQueued({ ...configuration.quota, inputTokens: contextBytes + 8000, userId: row.actor_id, taskId }) : null;
       try {
@@ -244,10 +261,10 @@ export async function runConversationTask(taskId: string, options: ConversationR
         if (!project || project.revision !== current.expected_revision) throw new DomainError('REVISION_CONFLICT', '项目已更新，本轮未调用模型。', 409);
         reserveAttempt(current, { configurationId: configuration.id, profile,
           reason: attempts.length === 0 ? 'initial' : attempts.length === 1 ? 'retry' : 'fallback',
-          contextBytes: Buffer.byteLength(JSON.stringify({ input: current.conversation!.input, context: current.conversation!.context, brief: current.conversation!.brief }), 'utf8') });
+          contextBytes: promptBytes(current.conversation!) });
         current.conversation!.callStarted = true; current.conversation!.phase = 'calling_model'; current.conversation!.modelCallId = reservation?.callId ?? null;
         current.conversation!.configuration = { model: configuration.modelId, configurationId: configuration.id, profile,
-          instructionsVersion: INSTRUCTIONS_VERSION, toolContractVersion: 'resolve-turn-4-layout', policyVersion: 'bounded-execution-1',
+          instructionsVersion: INSTRUCTIONS_VERSION, toolContractVersion: 'resolve-turn-5-scheme', policyVersion: 'bounded-execution-1',
           timeoutMs: MODEL_TIMEOUT_MS, maxOutputTokens: 1600, maxRetries: 0 };
         await saveConversation(tx, current);
         await tx.update(designTasks).set({ usageReserved: 1 }).where(eq(designTasks.id, taskId));
@@ -260,7 +277,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
         throw error;
       }
       const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(MODEL_TIMEOUT_MS)]);
-      response = await resolveConversation({ model, providerOptions: configuration.providerOptions, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
+      response = await resolveConversation({ model, providerOptions: configuration.providerOptions, enterprise, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
         onText: text => transaction(async client => { const current = await fenced(client, claim); await appendEvent(client, taskId, 'text', { text, source: 'model', provisional: true, generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 }); }) });
       response.networkDispatches = networkDispatches;
       await transaction(async (client, tx) => {

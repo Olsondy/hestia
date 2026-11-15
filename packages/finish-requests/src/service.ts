@@ -35,7 +35,7 @@ export type RequestRow = {
 };
 export type SchemeRow = { id: string; request_id: string; ordinal: number; name: string; summary: string; revision: number;
   surface_design: FinishSchemeView['surfaceDesign']; report: { adoptable: boolean; issues: FinishSchemeView['issues'] }; render_id: string | null;
-  soft_style: SoftStyleReference | null; soft_choices: SoftStyleReference[] };
+  soft_style: SoftStyleReference | null; soft_choices: SoftStyleReference[]; pending_review: boolean };
 export type RequestDeps = { renderQueue?: PgBoss; importQueue?: PgBoss; store?: PrivateFileStore };
 /** Drizzle selections in the `RequestRow` / `SchemeRow` (column-named) shape. */
 export const requestColumns = { id: finishRequests.id, workspace_id: finishRequests.workspaceId, customer_id: finishRequests.customerId, created_by: finishRequests.createdBy,
@@ -45,7 +45,9 @@ export const requestColumns = { id: finishRequests.id, workspace_id: finishReque
   published_by: finishRequests.publishedBy, created_at: finishRequests.createdAt, updated_at: finishRequests.updatedAt };
 export const schemeColumns = { id: finishSchemes.id, request_id: finishSchemes.requestId, ordinal: finishSchemes.ordinal, name: finishSchemes.name, summary: finishSchemes.summary,
   revision: finishSchemes.revision, surface_design: finishSchemes.surfaceDesign, report: finishSchemes.report, render_id: finishSchemes.renderId,
-  soft_style: finishSchemes.softStyle, soft_choices: finishSchemes.softChoices };
+  soft_style: finishSchemes.softStyle, soft_choices: finishSchemes.softChoices, pending_review: finishSchemes.pendingReview };
+/** Schemes a customer (or a share code viewer) may see: not pending member review. */
+export const customerVisible = eq(finishSchemes.pendingReview, false);
 /** Drizzle over a caller's connection; it only issues `query`. */
 const ormOf = (client: Pick<PoolClient, 'query'>) => orm(client as PoolClient);
 
@@ -109,8 +111,10 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
   const drawingName = row.floorplan_import_id
     ? (await tx.select({ fileName: floorplanImports.fileName }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.fileName ?? null : null;
   const facts = spatialStateSchema.parse(project.snapshot).fixedFacts;
+  // Customers see only published requests and never a scheme still pending member review (K03).
   const schemes = audience === 'customer' && row.status !== 'published' ? []
-    : await tx.select(schemeColumns).from(finishSchemes).where(eq(finishSchemes.requestId, row.id)).orderBy(asc(finishSchemes.ordinal)) as SchemeRow[];
+    : await tx.select(schemeColumns).from(finishSchemes).where(and(eq(finishSchemes.requestId, row.id), audience === 'customer' ? eq(finishSchemes.pendingReview, false) : undefined))
+      .orderBy(asc(finishSchemes.ordinal)) as SchemeRow[];
   const renders = await renderStatuses(row.project_id, schemes.flatMap(s => s.render_id ? [s.render_id] : []), client);
   // Soft style names for display; retired versions still resolve so existing schemes keep their labels.
   const softCatalog = schemes.some(s => s.soft_style || s.soft_choices?.length) ? await softStyleCatalog(client as PoolClient, row.workspace_id) : [];
@@ -128,7 +132,7 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
         surfaceDesign: s.surface_design, render: render ? { id: render.id, status: render.status, width: render.width, height: render.height, error: render.error, imageHref,
           label: render.label, updatedAt: render.updatedAt,
           trace: audience === 'member' ? { snapshotHash: render.snapshotHash, assetVersion: render.assetVersion, rendererVersion: render.rendererVersion } : null } : null,
-        softStyle: summary(s.soft_style), softChoices: (s.soft_choices ?? []).map(summary).filter((x): x is NonNullable<typeof x> => !!x) };
+        softStyle: summary(s.soft_style), softChoices: (s.soft_choices ?? []).map(summary).filter((x): x is NonNullable<typeof x> => !!x), pendingReview: s.pending_review };
     }),
     confirmation: await confirmationOf(client, row.id, schemes),
     createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(), publishedAt: row.published_at?.toISOString() ?? null };
@@ -324,7 +328,7 @@ export async function readSchemeImage(principal: Principal, slug: string, reques
   const { row, renderId } = await transaction(async (client, tx) => {
     const { userId, entry } = await customer(client, principal, slug), row = await lockedRequest(client, requestId);
     if (row.customer_id !== userId || row.workspace_id !== entry.id || row.status !== 'published') throw notFound();
-    const [scheme] = await tx.select(schemeColumns).from(finishSchemes).where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id)));
+    const [scheme] = await tx.select(schemeColumns).from(finishSchemes).where(and(eq(finishSchemes.id, idSchema.parse(schemeId)), eq(finishSchemes.requestId, row.id), customerVisible));
     if (!scheme?.render_id) throw notFound();
     return { row, renderId: scheme.render_id };
   });
@@ -332,9 +336,10 @@ export async function readSchemeImage(principal: Principal, slug: string, reques
 }
 
 /** Frozen scene of a scheme's current render: the same snapshot the still was rendered from, for the 3D viewer. */
-export async function renderScene(client: Pick<PoolClient, 'query'>, row: RequestRow, schemeId: string): Promise<SceneSnapshot> {
+export async function renderScene(client: Pick<PoolClient, 'query'>, row: RequestRow, schemeId: string, audience: 'customer' | 'member' = 'customer'): Promise<SceneSnapshot> {
   const tx = ormOf(client), schemeKey = idSchema.parse(schemeId);
-  const [scheme] = await tx.select({ render_id: finishSchemes.renderId }).from(finishSchemes).where(and(eq(finishSchemes.id, schemeKey), eq(finishSchemes.requestId, row.id)));
+  const [scheme] = await tx.select({ render_id: finishSchemes.renderId }).from(finishSchemes)
+    .where(and(eq(finishSchemes.id, schemeKey), eq(finishSchemes.requestId, row.id), audience === 'customer' ? customerVisible : undefined));
   if (!scheme?.render_id) throw notFound();
   const [render] = await tx.select({ snapshot: projectRenders.snapshot }).from(projectRenders)
     .where(and(eq(projectRenders.id, scheme.render_id), eq(projectRenders.projectId, row.project_id)));
@@ -348,7 +353,7 @@ export async function readLeadScene(principal: Principal, workspaceId: string, r
     const [row] = await tx.select(requestColumns).from(finishRequests).where(eq(finishRequests.id, idSchema.parse(requestId))) as RequestRow[];
     if (!row || row.workspace_id !== idSchema.parse(workspaceId)) throw notFound();
     await memberOf(client, userId, row.workspace_id);
-    return renderScene(client, row, schemeId);
+    return renderScene(client, row, schemeId, 'member');
   });
 }
 export async function readSchemeScene(principal: Principal, slug: string, requestId: string, schemeId: string) {

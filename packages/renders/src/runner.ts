@@ -77,7 +77,7 @@ export async function runRender(id: string, options: { store?: PrivateFileStore;
       throw new DomainError('RENDER_VERSION_CHANGED', '生成规则已更新，请按当前规则重新生成。', 409);
     if (hash({ scene: row.snapshot, source: row.source, scale: row.scale, synthetic: row.synthetic }) !== row.snapshotHash)
       throw new DomainError('SNAPSHOT_MISMATCH', '来源快照校验失败。', 409);
-    const preset = row.source.kind === 'scheme' ? schemeShot(row.snapshot) : undefined;
+    const preset = row.source.kind === 'scheme' || row.source.kind === 'scheme-candidate' ? schemeShot(row.snapshot) : undefined;
     const bytes = await (options.render ?? renderArtifact)(row.snapshot, row.label,
       `项目修订 ${row.source.projectRevision}　快照 ${row.snapshotHash.slice(0, 12)}　资产 ${row.assetVersion.slice(0, 8)}　渲染 ${row.rendererVersion.slice(0, 8)}`,
       undefined, preset ? { preset } : undefined);

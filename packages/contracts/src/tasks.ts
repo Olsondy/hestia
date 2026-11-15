@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SchemeCandidateIssue } from './agent-schemes';
 import { commandSchema } from './commands';
 import { idSchema } from './project';
 import type { LayoutPlan } from '../../layout-planner/src/contract';
@@ -23,8 +24,10 @@ export type TaskStep = z.infer<typeof taskStepSchema>;
 /** Retained name for the T07 protocol UI. New clients use CreateConversationTask. */
 export type CreateTask = z.infer<typeof createDeterministicTaskSchema>;
 export type CreateConversationTask = z.infer<typeof createConversationTaskSchema>;
-export type ConversationOutcome = { kind: 'answer' | 'clarification' | 'applied' | 'no_change' | 'candidate'; message: string;
-  operationId?: string; projectRevision?: number; objectId?: string; candidateId?: string; candidateRevision?: number; checkId?: string; planReport?: LayoutPlan };
+export type ConversationOutcome = { kind: 'answer' | 'clarification' | 'applied' | 'no_change' | 'candidate' | 'scheme_candidate'; message: string;
+  operationId?: string; projectRevision?: number; objectId?: string; candidateId?: string; candidateRevision?: number; checkId?: string; planReport?: LayoutPlan;
+  /** K03: the whole-scheme candidate stored for a lead, or why a proposal was rejected. */
+  schemeCandidateId?: string; schemeIssues?: SchemeCandidateIssue[] };
 export const conversationInputSchema = z.discriminatedUnion('kind', [
   z.object({ operationId: idSchema, expectedIntentVersion: z.number().int().positive(), expectedRevision: z.number().int().positive(),
     kind: z.literal('message'), message: z.string().trim().min(1).max(4000), questionId: idSchema.optional(),

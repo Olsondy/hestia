@@ -1,0 +1,2 @@
+ALTER TABLE "scheme_candidates" DROP CONSTRAINT "scheme_candidates_status_check";--> statement-breakpoint
+ALTER TABLE "scheme_candidates" ADD CONSTRAINT "scheme_candidates_status_check" CHECK (status IN ('draft', 'adopted', 'discarded'));

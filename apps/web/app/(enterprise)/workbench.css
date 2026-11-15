@@ -486,6 +486,12 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .model-row__actions{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .model-row--off .model-row__main b,.model-row--off .model-row__main small{opacity:.55}
 .icon-btn--on{background:var(--c-surface-2);color:var(--c-ink)}
+/* W07 Agent 助手（按定稿原型 P02） */
+.agent-foot{position:relative;border-top:1px solid var(--c-line)}
+.agent-foot .composer{border-top:0;padding-top:8px}
+.msg--sys{align-self:center;max-width:none;font:var(--t-small);color:var(--c-ink-2)}
+.msg__meta{display:block;margin-top:6px;font:var(--t-small);color:var(--c-ink-2)}
+.msg .issues{margin-top:8px;display:grid;gap:4px;padding-left:16px;list-style:disc;font:var(--t-small);color:var(--c-ink-2)}
 .table__total{border-top:1px solid var(--c-line);border-radius:0;margin-top:4px}
 .table__total b{font-weight:500}
 .table--usage .table__row,.table--ai .table__row{cursor:default}

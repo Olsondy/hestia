@@ -107,7 +107,7 @@ export function requestFinishes(facts: SpatialState['fixedFacts'], ids: string[]
 }
 export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, audience: 'customer' | 'member', slug?: string): Promise<FinishRequestView> {
   const tx = ormOf(client), { status, error: conversionError } = await importState(client, row);
-  const [project] = await tx.select({ name: projects.name, snapshot: projects.snapshot }).from(projects).where(eq(projects.id, row.project_id));
+  const [project] = await tx.select({ name: projects.name, snapshot: projects.snapshot, revision: projects.revision }).from(projects).where(eq(projects.id, row.project_id));
   const drawingName = row.floorplan_import_id
     ? (await tx.select({ fileName: floorplanImports.fileName }).from(floorplanImports).where(eq(floorplanImports.id, row.floorplan_import_id)))[0]?.fileName ?? null : null;
   const facts = spatialStateSchema.parse(project.snapshot).fixedFacts;
@@ -122,7 +122,7 @@ export async function view(client: Pick<PoolClient, 'query'>, row: RequestRow, a
     const style = ref && softCatalog.find(e => e.style.id === ref.styleId && e.style.version === ref.styleVersion)?.style;
     return style ? { id: style.id, version: style.version, name: style.name, line: style.line, palette: style.palette } : null;
   };
-  return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, source: row.source, status, statusLabel: labels[status], conversionError,
+  return { id: row.id, workspaceId: row.workspace_id, projectId: row.project_id, projectRevision: project.revision, source: row.source, status, statusLabel: labels[status], conversionError,
     title: project.name, origin: row.origin, drawingName, finishes: requestFinishes(facts, row.finish_ids), preferences: row.preferences ?? null,
     finishIds: row.finish_ids, stones: row.stones, note: row.note, floorplanImportId: row.floorplan_import_id,
     schemes: schemes.map(s => {

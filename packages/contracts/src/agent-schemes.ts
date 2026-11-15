@@ -30,10 +30,11 @@ export type SchemeDecision = z.infer<typeof schemeDecisionSchema>;
 export type SchemeCandidateIssue = { code: string; objectId?: string; message: string; severity: 'conflict' | 'hint' };
 export type SchemeCandidateView = {
   id: string; requestId: string; taskId: string; baseRevision: number; stale: boolean;
-  name: string; summary: string; status: 'draft' | 'adopted'; adoptedSchemeId: string | null;
+  name: string; summary: string; status: 'draft' | 'adopted' | 'discarded'; adoptedSchemeId: string | null;
   surfaceDesign: SurfaceDesign; issues: SchemeCandidateIssue[];
   softStyle: SoftStyleSummary | null; softChoices: SoftStyleSummary[];
   render: FinishSchemeView['render']; createdAt: string;
 };
 export const adoptSchemeCandidateSchema = z.object({ operationId: idSchema }).strict();
 export const publishSchemeSchema = z.object({ operationId: idSchema }).strict();
+export const discardSchemeCandidateSchema = z.object({ operationId: idSchema }).strict();

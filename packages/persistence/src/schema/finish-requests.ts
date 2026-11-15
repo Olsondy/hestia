@@ -299,5 +299,5 @@ export const schemeCandidates = pgTable("scheme_candidates", {
 	foreignKey({ columns: [table.adoptedSchemeId], foreignColumns: [finishSchemes.id], name: "scheme_candidates_adopted_scheme_id_fkey" }).onDelete("set null"),
 	unique("scheme_candidates_task_operation_key").on(table.taskId, table.operationId),
 	index("scheme_candidates_request_idx").on(table.requestId, table.createdAt),
-	check("scheme_candidates_status_check", sql`status IN ('draft', 'adopted')`),
+	check("scheme_candidates_status_check", sql`status IN ('draft', 'adopted', 'discarded')`),
 ]);

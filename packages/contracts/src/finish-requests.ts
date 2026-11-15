@@ -41,7 +41,7 @@ export type FinishSchemeView = {
 /** Display data of one finish in a request: name, kind and owning level (for floor tabs). */
 export type RequestFinishView = { id: string; name: string; kind: 'floor' | 'wall' | 'stair'; levelId: string | null; levelName: string | null };
 export type FinishRequestView = {
-  id: string; workspaceId: string; projectId: string; source: 'demo-villa' | 'drawing'; status: FinishRequestStatus;
+  id: string; workspaceId: string; projectId: string; /** Current space revision: Agent turns on the lead's space are tied to it. */ projectRevision: number; source: 'demo-villa' | 'drawing'; status: FinishRequestStatus;
   /** Project name; for drawings the uploaded file name once known. */
   title: string; origin: 'customer' | 'member'; drawingName: string | null;
   finishes: RequestFinishView[]; preferences: RequestPreferences | null;

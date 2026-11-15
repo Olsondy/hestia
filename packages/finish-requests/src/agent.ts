@@ -6,10 +6,11 @@ import { DomainError, idSchema, spatialStateSchema } from '../../contracts/src/p
 import { effectiveLevels, levelOf } from '../../contracts/src/building';
 import type { StoneSpec, SurfaceDesign } from '../../contracts/src/finishes';
 import type { SoftStyleReference } from '../../contracts/src/soft-styles';
-import { adoptSchemeCandidateSchema, publishSchemeSchema, type SchemeCandidateIssue, type SchemeCandidateView, type SchemeDecision } from '../../contracts/src/agent-schemes';
+import { adoptSchemeCandidateSchema, discardSchemeCandidateSchema, publishSchemeSchema, type SchemeCandidateIssue, type SchemeCandidateView, type SchemeDecision } from '../../contracts/src/agent-schemes';
 import type { LeadView } from '../../contracts/src/finish-requests';
+import type { SceneSnapshot } from '../../contracts/src/scene';
 import { advisoryXactLock, orm, transaction } from '../../persistence/src/client';
-import { finishRequests, finishSchemeRevisions, finishSchemes, operations, projects, schemeCandidates } from '../../persistence/src/schema';
+import { finishRequests, finishSchemeRevisions, finishSchemes, operations, projectRenders, projects, schemeCandidates } from '../../persistence/src/schema';
 import { actorOf, type Principal } from '../../workspaces/src/access';
 import { workspaceStones } from '../../finishes/src/catalog';
 import { inspectSurfaceDesign } from '../../finishes/src/plan';
@@ -160,7 +161,8 @@ export async function adoptSchemeCandidate(principal: Principal, workspaceId: st
     await once(client, userId, value.operationId, row.project_id, sha({ kind: 'adopt-scheme-candidate', requestId: row.id, candidateId: id }), async () => {
       const [candidate] = await tx.select().from(schemeCandidates).where(and(eq(schemeCandidates.id, id), eq(schemeCandidates.requestId, row.id))).for('update');
       if (!candidate) throw new DomainError('NOT_FOUND', '候选方案不存在。', 404);
-      if (candidate.status !== 'draft') throw new DomainError('CANDIDATE_ADOPTED', '这套候选已经采用过。', 409);
+      if (candidate.status === 'adopted') throw new DomainError('CANDIDATE_ADOPTED', '这套候选已经采用过。', 409);
+      if (candidate.status !== 'draft') throw new DomainError('CANDIDATE_NOT_DRAFT', '这套候选已经放弃，不能采用。', 409);
       const [project] = await tx.select({ revision: projects.revision, snapshot: projects.snapshot }).from(projects).where(eq(projects.id, row.project_id));
       if (project.revision !== candidate.baseRevision) throw new DomainError('CANDIDATE_STALE', '空间在候选生成后已经变化，请让 Agent 重新出方案。', 409);
       const state = spatialStateSchema.parse(project.snapshot), design = candidate.surfaceDesign as SurfaceDesign;
@@ -200,4 +202,32 @@ export async function publishScheme(principal: Principal, workspaceId: string, r
     });
   });
   return (await listLeads(principal, workspaceId)).find(lead => lead.id === requestId)!;
+}
+
+/** A member discards a draft candidate; it stays on record but leaves the lead's list. */
+export async function discardSchemeCandidate(principal: Principal, workspaceId: string, requestId: string, candidateId: string, input: unknown) {
+  const userId = actorOf(principal), value = discardSchemeCandidateSchema.parse(input), id = idSchema.parse(candidateId);
+  await transaction(async (client, tx) => {
+    const row = await memberRequest(client, userId, workspaceId, requestId, true);
+    await once(client, userId, value.operationId, row.project_id, sha({ kind: 'discard-scheme-candidate', requestId: row.id, candidateId: id }), async () => {
+      const [candidate] = await tx.select({ status: schemeCandidates.status }).from(schemeCandidates).where(and(eq(schemeCandidates.id, id), eq(schemeCandidates.requestId, row.id))).for('update');
+      if (!candidate) throw new DomainError('NOT_FOUND', '候选方案不存在。', 404);
+      if (candidate.status !== 'draft') throw new DomainError('CANDIDATE_NOT_DRAFT', candidate.status === 'adopted' ? '这套候选已经采用，不能放弃。' : '这套候选已经放弃。', 409);
+      await tx.update(schemeCandidates).set({ status: 'discarded' }).where(eq(schemeCandidates.id, id));
+    });
+  });
+  return listSchemeCandidates(principal, workspaceId, requestId);
+}
+
+/** Members only: the frozen scene a candidate's still was rendered from (3D view in the workbench). */
+export async function readCandidateScene(principal: Principal, workspaceId: string, requestId: string, candidateId: string): Promise<SceneSnapshot> {
+  const userId = actorOf(principal);
+  return transaction(async (client, tx) => {
+    const row = await memberRequest(client, userId, workspaceId, requestId);
+    const [found] = await tx.select({ snapshot: projectRenders.snapshot }).from(schemeCandidates)
+      .innerJoin(projectRenders, and(eq(projectRenders.id, schemeCandidates.renderId), eq(projectRenders.projectId, row.project_id)))
+      .where(and(eq(schemeCandidates.id, idSchema.parse(candidateId)), eq(schemeCandidates.requestId, row.id)));
+    if (!found) throw new DomainError('NOT_FOUND', '候选方案不存在。', 404);
+    return found.snapshot as SceneSnapshot;
+  });
 }

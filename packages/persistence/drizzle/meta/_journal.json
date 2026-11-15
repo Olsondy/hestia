@@ -92,6 +92,13 @@
       "when": 1794729827978,
       "tag": "0012_agent_scheme_candidates",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794731844378,
+      "tag": "0013_scheme_candidate_discard",
+      "breakpoints": true
     }
   ]
 }

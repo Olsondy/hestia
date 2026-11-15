@@ -19,7 +19,7 @@ import { toolChunks } from '../../model-validation/src/protocol-fixture';
 import { createService, enableModel, updateModel } from '../../model-registry/src/service';
 import { updateEnterprise } from '../../model-registry/src/grants';
 import { createMemberRequest, lockedRequest, view } from './service';
-import { adoptSchemeCandidate, listSchemeCandidates, proposeSchemeInTransaction, publishScheme } from './agent';
+import { adoptSchemeCandidate, discardSchemeCandidate, listSchemeCandidates, proposeSchemeInTransaction, publishScheme, readCandidateScene } from './agent';
 import type { SchemeDecision } from '../../contracts/src/agent-schemes';
 
 // K03 (ADR-0019): the enterprise Agent on a lead's space. Real PostgreSQL, the real task runner and a local fake Chat
@@ -151,6 +151,17 @@ test('a candidate made before the space changed cannot be adopted', async () => 
     assert.equal((await listSchemeCandidates(member, workspaceId, lead.id)).find(c => c.id === id)?.stale, true);
     await assert.rejects(adoptSchemeCandidate(member, workspaceId, lead.id, id, { operationId: randomUUID() }), { code: 'CANDIDATE_STALE' });
   } finally { await pool.query('UPDATE projects SET revision=revision-1 WHERE id=$1', [lead.projectId]); }
+});
+
+test('a member can view a draft candidate in 3D and discard it; a discarded candidate cannot be adopted', async () => {
+  const task = await turn(valid), id = task.conversation!.outcome!.schemeCandidateId!;
+  const scene = await readCandidateScene(member, workspaceId, lead.id, id);
+  assert.ok(scene.rooms.length > 0 && scene.objects.length > 0, 'the frozen render scene of the candidate');
+  const after = await discardSchemeCandidate(member, workspaceId, lead.id, id, { operationId: randomUUID() });
+  assert.equal(after.find(c => c.id === id)?.status, 'discarded');
+  await assert.rejects(discardSchemeCandidate(member, workspaceId, lead.id, id, { operationId: randomUUID() }), { code: 'CANDIDATE_NOT_DRAFT' });
+  await assert.rejects(adoptSchemeCandidate(member, workspaceId, lead.id, id, { operationId: randomUUID() }), { code: 'CANDIDATE_NOT_DRAFT' });
+  await assert.rejects(readCandidateScene(outsider, workspaceId, lead.id, id), { code: 'NOT_FOUND' });
 });
 
 test('only members of the enterprise can run the Agent on a lead or see and adopt its candidates', async () => {

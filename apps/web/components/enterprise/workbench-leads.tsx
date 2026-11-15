@@ -1,6 +1,6 @@
 'use client';
 // 线索列表与线索详情（W02），按定稿原型 P02 实现。数据来自线索接口（D06–D08、S02）；成员看到完整手机号，列表中脱敏。
-// 详情是方案画面铺满、左侧面板悬浮；审核发布（W03）、分享管理（W04）与 Agent（W07）后续接入同一画面。
+// 详情是方案画面铺满、左侧面板悬浮；审核发布（W03）、分享管理（W04）与右侧 Agent 助手（W07）在同一画面。
 import { useMemo, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import { SchemeViewer } from '../client/scheme-viewer';
 import type { SceneSnapshot } from '../client/client-api';
 import { actionsOf, ago, leadsOf, Note, Shell, tidy, useWorkbench, who } from './workbench-app';
 import { ShareDialog, useBindingActions } from './workbench-share';
+import { AgentPanel, asScheme, labelOf, useCandidates, useSchemeActions, type Shown } from './workbench-agent';
 
 // ---------- 共用 ----------
 type Stage = 'review' | 'published' | 'confirmed';
@@ -36,6 +37,7 @@ const latestOf = (lead: LeadView) => lead.lastCustomerAction ? { text: actionTex
 const spacedPhone = (phone: string | null | undefined) => (phone ?? '').replace(/^\+86/, '').replace(/(\d{3})(\d{4})(\d{4})/, '$1 $2 $3');
 const sourceText = (lead: LeadView) => lead.source === 'demo-villa' ? '示例别墅' : `图纸 · ${lead.drawingName ?? '未上传'}`;
 const imageOf = (scheme: FinishSchemeView | undefined) => scheme?.render?.imageHref ?? null;
+const narrow = () => typeof window !== 'undefined' && matchMedia('(max-width: 1180px)').matches;
 const day = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const when = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const preferenceText = (lead: LeadView) => {
@@ -129,26 +131,44 @@ export function LeadDetailView({ id }: { id: string }) {
 function LeadWorkspace({ lead }: { lead: LeadView }) {
   const { base, workspace } = useWorkbench();
   const confirmedId = lead.confirmation?.schemeId;
+  // Agent needs a space with finishes: drawings must be converted (or assisted) first.
+  const agentBlocked = !lead.finishes.length || ['awaiting_drawing', 'converting', 'assisted_conversion', 'conversion_failed'].includes(lead.status)
+    ? lead.status === 'assisted_conversion' ? '图纸完成辅助转换后，才能让 Agent 出方案。' : '空间还没有可铺贴的饰面，暂时不能让 Agent 出方案。' : '';
+  const candidates = useCandidates(lead, !agentBlocked);
+  const list: Shown[] = [...lead.schemes, ...(candidates.data ?? []).filter(c => c.status === 'draft').map(asScheme)];
   const [schemeId, setSchemeId] = useState(confirmedId ?? lead.schemes[0]?.id);
-  const [tab, setTab] = useState<Tab>('scheme'), [left, setLeft] = useState(true), [view, setView] = useState<'image' | '3d' | 'plan'>('image');
+  const [tab, setTab] = useState<Tab>('scheme'), [left, setLeft] = useState(true), [agent, setAgent] = useState(false), [view, setView] = useState<'image' | '3d' | 'plan'>('image');
   const levels = levelsOf(lead.finishes), [level, setLevel] = useState(levels[0]?.[0] ?? '');
-  const scheme = lead.schemes.find(s => s.id === schemeId) ?? lead.schemes[0];
+  const scheme = list.find(s => s.id === schemeId) ?? list[0];
   const image = imageOf(scheme), a = actionsOf(lead);
+  const scenePath = scheme?.candidate ? `candidates/${scheme.id}/scene` : `schemes/${scheme?.id}/scene`;
   const scene = useQuery({ queryKey: ['lead-scene', lead.id, scheme?.id, scheme?.revision], enabled: view !== 'image' && !!scheme?.render,
-    queryFn: () => get<{ scene: SceneSnapshot }>(`/api/workspaces/${workspace.id}/leads/${lead.id}/schemes/${scheme!.id}/scene`).then(r => r.scene) });
+    queryFn: () => get<{ scene: SceneSnapshot }>(`/api/workspaces/${workspace.id}/leads/${lead.id}/${scenePath}`).then(r => r.scene) });
   const levelName = levels.find(([key]) => key === level)?.[1] ?? '';
-  const follow = useFollow(lead);
+  const follow = useFollow(lead), schemeActions = useSchemeActions(lead);
+  const toggleLeft = () => { const next = !left; setLeft(next); if (next && narrow()) setAgent(false); };
+  const toggleAgent = () => { const next = !agent; setAgent(next); if (next && narrow()) setLeft(false); };
+  const showCandidate = (id: string) => { setSchemeId(id); setView('image'); setTab('scheme'); if (!narrow()) setLeft(true); };
 
   const media = !scheme ? <div className="stage__plan"><p>{lead.status === 'assisted_conversion' ? '图纸在排队，整理户型并出方案后在这里显示' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸' : lead.status === 'conversion_failed' ? '客户的图纸没能自动识别' : '方案生成后在这里显示'}</p></div>
     : view !== 'image' ? <div className="stage__3d"><SchemeViewer scene={scene.data} plan={view === 'plan'}/></div>
       // eslint-disable-next-line @next/next/no-img-element
-      : image ? <img className="stage__img" src={image} alt={`方案 ${letter(scheme)} 效果图（示意）`}/>
+      : image ? <img className="stage__img" src={image} alt={`${scheme.candidate ? 'Agent 候选' : `方案 ${labelOf(scheme)}`} 效果图（示意）`}/>
         : <div className="stage__plan"><p>{scheme.render?.status === 'failed' ? '效果图生成失败' : '效果图生成中，完成后在这里显示'}</p></div>;
   const reconfirm = lead.confirmation && !lead.confirmation.current;
+  const hidden = !!scheme && (!!scheme.candidate || scheme.pendingReview || lead.status !== 'published');
   const tabs: [Tab, string][] = [['scheme', '方案'], ['client', '客户与跟进'], ['share', '分享与绑定']];
   const publish = usePublish(lead), [sharing, setSharing] = useState(false);
   const shareable = lead.origin === 'member' && lead.status === 'published' && !lead.customer;
-  const foot = lead.status === 'assisted_conversion' ? <><span className="hint">客户的图纸在排队：整理户型后出方案，直接发布给客户。</span>
+  const actionError = (schemeActions.adopt.error ?? schemeActions.discard.error ?? schemeActions.publish.error) as Error | null;
+  const adopt = (id: string) => { if (!window.confirm('采用后成为线索的待审方案，客户仍看不到；核对后再发布。确认采用？')) return;
+    schemeActions.adopt.mutate(id, { onSuccess: next => { const added = [...next.schemes].filter(s => s.pendingReview).sort((x, y) => y.ordinal - x.ordinal)[0]; if (added) setSchemeId(added.id); } }); };
+  const foot = scheme?.candidate ? <><span className="hint">{actionError ? actionError.message : scheme.candidate.stale ? '空间在候选生成后已经变化，这个候选不能采用，请让 Agent 重新出方案。' : '候选客户看不到。采用后成为待审方案，核对后再发布。'}</span>
+      <button className="btn btn--secondary" disabled={schemeActions.discard.isPending} onClick={() => { if (window.confirm('放弃这个候选？放弃后不能再采用。')) schemeActions.discard.mutate(scheme.id); }}>放弃候选</button>
+      <button className="btn btn--primary btn--grow" disabled={scheme.candidate.stale || schemeActions.adopt.isPending} onClick={() => adopt(scheme.id)}>{schemeActions.adopt.isPending ? '正在采用…' : '采用为待审方案'}</button></>
+    : scheme?.pendingReview ? <><span className="hint">{actionError ? actionError.message : `待审方案 ${labelOf(scheme)} 客户看不到。核对效果图与清单后发布${lead.status === 'published' ? '' : '；线索发布后客户才能看到'}。`}</span>
+      <button className="btn btn--primary btn--grow" disabled={schemeActions.publish.isPending} onClick={() => { if (window.confirm(`发布方案 ${labelOf(scheme)}？发布后客户就能看到。`)) schemeActions.publish.mutate(scheme.id); }}>{schemeActions.publish.isPending ? '正在发布…' : `发布方案 ${labelOf(scheme)}`}</button></>
+    : lead.status === 'assisted_conversion' ? <><span className="hint">客户的图纸在排队：整理户型后出方案，直接发布给客户。</span>
     <Link className="btn btn--primary btn--grow" href={`${base}/leads/${lead.id}/assist`}>整理图纸</Link></>
     : lead.status === 'pending_review' ? <><span className="hint">{publish.error ? (publish.error as Error).message : `${lead.reviewReason ?? '企业设置为全部审核后发布'}。核对方案后发布给客户。`}</span>
       <button className="btn btn--primary btn--grow" disabled={publish.isPending} onClick={() => { if (window.confirm('发布后客户就能看到这些方案。确认发布？')) publish.mutate(); }}>{publish.isPending ? '正在发布…' : '发布给客户'}</button></>
@@ -156,12 +176,13 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
       <button className="btn btn--primary btn--grow" onClick={() => setSharing(true)}><Icon name="link" size={16} strokeWidth={1.6}/>分享给客户</button></>
     : a.contact ? <><span className="hint">客户请求联系{lastPreferred(lead) ? `，方便时间：${lastPreferred(lead)}` : ''}。回电后标记，线索会移出「今日」的请求联系。</span>
     <button className="btn btn--primary btn--grow" disabled={follow.isPending} onClick={() => follow.mutate('contacted')}>已回电，标记为已联系</button></> : null;
+  const showAgent = agent && !agentBlocked;
 
-  return <Shell nav="leads"><section className={`canvas${left ? ' has-left' : ''}`}>
+  return <Shell nav="leads"><section className={`canvas${left ? ' has-left' : ''}${showAgent ? ' has-right' : ''}`}>
     <div className="stage">{media}</div>
-    <div className="caption"><b>{scheme ? `方案 ${letter(scheme)} · ${scheme.name}` : '还没有方案'}</b>
-      {scheme && <span>{lead.status !== 'published' ? '待审 · 客户不可见' : `修订 ${scheme.revision}${scheme.id === confirmedId ? (reconfirm ? ' · 确认后又调整过' : ' · 客户已确认') : ''}`} · {view === 'image' ? '效果图示意' : view === 'plan' ? '平面图 · 拖动平移' : '拖动旋转'}</span>}
-      {scheme && <SchemeInfo scheme={scheme} title={`${letter(scheme)} · ${scheme.name}`} className="caption__info"/>}</div>
+    <div className="caption"><b>{scheme ? scheme.candidate ? `Agent 候选 · ${scheme.name}` : `方案 ${labelOf(scheme)} · ${scheme.name}` : '还没有方案'}</b>
+      {scheme && <span>{hidden ? scheme.candidate ? '候选 · 客户不可见' : '待审 · 客户不可见' : `修订 ${scheme.revision}${scheme.id === confirmedId ? (reconfirm ? ' · 确认后又调整过' : ' · 客户已确认') : ''}`} · {view === 'image' ? '效果图示意' : view === 'plan' ? '平面图 · 拖动平移' : '拖动旋转'}</span>}
+      {scheme && <SchemeInfo scheme={scheme} title={`${labelOf(scheme)} · ${scheme.name}`} className="caption__info"/>}</div>
     {left && <aside className="float float--left" aria-label="方案与客户">
       <header className="float__head"><Link className="back" href={`${base}/leads`}><Icon name="back" size={16}/> 线索</Link>
         <h1 className="lead-title">{lead.title}</h1>
@@ -169,19 +190,22 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
           {a.contact && <span className="tag tag--act">请求联系</span>}{a.apply && <span className="tag tag--act">绑定申请</span>}</p>
         <div className="segmented" role="tablist">{tabs.map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}</div>
       </header>
-      <div className="float__body">{tab === 'scheme' ? <SchemeTab lead={lead} scheme={scheme} onPick={setSchemeId} level={level} levelName={levelName}/>
+      <div className="float__body">{tab === 'scheme' ? <SchemeTab lead={lead} list={list} scheme={scheme} onPick={setSchemeId} level={level} levelName={levelName}/>
         : tab === 'client' ? <ClientTab lead={lead} follow={follow}/> : <ShareTab lead={lead} onShare={() => setSharing(true)}/>}</div>
       {foot && <footer className="float__foot">{foot}</footer>}
     </aside>}
+    {showAgent && <AgentPanel lead={lead} shown={scheme} onClose={() => setAgent(false)} onShow={showCandidate}/>}
     <ShareDialog lead={lead} open={sharing} onClose={() => setSharing(false)}/>
     <div className="toolbar" role="toolbar" aria-label="画面">
-      <button className="tool" aria-pressed={left} onClick={() => setLeft(!left)} aria-label={left ? '收起方案面板' : '打开方案面板'}><Icon name="panel" size={18} strokeWidth={1.6}/></button>
+      <button className="tool" aria-pressed={left} onClick={toggleLeft} aria-label={left ? '收起方案面板' : '打开方案面板'}><Icon name="panel" size={18} strokeWidth={1.6}/></button>
       {levels.length > 1 && <><span className="toolbar__sep"/><div className="segmented segmented--bare" role="group" aria-label="楼层">{levels.map(([key, name]) =>
         <button key={key} aria-pressed={level === key} onClick={() => setLevel(key)}>{name}</button>)}</div></>}
       {scheme && <><span className="toolbar__sep"/><div className="segmented segmented--bare" role="group" aria-label="查看方式">
         <button aria-pressed={view === 'image'} onClick={() => setView('image')}><Icon name="image" size={15} strokeWidth={1.6}/>效果图</button>
         <button aria-pressed={view === '3d'} onClick={() => setView('3d')} disabled={!scheme.render}><Icon name="cube" size={15} strokeWidth={1.6}/>3D</button>
         <button aria-pressed={view === 'plan'} onClick={() => setView('plan')} disabled={!scheme.render}><Icon name="plan" size={15} strokeWidth={1.6}/>平面图</button></div></>}
+      <span className="toolbar__sep"/>
+      <button className="tool tool--label" aria-pressed={showAgent} onClick={toggleAgent} disabled={!!agentBlocked} title={agentBlocked || undefined}><Icon name="spark" size={16} strokeWidth={1.6}/> Agent</button>
     </div>
   </section></Shell>;
 }
@@ -212,25 +236,28 @@ function useAddNote(lead: LeadView) {
   });
 }
 
-function SchemeTab({ lead, scheme, onPick, level, levelName }: { lead: LeadView; scheme: FinishSchemeView | undefined; onPick: (id: string) => void; level: string; levelName: string }) {
+function SchemeTab({ lead, list, scheme, onPick, level, levelName }: { lead: LeadView; list: Shown[]; scheme: Shown | undefined; onPick: (id: string) => void; level: string; levelName: string }) {
   if (!scheme) return <p className="muted">{lead.status === 'assisted_conversion' ? '客户的图纸在排队，整理户型后出方案。'
     : lead.status === 'conversion_failed' ? `图纸没能自动识别：${lead.conversionError ?? ''}客户可以重新上传，或交给企业整理。`
-      : lead.status === 'converting' ? '图纸正在自动识别。' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸。' : '还没有方案。'}</p>;
+      : lead.status === 'converting' ? '图纸正在自动识别。' : lead.status === 'awaiting_drawing' ? '客户还没有上传图纸。' : '还没有方案。可以打开 Agent 助手，让它在企业目录内出整体方案。'}</p>;
   const confirmedId = lead.confirmation?.schemeId;
-  const here = lead.finishes.filter(f => (f.levelId ?? '') === level);
+  const here = lead.finishes.filter(f => (f.levelId ?? '') === level), soft = scheme.softStyle;
   return <>
-    <ul className="schemes">{lead.schemes.map(item => <li key={item.id}><button className="scheme" aria-pressed={item.id === scheme.id} onClick={() => onPick(item.id)}>
+    <ul className="schemes">{list.map(item => <li key={item.id}><button className={`scheme${item.candidate ? ' scheme--cand' : ''}`} aria-pressed={item.id === scheme.id} onClick={() => onPick(item.id)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {imageOf(item) ? <img className="scheme__thumb" src={imageOf(item)!} alt=""/> : <span className="scheme__thumb"/>}
-      <span className="scheme__main"><b>{letter(item)} · {item.name}</b><small>{item.summary}</small></span>
-      <span className="scheme__meta">{item.id === confirmedId ? '客户已确认' : lead.status !== 'published' ? <span className="tag tag--act">待审</span> : `修订 ${item.revision}`}</span>
+      <span className="scheme__main"><b>{labelOf(item)} · {item.name}</b><small>{item.summary}</small></span>
+      <span className="scheme__meta">{item.id === confirmedId ? '客户已确认' : item.candidate ? <span className="tag tag--act">{item.candidate.stale ? '已过期' : '候选'}</span>
+        : item.pendingReview || lead.status !== 'published' ? <span className="tag tag--act">待审</span> : `修订 ${item.revision}`}</span>
     </button></li>)}</ul>
-    <section className="sect" style={{ marginTop: 22 }}><h3 className="sect__title">{levelName}硬装<small>方案 {letter(scheme)} · 示意素材</small></h3>
+    <section className="sect" style={{ marginTop: 22 }}><h3 className="sect__title">{levelName}硬装<small>{scheme.candidate ? 'Agent 候选' : `方案 ${labelOf(scheme)}`} · 示意素材</small></h3>
       {here.length ? here.map(finish => <div key={finish.id} className="kv"><span>{finish.name}</span><b>{finishLine(scheme, finish)}</b></div>)
         : <p className="muted small">本层没有铺贴饰面</p>}</section>
+    {soft && <section className="sect"><h3 className="sect__title">软装 · {soft.name}</h3><p className="muted small">{soft.line}</p>
+      <div className="palette">{soft.palette.map(color => <i key={color} style={{ background: color }}/>)}</div>
+      {scheme.softChoices.length > 1 && <p className="muted small" style={{ marginTop: 8 }}>客户可切换：{scheme.softChoices.map(c => c.name).join('、')}</p>}</section>}
     {scheme.issues.length > 0 && <section className="sect"><h3 className="sect__title">校验提示</h3>
-      {scheme.issues.map((issue, i) => <Note key={i} kind="hint" title="排版">{issue.message}</Note>)}</section>}
-    <p className="muted small" style={{ marginTop: 18 }}>软装风格目录接入后，这里会显示每个方案的软装。</p>
+      {scheme.issues.map((issue, i) => <Note key={i} kind="hint" title={scheme.candidate ? '提示' : '排版'}>{issue.message}</Note>)}</section>}
   </>;
 }
 

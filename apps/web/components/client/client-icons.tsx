@@ -14,6 +14,8 @@ const paths = {
   moon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z', system: 'M3 4h18v12H3zM8 20h8M12 16v4',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M21 21l-5-5', panel: 'M3 4h18v16H3zM9 4v16',
   plan: 'M3 3h18v18H3zM3 12h7M10 3v5M10 12v9M14 12h7M14 12V8',
+  spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 17l.7 1.8 1.8.7-1.8.7L19 22l-.7-1.8-1.8-.7 1.8-.7z',
+  send: 'm3 3 18 9-18 9 4-9zM7 12h14', down: 'm6 9 6 6 6-6',
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({ name, size = 20, strokeWidth = 1.7 }: { name: IconName; size?: number; strokeWidth?: number }) {

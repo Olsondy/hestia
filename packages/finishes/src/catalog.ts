@@ -39,3 +39,9 @@ export async function workspaceStones(client: Pool | PoolClient, workspaceId: st
     .where(and(eq(stones.workspaceId, workspaceId), eq(stones.status, 'active'))).orderBy(asc(stones.stoneId), asc(stones.version));
   return rows.map(row => stoneSpecSchema.parse(row.spec));
 }
+/** All versions with status, for the members' catalogue (W05): retired versions stay listed and marked. */
+export async function stoneCatalogVersions(client: Pool | PoolClient, workspaceId: string) {
+  const rows = await orm(client).select({ status: stones.status, spec: stones.spec }).from(stones)
+    .where(eq(stones.workspaceId, workspaceId)).orderBy(asc(stones.createdAt), asc(stones.stoneId), asc(stones.version));
+  return rows.map(row => ({ status: row.status, stone: stoneSpecSchema.parse(row.spec) }));
+}

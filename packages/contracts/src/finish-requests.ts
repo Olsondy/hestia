@@ -63,6 +63,13 @@ export type DemoVillaPlanView = { levels: { id: string; name: string }[]; rooms:
   stairs: { id: string; levelId: string; outline: { x: number; z: number }[] }[] };
 /** Active soft styles for display (K01); the furnishing rules stay on the server. */
 export type SoftStyleSummary = { id: string; version: number; name: string; line: string; palette: string[] };
+/** 石材与软装 (W05): members read every catalogue version of their workspace, retired ones marked. */
+export type CatalogVersionStatus = 'active' | 'retired';
+export type SoftStyleRoomView = { type: string; name: string; summary: string };
+export type MemberCatalogView = {
+  stones: { status: CatalogVersionStatus; stone: StoneSpec }[];
+  softStyles: { status: CatalogVersionStatus; style: SoftStyleSummary; rooms: SoftStyleRoomView[] }[];
+};
 export type ClientCatalogView = { workspace: { slug: string; name: string }; stones: StoneSpec[]; softStyles: SoftStyleSummary[]; demoVilla: { finishes: Finish[]; plan: DemoVillaPlanView } };
 export type RequestEventView = { id: string; kind: 'confirmation' | 'message'; schemeId: string | null; schemeRevision: number | null;
   message: string | null; contactRequested: boolean; preferredTime: string | null; createdAt: string };

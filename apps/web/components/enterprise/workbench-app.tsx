@@ -1,6 +1,6 @@
 'use client';
 // 企业工作台 /w/{企业标识}/…：成员邮箱登录、成员校验、页头导航、「今日」（W01）与线索（W02，见 workbench-leads.tsx）。
-// 按定稿原型 enterprise-workbench（P02）实现；预置方案、石材与软装由 W04、W05 接入，这里先占位。成员关系只由服务端判断。
+// 按定稿原型 enterprise-workbench（P02）实现；预置方案见 workbench-new.tsx，石材与软装见 workbench-catalog.tsx。成员关系只由服务端判断。
 import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -13,6 +13,7 @@ import { LeadDetailView, LeadsView } from './workbench-leads';
 import { AssistView } from './workbench-assist';
 import { NewView } from './workbench-new';
 import { SettingsView } from './workbench-settings';
+import { CatalogView } from './workbench-catalog';
 
 // ---------- 上下文 ----------
 type Ctx = { slug: string; base: string; user: SessionUser; workspace: WorkspaceView; go: (path: string, replace?: boolean) => void };
@@ -69,7 +70,7 @@ function Router({ slug }: { slug: string }) {
   const page = !parts[0] ? <TodayView/>
     : parts[0] === 'leads' ? (parts[1] ? (parts[2] === 'assist' ? <AssistView id={parts[1]}/> : <LeadDetailView id={parts[1]}/>) : <LeadsView query={search}/>)
       : parts[0] === 'new' ? <NewView/>
-        : parts[0] === 'stones' ? <Pending nav="stones" title="石材与软装"/>
+        : parts[0] === 'stones' ? <CatalogView/>
           : parts[0] === 'settings' ? <SettingsView tab={parts[1] ?? 'models'}/>
           : <Shell nav={null}><div className="page"><div className="empty"><b>找不到这个页面</b>请从页头进入需要的页面。</div></div></Shell>;
   return <WorkbenchContext.Provider value={ctx}>{page}</WorkbenchContext.Provider>;
@@ -269,14 +270,5 @@ function TodayView() {
       <div className="panel__body">{feed.length ? <ol className="feed">{feed.map((item, i) =>
         <li key={i}><time dateTime={item.at}>{ago(item.at)}</time><span><Link className="strong" href={`${base}/leads/${item.lead.id}`}>{item.lead.title}</Link> · {item.text}{item.quote && <q>{item.quote}</q>}</span></li>)}</ol>
         : <p className="today-empty">还没有动态。</p>}</div></section>
-  </div></Shell>;
-}
-
-// ---------- 尚未开放的页面 ----------
-function Pending({ nav, title }: { nav: Nav; title: string }) {
-  const { base } = useWorkbench();
-  return <Shell nav={nav}><div className="page">
-    <header className="page__head"><div><h1 className="page__title">{title}</h1></div></header>
-    <div className="empty"><b>这个页面还在准备中</b>需要处理的线索请先从「今日」查看。<p style={{ marginTop: 16 }}><Link className="btn btn--secondary" href={base}>回到今日</Link></p></div>
   </div></Shell>;
 }

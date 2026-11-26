@@ -75,3 +75,14 @@ node --env-file=.env --import tsx scripts/validation/render-process.ts --allow-r
 ## 最终 UI 与工单验收
 
 主Agent最终有界浏览器脚本再次exit0：增加自己测试快照摘要损坏的失败路径，失败状态没有下载，手机错误明确；重拍1440/1100/390、概念/失败状态并检查真实图片内容。新鲜独立通用子Agent先查看七张当前UI图与一张Worker图，再阅读packet源码，Impeccable Finish Reviewer disposition: ship，无material fixes；Documenter对照既有editorial/Tsanger体系，无需全局样式重写。单次detector仅手机16px原生输入字号advisory。结合真实进程、领域与图像核对，T20四项标准验收通过；生产部署和真实模型不在此结论内。
+
+## 显卡出图（2026-11-27）
+
+`HESTIA_RENDER_ANGLE` 选择无头 WebGL 后端，默认仍是 `swiftshader`（软件渲染）。用户 Windows 主机设为 `d3d11`，Web 与出图 Worker 同机运行（图片写入本机 `PRIVATE_STORAGE_PATH`），出图 Worker 在桌面会话中运行（SSH 会话没有显卡）。
+
+| 检查 | 结果 |
+| --- | --- |
+| 演示别墅室内视角，6 张 | 每张 5.2–6.5 秒；本机 Mac 的 `swiftshader` 为 125–131 秒 |
+| 图像内容 | 1280×836，石材纹理、阴影、家具与标注完整，无空白或花屏，与软件渲染观感一致 |
+
+未覆盖：长时间运行下显卡上下文丢失的恢复；Agent 候选经 Windows 界面出图（本次 Windows 服务按公网 https 域名配置，本地 http 登录被来源校验拒绝，公网隧道未转发到该端口）。

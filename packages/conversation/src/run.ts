@@ -9,7 +9,7 @@ import { designTasks, operations, projects, taskEvents } from '../../persistence
 import { canAccessProject } from '../../workspaces/src/access';
 import { appendEvent, taskRow, type TaskRow } from '../../tasks/src/service';
 import { claimTask, fenced, type TaskClaim } from '../../tasks/src/runner';
-import { resolveConversation, promptOf, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
+import { resolveConversation, promptOf, MODEL_MAX_OUTPUT_TOKENS, MODEL_TIMEOUT_MS, INSTRUCTIONS_VERSION, type ModelResponse } from './model';
 import { exactLocalCommand } from './intent';
 import { applyBriefProposal } from './brief';
 import { randomUUID } from 'node:crypto';
@@ -265,7 +265,7 @@ export async function runConversationTask(taskId: string, options: ConversationR
         current.conversation!.callStarted = true; current.conversation!.phase = 'calling_model'; current.conversation!.modelCallId = reservation?.callId ?? null;
         current.conversation!.configuration = { model: configuration.modelId, configurationId: configuration.id, profile,
           instructionsVersion: INSTRUCTIONS_VERSION, toolContractVersion: 'resolve-turn-5-scheme', policyVersion: 'bounded-execution-1',
-          timeoutMs: MODEL_TIMEOUT_MS, maxOutputTokens: 1600, maxRetries: 0 };
+          timeoutMs: configuration.timeoutMs ?? MODEL_TIMEOUT_MS, maxOutputTokens: configuration.maxOutputTokens ?? MODEL_MAX_OUTPUT_TOKENS, maxRetries: 0 };
         await saveConversation(tx, current);
         await tx.update(designTasks).set({ usageReserved: 1 }).where(eq(designTasks.id, taskId));
         await appendEvent(client, taskId, 'status', { status: 'running', phase: 'calling_model', generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 });
@@ -276,8 +276,8 @@ export async function runConversationTask(taskId: string, options: ConversationR
         if (reservation) await settleCall(reservation.callId, { inputTokens: 0, outputTokens: 0, outcome: 'not_sent' });
         throw error;
       }
-      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(MODEL_TIMEOUT_MS)]);
-      response = await resolveConversation({ model, providerOptions: configuration.providerOptions, enterprise, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
+      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(configuration.timeoutMs ?? MODEL_TIMEOUT_MS)]);
+      response = await resolveConversation({ model, providerOptions: configuration.providerOptions, maxOutputTokens: configuration.maxOutputTokens, enterprise, input: row.conversation!.input, brief: row.conversation!.brief, state: spatialStateSchema.parse(row.conversation!.context), signal,
         onText: text => transaction(async client => { const current = await fenced(client, claim); await appendEvent(client, taskId, 'text', { text, source: 'model', provisional: true, generation: claim.generation, intentVersion: current.conversation!.brief?.intentVersion ?? 1 }); }) });
       response.networkDispatches = networkDispatches;
       await transaction(async (client, tx) => {

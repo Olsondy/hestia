@@ -14,7 +14,9 @@ import { serviceCredentials } from '../../model-registry/src/service';
 export type ModelConfiguration = { id: string; modelId: string; profiles: ModelProfile[];
   admission: { accepted: boolean; evidence: string; kind: 'registry' | 'protocol-fixture' };
   createModel: (onDispatch: () => void) => LanguageModel;
-  providerOptions?: ProviderOptions; quota?: { workspaceId: string; modelId: string } };
+  providerOptions?: ProviderOptions; quota?: { workspaceId: string; modelId: string };
+  /** Registered limits (ADR-0018): the service's call timeout and the model's maximum output. */
+  timeoutMs?: number; maxOutputTokens?: number };
 
 /** The workspace's enabled, admitted model: the member's pick, else the workspace default, else the first enabled one. */
 export async function resolveWorkspaceModel(workspaceId: string, picked: string | null) {
@@ -53,6 +55,7 @@ async function configurationFor(id: string, workspaceId: string | null): Promise
   return { id: model.id, modelId: model.modelId, profiles: ['edit_fast', 'design_quality'],
     admission: { accepted: model.state === 'admitted', evidence: `model registry access check (${model.id})`, kind: 'registry' },
     createModel: onDispatch => { const built = modelFor(credentials, model.modelId, model.params as ModelParams, counted(onDispatch)); providerOptions = built.providerOptions; return built.model; },
+    timeoutMs: credentials.timeoutSeconds * 1000, maxOutputTokens: model.maxOutput,
     get providerOptions() { return providerOptions; }, ...(workspaceId ? { quota: { workspaceId, modelId: model.id } } : {}) };
 }
 

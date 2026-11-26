@@ -54,8 +54,11 @@ export async function sceneDocument(snapshot: SceneSnapshot, inspection = false,
 /** Bounded local/headless renderer. Accepts data, not user-provided HTML or scripts. */
 export async function renderSnapshotToPng(snapshot: SceneSnapshot, outputPath: string, existingBrowser?: Browser, sceneView?: SceneView, options?: RenderOptions) {
   const html = await sceneDocument(snapshot, false, sceneView, options);
-  // Explicit software ANGLE keeps headless jobs independent of desktop GPU availability.
-  const browser = existingBrowser ?? await chromium.launch({ headless: true, args: ['--use-angle=swiftshader'] });
+  // Explicit software ANGLE keeps headless jobs independent of desktop GPU availability. A host with a usable GPU can
+  // opt in with HESTIA_RENDER_ANGLE (e.g. d3d11 on Windows, metal on macOS); the context-loss and pixel checks still apply.
+  const angle = process.env.HESTIA_RENDER_ANGLE?.trim() || 'swiftshader';
+  if (!/^[a-z0-9-]+$/.test(angle)) throw new Error('HESTIA_RENDER_ANGLE must be an ANGLE backend name such as swiftshader, d3d11 or metal.');
+  const browser = existingBrowser ?? await chromium.launch({ headless: true, args: [`--use-angle=${angle}`] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
   try {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));

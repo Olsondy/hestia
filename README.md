@@ -1,104 +1,108 @@
 # Hestia
 
-简体中文 | [English](README.en.md)
+English | [简体中文](README.zh-CN.md)
 
-**面向家装企业的空间设计平台**：客户上传户型图纸即可得到石材铺贴与软装方案，在手机上以 3D、平面图和效果图对比确认；企业在工作台跟进线索、预置与发布方案，并由 Agent 生成方案候选。
+**A space design platform for home renovation companies.** Customers upload a floor plan and get stone finish and soft furnishing schemes, then compare and confirm them on their phone in 3D, plan view and rendered images. Companies follow up leads, prepare and publish schemes in a workbench, with an Agent that drafts scheme candidates.
 
-名字取自古希腊神话中的炉火女神赫斯提亚，造屋之始祖。
+Named after Hestia, the Greek goddess of the hearth and, in myth, the first builder of homes.
 
-![企业工作台：线索详情中的方案与 3D 全层浏览](docs/assets/screenshots/workbench-3d.jpg)
-
-<table>
-  <tr>
-    <td width="33%"><img src="docs/assets/screenshots/client-render.jpg" alt="客户端效果图"></td>
-    <td width="33%"><img src="docs/assets/screenshots/client-3d.jpg" alt="客户端 3D 全层浏览"></td>
-    <td width="33%"><img src="docs/assets/screenshots/client-night.jpg" alt="客户端夜景"></td>
-  </tr>
-  <tr>
-    <td align="center">效果图 · 多方案切换</td>
-    <td align="center">3D 全层立体浏览</td>
-    <td align="center">夜景灯光</td>
-  </tr>
-</table>
-
-## 宣传片
+![Workbench: lead detail with schemes and a full-storey 3D view](docs/assets/screenshots/workbench-3d.jpg)
 
 <table>
   <tr>
-    <td width="64%"><a href="docs/assets/video/hestia-enterprise.mp4"><img src="docs/assets/video/poster-enterprise.jpg" alt="企业工作台宣传片"></a></td>
-    <td width="36%"><a href="docs/assets/video/hestia-owner.mp4"><img src="docs/assets/video/poster-owner.jpg" alt="客户端宣传片"></a></td>
+    <td width="33%"><img src="docs/assets/screenshots/client-render.jpg" alt="Client rendered image"></td>
+    <td width="33%"><img src="docs/assets/screenshots/client-3d.jpg" alt="Client 3D storey view"></td>
+    <td width="33%"><img src="docs/assets/screenshots/client-night.jpg" alt="Client night view"></td>
   </tr>
   <tr>
-    <td align="center">▶ 企业工作台（30 秒）</td>
-    <td align="center">▶ 客户端（30 秒）</td>
+    <td align="center">Rendered images · switch schemes</td>
+    <td align="center">Full-storey 3D view</td>
+    <td align="center">Night lighting</td>
   </tr>
 </table>
 
-## 功能
+## Promo videos
 
-**客户端（H5，可嵌入小程序 web-view）**
+<table>
+  <tr>
+    <td width="64%"><a href="docs/assets/video/hestia-enterprise.mp4"><img src="docs/assets/video/poster-enterprise.jpg" alt="Workbench promo video"></a></td>
+    <td width="36%"><a href="docs/assets/video/hestia-owner.mp4"><img src="docs/assets/video/poster-owner.jpg" alt="Client promo video"></a></td>
+  </tr>
+  <tr>
+    <td align="center">▶ Enterprise workbench (30 s)</td>
+    <td align="center">▶ Client app (30 s)</td>
+  </tr>
+</table>
 
-- 手机号登录；上传 DXF 图纸自动转换并直接出方案，照片 / PDF / DWG 进入企业整理队列
-- 多套整体方案（硬装铺贴 + 软装风格）对比：效果图、3D 全层浏览 → 房间、平面图（真实材质 / 白模 / 线框）、日景 / 夜景
-- 选项式调整与确认方案；输入企业分享码打开预置方案并绑定
+The UI is in Simplified Chinese; it targets users in mainland China.
 
-**企业工作台**
+## Features
 
-- 「今日」待办、线索列表与详情、跟进状态与内部备注
-- 图纸整理队列、预置方案、分享码与绑定管理
-- 石材与软装目录，多楼层空间
-- Agent 助手：在线索中对话生成整套方案候选，成员采用后作为待审方案，发布后客户可见
+**Client app (H5, embeddable in a WeChat Mini Program web-view)**
 
-**平台后台**
+- Phone number sign-in; DXF floor plans are converted automatically and get schemes right away, while photos / PDF / DWG go to the company's preparation queue
+- Compare whole schemes (stone finishes + soft furnishing style) as rendered images, a full-storey 3D view down to single rooms, plan views (real materials / white model / wireframe) and day / night lighting
+- Adjust by picking options and confirm a scheme; open a company's prepared scheme with a share code and bind it to your account
 
-- 企业开通与按域名接入，客户账号与数据按企业隔离
-- 模型登记（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages 协议），向企业分配模型、月度额度与并发上限
-- 按调用计量 token 与金额，平台与企业两级用量统计、CSV 导出；企业数据导出与删除
+**Enterprise workbench**
 
-![企业工作台：线索](docs/assets/screenshots/workbench-leads.jpg)
+- "Today" to-dos, lead list and detail, follow-up status and internal notes
+- Floor plan preparation queue, prepared schemes, share codes and binding management
+- Stone and soft furnishing catalogs, multi-storey spaces
+- Agent assistant: chat inside a lead to generate whole-scheme candidates; members adopt a candidate as a draft for review, and customers see it only after it is published
 
-## 架构
+**Platform admin**
 
-| 层 | 技术 |
+- Onboard companies with per-domain access; customer accounts and data are isolated per company
+- Model registry (OpenAI Chat Completions / OpenAI Responses / Anthropic Messages protocols); assign models, monthly quotas and concurrency limits to each company
+- Per-call token and cost metering, platform-level and company-level usage reports with CSV export; company data export and deletion
+
+![Workbench: leads](docs/assets/screenshots/workbench-leads.jpg)
+
+## Architecture
+
+| Layer | Technology |
 | --- | --- |
-| Web 与 API | Next.js 16 + React 19（`apps/web`） |
-| 后台任务 | pg-boss 队列 + 有限状态运行器，SSE 事件持久化，关页后任务可继续与恢复（`apps/worker`） |
-| 模型调用 | AI SDK Core，模型由后台登记，不写死在代码中 |
-| 数据 | PostgreSQL 17 + Drizzle ORM，多租户按工作空间隔离 |
-| 3D 与出图 | Three.js（`packages/scene-runtime`），无头浏览器后台出图 |
+| Web and API | Next.js 16 + React 19 (`apps/web`) |
+| Background jobs | pg-boss queues + a finite-state runner, persisted SSE events; tasks keep running and resume after the page closes (`apps/worker`) |
+| Model calls | AI SDK Core; models are registered in the admin, never hard-coded |
+| Data | PostgreSQL 17 + Drizzle ORM, multi-tenant isolation per workspace |
+| 3D and rendering | Three.js (`packages/scene-runtime`), headless-browser rendering in the background |
 
-## 目录
+## Repository layout
 
 ```text
-apps/web/                        Next.js 应用：官网入口、客户端、企业工作台、平台后台与 API
-apps/worker/                     模型调用、出图与图纸转换 Worker
-packages/                        共享契约、领域服务与场景运行时
-example/prototypes/projects/     工作台原型（源码在 src/，含构建产物）
-assets/fonts/tsanger-yuyang/     仓耳渔阳体字体与授权声明
-scripts/                         构建、本地环境、迁移与验证脚本
-docs/                            产品范围、架构、决策与验收记录
+apps/web/                        Next.js app: site entry, client app, enterprise workbench, platform admin and API
+apps/worker/                     Workers for model calls, rendering and floor plan conversion
+packages/                        Shared contracts, domain services and scene runtime
+example/prototypes/projects/     Workbench prototype (sources in src/, build output included)
+assets/fonts/tsanger-yuyang/     Tsanger YuYang font and its license notice
+scripts/                         Build, local setup, migration and validation scripts
+docs/                            Product scope, architecture, decisions and validation records
 ```
 
-## 快速开始
+## Quick start
 
-需要 Node.js 22+、`package.json` 指定的 pnpm 与 Docker（本地 PostgreSQL）。
+Requires Node.js 22+, the pnpm version pinned in `package.json`, and Docker (for local PostgreSQL).
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm db:up               # 本地 PostgreSQL（Docker）；已有数据库可跳过
-pnpm bootstrap           # .env、数据库迁移、后台队列、出图浏览器、DXF 环境
-pnpm demo:seed --reset   # 演示企业、演示账号与预置方案
-pnpm dev:all             # Web 与 Worker：http://127.0.0.1:3000
+pnpm db:up               # local PostgreSQL (Docker); skip if you have one
+pnpm bootstrap           # .env, migrations, job queues, render browser, DXF tooling
+pnpm demo:seed --reset   # demo company, demo accounts and prepared schemes
+pnpm dev:all             # web and workers: http://127.0.0.1:3000
 ```
 
-演示数据不调用模型、短信为模拟发送，可离线运行；演示配置与账号见 [离线演示说明](docs/demo/home-h5-demo.md)。Agent 助手需在平台后台登记模型后启用。开发与验证命令见 [开发与验证](docs/development.md)。
+Demo data calls no models and SMS is simulated, so it runs offline. Demo settings and accounts are in the [offline demo guide](docs/demo/home-h5-demo.md). The Agent assistant needs a model registered in the platform admin. Development and verification commands are in [Development](docs/development.md).
 
-## 文档
+## Documentation
 
-- [项目现状](docs/status.md) · [产品上下文](PRODUCT.md) · [领域语言](CONTEXT.md) · [决策记录](docs/decisions/)
-- [技术栈](docs/web-stack.md) · [设计系统](DESIGN.md) · [开发与验证](docs/development.md) · [验收记录](docs/validation/)
-- [参与开发](CONTRIBUTING.md) · [第三方声明](THIRD_PARTY_NOTICES.md)
+Project documentation is written in Chinese.
 
-## 许可
+- [Status](docs/status.md) · [Product context](PRODUCT.md) · [Domain language](CONTEXT.md) · [Decision records](docs/decisions/)
+- [Tech stack](docs/web-stack.md) · [Design system](DESIGN.md) · [Development](docs/development.md) · [Validation records](docs/validation/)
+- [Contributing](CONTRIBUTING.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-本项目代码以 [MIT](LICENSE) 许可发布。第三方代码与字体依各自声明使用，见 [第三方声明](THIRD_PARTY_NOTICES.md)；仓耳渔阳体不在 MIT 范围内，见 [字体授权](assets/fonts/tsanger-yuyang/NOTICE.txt)。
+## License
+
+The code is released under the [MIT License](LICENSE). Third-party code and fonts are used under their own terms, see [Third-party notices](THIRD_PARTY_NOTICES.md); the Tsanger YuYang font is not covered by MIT, see its [license notice](assets/fonts/tsanger-yuyang/NOTICE.txt).

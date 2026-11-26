@@ -292,7 +292,7 @@ dialog.modal::backdrop{background:#0c0c0e66}
 .agent-intro{font-size:13px;color:var(--c-ink-2)}
 .agent-prompts{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
 .agent-prompts .chip{height:auto;min-height:30px;padding:5px 12px;text-align:left;border-radius:var(--r-md)}
-.msg{max-width:94%;font-size:13px;line-height:1.7}
+.msg{max-width:94%;font-size:13px;line-height:1.7;white-space:pre-line}
 .msg--me{align-self:flex-end;padding:8px 12px;border-radius:var(--r-md);background:var(--c-surface-2)}
 .msg--ai{align-self:flex-start}
 .msg p{margin-top:8px}

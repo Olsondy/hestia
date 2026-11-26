@@ -12,7 +12,7 @@ import { SchemeInfo } from '../client/scheme-info';
 import { SchemeViewer } from '../client/scheme-viewer';
 import type { SceneSnapshot } from '../client/client-api';
 import { actionsOf, ago, leadsOf, Note, Shell, tidy, useWorkbench, who } from './workbench-app';
-import { ShareDialog, useBindingActions } from './workbench-share';
+import { Modal, ShareDialog, useBindingActions } from './workbench-share';
 import { AgentPanel, asScheme, labelOf, useCandidates, useSchemeActions, type Shown } from './workbench-agent';
 
 // ---------- 共用 ----------
@@ -161,17 +161,19 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
   const publish = usePublish(lead), [sharing, setSharing] = useState(false);
   const shareable = lead.origin === 'member' && lead.status === 'published' && !lead.customer;
   const actionError = (schemeActions.adopt.error ?? schemeActions.discard.error ?? schemeActions.publish.error) as Error | null;
-  const adopt = (id: string) => { if (!window.confirm('采用后成为线索的待审方案，客户仍看不到；核对后再发布。确认采用？')) return;
-    schemeActions.adopt.mutate(id, { onSuccess: next => { const added = [...next.schemes].filter(s => s.pendingReview).sort((x, y) => y.ordinal - x.ordinal)[0]; if (added) setSchemeId(added.id); } }); };
+  // Adopting, discarding and publishing are confirmed in the workbench's own modal (same as binding actions), not window.confirm.
+  const [ask, setAsk] = useState<{ title: string; text: string; action: string; danger?: boolean; run: () => void } | null>(null);
+  const adopt = (id: string) => setAsk({ title: '采用为待审方案', text: '采用后成为线索的待审方案，客户仍看不到；核对后再发布。', action: '采用', run: () =>
+    schemeActions.adopt.mutate(id, { onSuccess: next => { const added = [...next.schemes].filter(s => s.pendingReview).sort((x, y) => y.ordinal - x.ordinal)[0]; if (added) setSchemeId(added.id); } }) });
   const foot = scheme?.candidate ? <><span className="hint">{actionError ? actionError.message : scheme.candidate.stale ? '空间在候选生成后已经变化，这个候选不能采用，请让 Agent 重新出方案。' : '候选客户看不到。采用后成为待审方案，核对后再发布。'}</span>
-      <button className="btn btn--secondary" disabled={schemeActions.discard.isPending} onClick={() => { if (window.confirm('放弃这个候选？放弃后不能再采用。')) schemeActions.discard.mutate(scheme.id); }}>放弃候选</button>
+      <button className="btn btn--secondary" disabled={schemeActions.discard.isPending} onClick={() => setAsk({ title: '放弃候选', text: '放弃后不能再采用这个候选。', action: '放弃', danger: true, run: () => schemeActions.discard.mutate(scheme.id) })}>放弃候选</button>
       <button className="btn btn--primary btn--grow" disabled={scheme.candidate.stale || schemeActions.adopt.isPending} onClick={() => adopt(scheme.id)}>{schemeActions.adopt.isPending ? '正在采用…' : '采用为待审方案'}</button></>
     : scheme?.pendingReview ? <><span className="hint">{actionError ? actionError.message : `待审方案 ${labelOf(scheme)} 客户看不到。核对效果图与清单后发布${lead.status === 'published' ? '' : '；线索发布后客户才能看到'}。`}</span>
-      <button className="btn btn--primary btn--grow" disabled={schemeActions.publish.isPending} onClick={() => { if (window.confirm(`发布方案 ${labelOf(scheme)}？发布后客户就能看到。`)) schemeActions.publish.mutate(scheme.id); }}>{schemeActions.publish.isPending ? '正在发布…' : `发布方案 ${labelOf(scheme)}`}</button></>
+      <button className="btn btn--primary btn--grow" disabled={schemeActions.publish.isPending} onClick={() => setAsk({ title: `发布方案 ${labelOf(scheme)}`, text: '发布后客户就能看到这套方案。', action: '发布', run: () => schemeActions.publish.mutate(scheme.id) })}>{schemeActions.publish.isPending ? '正在发布…' : `发布方案 ${labelOf(scheme)}`}</button></>
     : lead.status === 'assisted_conversion' ? <><span className="hint">客户的图纸在排队：整理户型后出方案，直接发布给客户。</span>
     <Link className="btn btn--primary btn--grow" href={`${base}/leads/${lead.id}/assist`}>整理图纸</Link></>
     : lead.status === 'pending_review' ? <><span className="hint">{publish.error ? (publish.error as Error).message : `${lead.reviewReason ?? '企业设置为全部审核后发布'}。核对方案后发布给客户。`}</span>
-      <button className="btn btn--primary btn--grow" disabled={publish.isPending} onClick={() => { if (window.confirm('发布后客户就能看到这些方案。确认发布？')) publish.mutate(); }}>{publish.isPending ? '正在发布…' : '发布给客户'}</button></>
+      <button className="btn btn--primary btn--grow" disabled={publish.isPending} onClick={() => setAsk({ title: '发布给客户', text: '发布后客户就能看到这些方案。', action: '发布', run: () => publish.mutate() })}>{publish.isPending ? '正在发布…' : '发布给客户'}</button></>
     : shareable && !a.contact ? <><span className="hint">{lead.sharing.shares.some(s => !s.revokedAt && !s.usedAt) ? '已有有效的分享码；可以再新建一个，发给另一个联系方式。' : '还没有绑定客户。生成分享码发给客户。'}</span>
       <button className="btn btn--primary btn--grow" onClick={() => setSharing(true)}><Icon name="link" size={16} strokeWidth={1.6}/>分享给客户</button></>
     : a.contact ? <><span className="hint">客户请求联系{lastPreferred(lead) ? `，方便时间：${lastPreferred(lead)}` : ''}。回电后标记，线索会移出「今日」的请求联系。</span>
@@ -196,6 +198,11 @@ function LeadWorkspace({ lead }: { lead: LeadView }) {
     </aside>}
     {showAgent && <AgentPanel lead={lead} shown={scheme} onClose={() => setAgent(false)} onShow={showCandidate}/>}
     <ShareDialog lead={lead} open={sharing} onClose={() => setSharing(false)}/>
+    <Modal open={!!ask} onClose={() => setAsk(null)} label={ask?.title ?? '确认'}>{ask && <>
+      <h2>{ask.title}</h2><p>{ask.text}</p>
+      <div className="modal-actions"><button className="btn btn--secondary" onClick={() => setAsk(null)}>取消</button>
+        <button className={`btn ${ask.danger ? 'btn--danger' : 'btn--primary'}`} onClick={() => { ask.run(); setAsk(null); }}>{ask.action}</button></div>
+    </>}</Modal>
     <div className="toolbar" role="toolbar" aria-label="画面">
       <button className="tool" aria-pressed={left} onClick={toggleLeft} aria-label={left ? '收起方案面板' : '打开方案面板'}><Icon name="panel" size={18} strokeWidth={1.6}/></button>
       {levels.length > 1 && <><span className="toolbar__sep"/><div className="segmented segmented--bare" role="group" aria-label="楼层">{levels.map(([key, name]) =>
